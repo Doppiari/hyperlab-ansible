@@ -25,12 +25,11 @@ is authorized by this record's Proposed status.
 
 ## Candidate names
 
-These are candidates for approval, not installed interfaces. The packet
-contains the source inventory and the implementation units.
+These are candidates for approval, not installed interfaces.
 
 | Surface today | Candidate | Compatibility proposal |
 | --- | --- | --- |
-| `hyperlabctl` | `sfere` | Retain `hyperlabctl` as a forwarding executable for at least one release; duration remains open. |
+| `hyperlabctl` | `sfere` | Retain `hyperlabctl` as a forwarding executable; proposed minimum: one release, with duration still open. |
 | `tools/hyperlabctl/`, Python `hyperlabctl` | Keep initially | Command spelling can change without moving the checkout-bound implementation. |
 | Quickshell `hyperlab`, `hyperlab-workspace` | `sfere`, `sfere-workspace` | Change config roots, `qs -c` argv and IPC callers together; never run two shells as aliases. |
 | `hyperlab-*.service`, session targets and desktop entries | Corresponding `sfere-*` names | One coherent unit graph and Ly catalogue; preserve Sway recovery and logout semantics. |
@@ -150,9 +149,14 @@ hardware gates stay open.
 The operator transfers the existing three repositories to the existing
 Doppiari organisation and applies the chosen names. Preserve commit objects
 and history; do not recreate repositories by copying current files. Verify
-permissions and target-name availability first, then settings, redirects,
-CI and reference updates. Do not rely on redirects for action references
-or hosted project sites. Do not reuse the old repository locations.
+permissions and target-name availability first. Complete the transfers and
+chosen repository renames before landing repository-reference updates in
+CI, ISO fetch inputs or guides. Earlier implementation units retain the
+current resolvable repository references. Check settings, redirects and
+existing CI callers after each transfer; stop on failure. Once all targets
+exist, update references in one repository at a time and require its checks
+before proceeding. Do not rely on redirects for action references or hosted
+project sites. Do not reuse the old repository locations.
 
 Update the real cross-repository checkout paths and required comparisons,
 including `.github/workflows/ci.yml`, the bootstrap workflow and its storage
