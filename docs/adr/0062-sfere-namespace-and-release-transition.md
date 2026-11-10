@@ -149,14 +149,27 @@ hardware gates stay open.
 The operator transfers the existing three repositories to the existing
 Doppiari organisation and applies the chosen names. Preserve commit objects
 and history; do not recreate repositories by copying current files. Verify
-permissions and target-name availability first. Complete the transfers and
-chosen repository renames before landing repository-reference updates in
-CI, ISO fetch inputs or guides. Earlier implementation units retain the
-current resolvable repository references. Check settings, redirects and
-existing CI callers after each transfer; stop on failure. Once all targets
-exist, update references in one repository at a time and require its checks
-before proceeding. Do not rely on redirects for action references or hosted
-project sites. Do not reuse the old repository locations.
+permissions and target-name availability first. Transfer depends on approval
+of this record and the chosen repository names: approval authorizes the
+operation, and names identify its destinations. It does not depend on code
+migrations, asset clearance or licence execution; moving existing repositories
+does not require changing their contents or terms. The chosen licence switch
+may precede, coincide with or follow the transfer.
+
+Complete the transfers and chosen repository renames before ordinary
+repository-reference updates in CI, ISO fetch inputs or guides. Earlier
+implementation units retain the current resolvable repository references.
+Check settings, redirects and
+existing CI callers after each transfer; pause further transfers on failure.
+Either transfer the affected repository back when permissions and name
+availability permit, or queue a minimal caller-repair unit in each affected
+repository against that target, which now exists. Such a repair depends only
+on this record's approval and that target's existence, not on all transfers
+or code migrations; repeat the failed checks before resuming. Once all targets
+exist and callers pass, perform the remaining reference updates in one
+repository at a time and require its checks before proceeding. Do not rely
+on redirects for action references or hosted project sites. Do not reuse the
+old repository locations.
 
 Update the real cross-repository checkout paths and required comparisons,
 including `.github/workflows/ci.yml`, the bootstrap workflow and its storage
@@ -164,11 +177,21 @@ comparison, `tests/cross_repo_contract.py`, release inputs and newcomer
 guides. Private integration references and local remotes need their own
 inventory at execution time; no uninspected external path is assumed.
 
-The last implementation unit adds a tracked-path and text guard for old
-product names and all three former repository names across the repositories.
-Give each permitted occurrence an
-exact path, context, reason and retention rule: durable compatibility,
-public alias, immutable history, or an exact guard pattern/negative fixture.
+The last namespace implementation unit adds a tracked-path and text guard for
+old product names and all three former repository names across the repositories.
+Unresolved asset pools and evidence derivations do not block the namespace
+migrations or this guard: retain their current identifiers and bytes with
+exact exceptions that record the unresolved publication gate. Renaming
+generated presentation outputs must not require clearing or relabelling
+those inputs. A guard pass proves only its naming/refusal checks. A separate
+release-clearance unit must require all three asset-remediation units, the
+licence units and the completed guard, as well as the other publication
+gates; that unit is outside this namespace plan. Later remediation must
+update affected exceptions and rerun the guards.
+
+Give each permitted occurrence an exact path, context, reason and retention
+rule: durable compatibility, public alias, immutable history, unresolved
+publication asset/derivation, or an exact guard pattern/negative fixture.
 Validate exception-manifest names as typed metadata, not arbitrary prose;
 do not exempt the manifest or guard source wholesale. Never exempt an entire
 docs, tests or ADR tree. Parse structured inputs and argv to distinguish
@@ -202,6 +225,7 @@ The operator chooses the final CLI, config, helper, unit, path and repository
 names; the duration and release boundary of public aliases; and the licence
 switch date. Candidate spellings remain subject to the operator's name
 clearance. Approve this ADR before any implementation unit is queued.
+The switch date imposes no ordering on repository transfer.
 Authorship is already confirmed for the five inventoried identities; only
 an additional identity would need another answer. Asset-origin exceptions
 remain separate publication blockers, not a reopening of the licence choice.

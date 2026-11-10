@@ -644,5 +644,7 @@ remain.
   - Activation: none — there is no transition code to activate.
   - Source: none
   - Prerequisites: the operator's final names, alias lifetime, switch date
-    and acceptance of the record; ordered implementation and refusal checks,
-    asset-rights resolution for publication, then installed-host acceptance.
+    and acceptance of the record; transfers may proceed independently of
+    asset resolution, code migrations and the licence switch. Ordered namespace
+    implementation and refusal checks precede the final guard and installed-host
+    acceptance; asset-rights resolution remains a separate publication gate.

@@ -910,10 +910,13 @@ Measured with the complete security plane active.
       unknown image origins and evidence derivations before claiming
       publication clearance; root licence changes do not clear those assets
 - [ ] operator transfer of the existing repositories to the existing Doppiari
-      organisation with history preserved, followed by dependent-reference
-      updates against existing targets, maintenance-session upgrade/reversal
-      and unchanged second apply; finish with an old-name guard whose exact
-      exceptions distinguish canonical compatibility state from immutable history
+      organisation with history preserved, independently of asset resolution,
+      code migrations and the licence switch date; repair failed callers against
+      each existing target before continuing, then complete dependent-reference
+      updates, maintenance-session upgrade/reversal and unchanged second apply.
+      Finish with an old-name guard whose exact exceptions distinguish canonical
+      compatibility state, immutable history and unresolved publication assets;
+      asset clearance remains required for a separate release-clearance decision
 - [ ] wallpaper and polish, screenshots, video and release documentation
 - [ ] sanitized Nitro evidence sealed with the exact public `main` commits
       exercised on hardware; Predator replayed and published separately
