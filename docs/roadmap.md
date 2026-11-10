@@ -897,7 +897,23 @@ Measured with the complete security plane active.
 - [x] `SECURITY.md` (private reporting through GitHub)
 - [ ] private vulnerability reporting enabled in the repository settings
       before the release
-- [ ] licence and authorship reviewed for publication under Doppiari
+- [ ] approve the internal-name and repository transition in
+      [ADR 0062](adr/0062-sfere-namespace-and-release-transition.md), proposed:
+      final CLI/config/unit/path/repository spellings, alias lifetime and
+      licence switch date. Keep the image store, Machine registry and
+      bootstrap-storage contract at their current canonical paths; stage the
+      shell, IPC callers, session targets, wants links and Ly catalogue together
+- [ ] execute the decided GPL-3.0-or-later switch for future versions in a
+      separate unit after the approved plan and switch date; the operator
+      confirmed all five inventoried author identities on 2026-11-09, and only
+      a new identity needs confirmation. Resolve third-party source notices,
+      unknown image origins and evidence derivations before claiming
+      publication clearance; root licence changes do not clear those assets
+- [ ] operator transfer of the existing repositories to the existing Doppiari
+      organisation with history preserved, coordinated dependent-reference
+      updates, maintenance-session upgrade/reversal and unchanged second
+      apply; finish with an old-name guard whose exact exceptions distinguish
+      canonical compatibility state from immutable history
 - [ ] wallpaper and polish, screenshots, video and release documentation
 - [ ] sanitized Nitro evidence sealed with the exact public `main` commits
       exercised on hardware; Predator replayed and published separately

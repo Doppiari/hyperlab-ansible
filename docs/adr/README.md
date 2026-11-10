@@ -188,6 +188,11 @@ entered the pipeline.
     — proposed: every apply refreshes resident presentation older than the
     installed code, in the configured user's existing session.
 
+62. [`0062-sfere-namespace-and-release-transition.md`](0062-sfere-namespace-and-release-transition.md)
+    — proposed: coordinate CLI, shell and session names while retaining
+    durable state; execute the decided GPL-3.0-or-later switch separately
+    and transfer the existing repositories to Doppiari before the final guard.
+
 The pre-VM baseline that led to these decisions remains available as
 [`../historical-audit-m0.md`](../historical-audit-m0.md); it is archival evidence,
 not current implementation documentation.
@@ -630,3 +635,14 @@ remain.
     [`shell_reload_after_apply_contract.py`](../../tests/shell_reload_after_apply_contract.py)
   - Prerequisites: the operator's decision; installed Nitro apply/readback
     and unchanged second pass, then Predator replay.
+
+- [ADR 0062](0062-sfere-namespace-and-release-transition.md)
+  - Decision: proposed migration policy and candidate internal names;
+    GPL-3.0-or-later is the operator's settled licence choice.
+  - Built: none — the record plans the transition; no namespace, licence
+    or repository transfer has been implemented.
+  - Activation: none — there is no transition code to activate.
+  - Source: none
+  - Prerequisites: the operator's final names, alias lifetime, switch date
+    and acceptance of the record; ordered implementation and refusal checks,
+    asset-rights resolution for publication, then installed-host acceptance.
