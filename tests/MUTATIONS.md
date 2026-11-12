@@ -6019,3 +6019,22 @@ zero-duration animation lands at once, so the explicit branch is a second
 guard. `fade-fixed-duration` removes both guards and is refused.
 `unknown-host-grey` is refused by the first focus event, before the pixel
 checks, because the core is not hollow while the new surface resolves.
+
+## The wiring contract and a component's root bindings
+
+`tests/host_quickshell_qml_wiring_contract.py` counts a property that a
+component binds on its own root object as declared for that component
+(`problems/wiring-contract-refused-item-state.md`). Replay one break at a
+time from a saved copy, run `python tests/host_quickshell_qml_wiring_contract.py`,
+restore the copy and run it again. Every break edits a file in
+`roles/host_desktop_common/files/quickshell/hyperlab/`.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| `icons-to-sphere` | `ProvenanceBadge.qml` assigns `icons: badge.icons` to its `MachineSphere`. | `ProvenanceBadge.qml assigns ['icons'] to MachineSphere, which declares no such property` | Exit 0, contract OK. |
+| `sphere-root-unbound` | Delete `state: ""` from the root of `MachineSphere.qml`. | `ProvenanceBadge.qml assigns ['state'] to MachineSphere, which declares no such property` | Exit 0, contract OK. |
+| `state-to-gpu-badge` | `HyperLabBar.qml` assigns `state: "x"` to its `GpuBadge`. | `HyperLabBar.qml assigns ['state'] to GpuBadge, which declares no such property` | Exit 0, contract OK. |
+
+All three breaks exited 1 with the diagnostic listed, and the restored tree
+exited 0. Before the correction the unmodified tree failed with the
+`sphere-root-unbound` diagnostic.

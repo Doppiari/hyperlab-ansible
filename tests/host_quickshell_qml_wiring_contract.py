@@ -13,7 +13,9 @@ a text search cannot:
   1. every required property of a HyperLab component is assigned wherever
      that component is instantiated;
   2. a property name that belongs to the HyperLab vocabulary is only ever
-     assigned to a component that actually declares it.
+     assigned to a component that actually declares it, or binds it on its
+     own root object (a Qt property the component takes as an input, such as
+     MachineSphere's Item.state).
 
 It deliberately says nothing about Qt's own properties: this is a contract
 about HyperLab's own wiring, not a QML type checker.
@@ -116,6 +118,13 @@ def components() -> dict[str, dict[str, object]]:
             if item[0] == "required"
         }
 
+        # A property the component binds on its own root object exists on
+        # its type even when a Qt base type declares it: MachineSphere takes
+        # its Machine state through Item.state (ADR 0064). Such a name is
+        # declared for this component only, never for a component that
+        # merely shares the word.
+        declared |= assignments(root_body(source, match.end()))
+
         found[name] = {
             "base": match.group(1),
             "declared": declared,
@@ -125,6 +134,22 @@ def components() -> dict[str, dict[str, object]]:
         }
 
     return found
+
+
+def root_body(source: str, start: int) -> str:
+    """The body of the object whose opening brace ends at `start`."""
+    depth = 1
+    index = start
+
+    while index < len(source) and depth:
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+        index += 1
+
+    require(depth == 0, "unbalanced root object")
+    return source[start:index - 1]
 
 
 def resolve(name: str, catalogue: dict[str, dict[str, object]], key: str):
