@@ -2,7 +2,10 @@
 // Two filled annulus segments with vertical cuts, a containment ring and a
 // contained core. The gaps are above and below the core. Below 33 units the
 // ring is omitted and the core enlarged to keep the mark legible.
-// Monochrome presentation only: the mark carries no state or trust claim.
+// Presentation only. The arcs and the ring carry no state or trust claim;
+// the core is whatever its caller passes: `core` fills it, and `coreHollow`
+// draws it as an outline in that colour instead (ADR 0064: the host bar's
+// core follows focus, hollow when focus cannot be placed).
 
 import QtQuick
 import QtQuick.Shapes
@@ -13,6 +16,7 @@ Item {
     property int size: 18
     property color stroke: "white"
     property color core: glyph.stroke
+    property bool coreHollow: false
     property real strokeScale: 1.0
 
     readonly property real radiusRatio: 0.46
@@ -39,6 +43,9 @@ Item {
         Math.max(1, glyph.outerRadius * glyph.ringStrokeRatio * glyph.strokeScale)
     readonly property real coreRadius: glyph.outerRadius
         * (glyph.small ? glyph.smallCoreRadiusRatio : glyph.coreRadiusRatio)
+    // A hollow core keeps the filled core's outer edge, so only the fill
+    // changes, never the size.
+    readonly property real hollowStroke: Math.max(1.5, glyph.coreRadius * 0.3)
 
     implicitWidth: glyph.size
     implicitHeight: glyph.size
@@ -130,17 +137,19 @@ Item {
             }
         }
 
-        // Contained core.
+        // Contained core: filled, or an outline when hollow.
         ShapePath {
-            strokeColor: "transparent"
-            strokeWidth: -1
-            fillColor: glyph.core
+            strokeColor: glyph.coreHollow ? glyph.core : "transparent"
+            strokeWidth: glyph.coreHollow ? glyph.hollowStroke : -1
+            fillColor: glyph.coreHollow ? "transparent" : glyph.core
 
             PathAngleArc {
                 centerX: glyph.size / 2
                 centerY: glyph.size / 2
-                radiusX: glyph.coreRadius
-                radiusY: glyph.coreRadius
+                radiusX: glyph.coreHollow
+                    ? glyph.coreRadius - glyph.hollowStroke / 2 : glyph.coreRadius
+                radiusY: glyph.coreHollow
+                    ? glyph.coreRadius - glyph.hollowStroke / 2 : glyph.coreRadius
                 startAngle: 0
                 sweepAngle: 360
             }
