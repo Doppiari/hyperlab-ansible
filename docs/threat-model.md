@@ -126,3 +126,6 @@ here so a reviewer sees them in one place:
   a verifier defect in a render gate.
 - [`nitro-sense-dkms-provenance.md`](../problems/nitro-sense-dkms-provenance.md) —
   an open investigation into a hardware-driver install record.
+- [`bar-core-hidden-under-fullscreen-guest.md`](../problems/bar-core-hidden-under-fullscreen-guest.md) —
+  a fullscreen guest covers the host bar's focus answer; the host ring of
+  ADR 0039 still frames it, in colour only and without a hollow Unknown.
