@@ -143,8 +143,25 @@ component choice of the ADR).
 The product symbol's arcs and ring carry no trust claim. Its core in the host
 bar does: it takes the colour of the Machine that owns the focused window,
 and grey only while the host itself has focus, drawn by the host from the
-host-owned provenance below, so no guest can fake it (decided by ADR 0064;
-not yet built). The spheres inside guest wallpapers are ambience: a guest
+host-owned provenance below, so no guest can fake it (ADR 0064). When focus
+cannot be proven to belong to the host or to one Machine (still resolving,
+unresolved, unavailable, a stale focus source, or a Machine inventory that
+names that Machine in another domain) the core is drawn hollow, an outline
+in the neutral text tone, and the focus item beside the bar's readouts says
+**Unknown**: Unknown is never the HOST grey and never a domain colour. The
+focus item draws the same answer as a `MachineSphere` and words
+(`dev-01 · dev`, `Host`, `Unknown`); its words stay in the text tone, so a
+colour never appears without its domain word. The window title, clipboard
+and guest-agent data never enter this mapping: it reads only the resolver's
+answer for the focused process and the inventory row of the same Machine.
+A new colour fades in over the expansion motion token (180 ms),
+instantly with reduced motion, and never blends through another hue. The
+idle desktop, the wallpapers and the lock surface keep the grey core. A
+fullscreen guest covers the bar; only the ADR 0039 ring remains, see
+[the open record](../problems/bar-core-hidden-under-fullscreen-guest.md).
+`tests/bar_core_focus_contract.py` runs the chain from Sway and Hyprland
+focus fixtures through the real adapter, shell state and resolver to the
+captured bar. The spheres inside guest wallpapers are ambience: a guest
 draws its own wallpaper, so they prove nothing. Authority stays with
 host-drawn signals, the bar core and the window borders. No theme or scheme
 changes a sphere colour, the host grey, the bar core or a trust colour. The

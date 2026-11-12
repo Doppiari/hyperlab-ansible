@@ -5980,3 +5980,42 @@ with tempfile.TemporaryDirectory(prefix="gpu-xml-mutations-") as temporary:
         print(f"{name}: red; restored green")
 PY
 ```
+## The bar core follows focus
+
+[ADR 0064](../docs/adr/0064-spheres-are-machines.md) makes the core of the
+product glyph in the host bar a trust indicator. `tests/bar_core_focus_contract.py`
+runs Sway and Hyprland focus fixtures through the real compositor adapter,
+the real `ShellState` in the runtime harness, the real provenance resolver
+and the real bar, then reads the captured pixels of the core and the focus
+sphere, the words and the accessible name. Every fixture window carries a
+title that names another Machine.
+
+Each break changes one file. Replay one at a time from a saved copy, run
+`python tests/bar_core_focus_contract.py`, restore the copy and run it again.
+`resolver-reads-title` edits `tools/surface_provenance.py`; every other break
+edits a file in `roles/host_desktop_common/files/quickshell/hyperlab/`.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| `title-mapping` | `ShellState.focusedMachineFor()` first maps any inventory name found in `state.focusPayload.title` to that Machine. | `the focus mapping reads state.focusPayload` | Exit 0, contract OK. |
+| `title-kept` | `applyFocusPayload()` keeps the adapter's `title` in `focusPayload`. | `sway: "the focused window title entered shell state"` | Exit 0, contract OK. |
+| `resolver-reads-title` | `resolve()` refuses any surface with a non-empty `title`. | `sway/host: the resolver answer follows the title 'dev-01'` | Exit 0, contract OK. |
+| `unknown-host-grey` | `HyperLabBar.qml` draws an unplaced focus as a filled core in `provenanceColor("host")` (`coreHollow: false`). | `sway: "a surface still being resolved kept the previous answer"` | Exit 0, contract OK. |
+| `unknown-hollow-grey` | The hollow Unknown outline takes `provenanceColor("host")` instead of `textPrimary`. | `sway/unmapped: Unknown is drawn in the host colour: (138, 147, 157)` | Exit 0, contract OK. |
+| `unknown-keeps-domain` | The hollow Unknown outline keeps the last proven `coreFill`. | `sway/unmapped: Unknown is drawn in the dirty colour: (253, 156, 68)` | Exit 0, contract OK. |
+| `words-without-domain` | `focusedMachine.words` becomes the Machine name alone. | `sway: "an unconfirmed Machine state was drawn, or its domain was lost"` | Exit 0, contract OK. |
+| `coloured-words` | `ProvenanceBadge.qml` draws a Machine's words in its domain colour. | `sway/dev: the focus words carry a colour; the sphere and the core do` | Exit 0, contract OK. |
+| `fade-ignores-reduced-motion` | Delete the `bar.tokens.reducedMotion` branch of `followCore()`. | none: exit 0 (see below) | Exit 0, contract OK. |
+| `fade-fixed-duration` | Delete that branch and set the fade's `duration` to `180` instead of `motionExpand`. | `sway: "reduced motion still faded the core"` | Exit 0, contract OK. |
+| `no-fade` | `followCore()` sets `coreLevel` to 1 instead of starting the fade. | `sway: "a new core colour did not fade in"` | Exit 0, contract OK. |
+| `contradiction-ignored` | The inventory row that names the Machine in another domain is ignored (`if (false)`). | `sway: "the inventory named another domain and the bar still chose one"` | Exit 0, contract OK. |
+| `unresolved-is-host` | `focusedMachineFor()` answers host for an `unresolved` provenance. | `sway/unmapped: the bar placed focus on host` | Exit 0, contract OK. |
+
+Twelve breaks exited 1 with the diagnostic listed; each restored copy was
+byte-identical to the original, and the contract exited 0 after the
+restorations. `fade-ignores-reduced-motion` stays green and is equivalent,
+not missed: `motionExpand` is already 0 under reduced motion, and a
+zero-duration animation lands at once, so the explicit branch is a second
+guard. `fade-fixed-duration` removes both guards and is refused.
+`unknown-host-grey` is refused by the first focus event, before the pixel
+checks, because the core is not hollow while the new surface resolves.

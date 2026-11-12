@@ -742,11 +742,24 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
 - [x] spheres are Machines: one `MachineSphere.qml` draws every state of
       the table for every domain from the palette alone, with a neutral
       external outline, reduced motion and an accessible name; adopted by
-      the Machines showcase ([ADR 0064](adr/0064-spheres-are-machines.md), accepted;
+      the Machines showcase and the bar's focus item
+      ([ADR 0064](adr/0064-spheres-are-machines.md), accepted;
       `tests/machine_sphere_contract.py`, software-verified)
 - [ ] sphere contact sheet accepted by the operator: each domain told apart
       at 16 px, each state told apart without colour, spheres like the
       reference renders
+- [x] the host bar's core follows focus: the domain colour of the Machine
+      that owns the focused window, grey for the host, hollow with the word
+      Unknown when focus cannot be placed; the focus item draws the same
+      answer as a sphere with the Machine's name and domain; mapping from
+      host provenance only, never a title (ADR 0064;
+      `tests/bar_core_focus_contract.py`, software-verified under Sway and
+      Hyprland fixtures)
+- [ ] the bar core accepted on Nitro under both compositors: focus host →
+      Machine A → Machine B → host with two domains, and an unplaceable
+      window reads Unknown
+- [ ] the bar core while a guest is fullscreen
+      ([open record](../problems/bar-core-hidden-under-fullscreen-guest.md))
 
 - [x] terminal domain dots in `vm list`, `machine list`, `net list` and
       `trust`: semantic palette, RGB/indexed colour, confirmed product

@@ -480,6 +480,9 @@ proof.
 - [`external-machines-hidden-and-coloured.md`](external-machines-hidden-and-coloured.md):
   native Machines hid external domains and undercounted running state, while
   recovery assigned DEV without a reviewed spec.
+- [`bar-core-hidden-under-fullscreen-guest.md`](bar-core-hidden-under-fullscreen-guest.md):
+  a fullscreen guest covers the bar core and focus item; only the ADR 0039
+  ring remains, in colour alone and without a hollow Unknown. Open.
 
 - [`machine-projection-guard-missed-rendered-tiles.md`](machine-projection-guard-missed-rendered-tiles.md):
   the Machine presentation guard checked an unused component instead of the

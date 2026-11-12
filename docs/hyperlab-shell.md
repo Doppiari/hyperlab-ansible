@@ -168,7 +168,7 @@ no click is ever intercepted by something invisible.
 At full width the rail has three bounded regions:
 
 ```text
-[symbol Sfere] [workspaces]   [focused surface] | 09:41 Thu 4 Sep |   [provenance] [GPU] [net audio battery] [settings]
+[symbol Sfere] [workspaces]   [focused surface] | 09:41 Thu 4 Sep |   [focus] [GPU] [net audio battery] [settings]
 ```
 
 The clock holds the display centre while both side regions still fit beside
@@ -189,14 +189,20 @@ survive.
 - **Context** is the compositor's own name for the focused host surface. It
   is host metadata about a host process. It is not a provenance claim and it
   is never the GPU trust tooltip wearing a different label.
-- **Provenance** and **GPU** are separate fields answering separate
-  questions. The provenance badge reports the focused surface's identity as
-  resolved by the host (see [Focused-surface provenance](#focused-surface-provenance)):
-  HOST for a host-native surface, the VM's reviewed identity for a verified
-  managed transport, a warning-toned "Unresolved" for a surface that looks
-  managed but has no valid host registration, and quiet text while the
-  resolution is pending or unavailable. Context and provenance never merge:
-  Looking Glass stays the context while DEV is the provenance. The GPU entry shows a
+- **Focus** and **GPU** are separate fields answering separate questions.
+  The focus item and the core of the product symbol answer "where am I
+  typing?" from the focused surface's identity as resolved by the host (see
+  [Focused-surface provenance](#focused-surface-provenance) and
+  [Bar core](#bar-core)): the grey core and the host sphere with **Host**
+  for a host-native surface, the Machine's domain colour and its sphere with
+  its name and domain (`dev-01 · dev`) for a verified viewer of one managed
+  Machine, and a hollow core with the neutral outline and **Unknown** for
+  anything else, a surface that looks managed but has no valid host
+  registration included. The item is always shown; the reason for Unknown
+  is in its accessible name, and the resolver's own answer is in
+  Diagnostics, which the item opens. Context and focus never
+  merge: Looking Glass stays the context while `dev-01 · dev` is the focus.
+  The GPU entry shows a
   current owner, a retained boot claim, or an unreadable source — and stays
   silent when ownership is known and nothing holds it, because a free GPU at
   idle is not news.
@@ -1022,8 +1028,8 @@ Every Machine is a sphere and the host is the grey symbol at the centre
 ([ADR 0064](adr/0064-spheres-are-machines.md), accepted operator decision).
 `MachineSphere.qml` is the one drawing of a Machine. The Machines showcase
 uses it on product tiles, dense rows, neutral external tiles, the selected
-Machine header and the empty host view; other surfaces adopt it separately.
-Its inputs are `domain`, `state`,
+Machine header and the empty host view; the bar's focus item uses it too.
+Other surfaces adopt it separately. Its inputs are `domain`, `state`,
 `disposable`, `gpuOwner`, `size`, `machineName` and `isHost`, with the
 shell's `theme` and `tokens`. The ADR's operator decision fixes the table
 below; how the component reads it (the outline tone, the libvirt words, the
@@ -1053,9 +1059,43 @@ with its domain still in the accessible name; a surface writes the state
 word beside it, because the outline alone reads as external. The
 component reads nothing from the host and has no pointer handler: it changes
 only when its caller reports a state the bridge, GPU ownership or inventory
-confirmed. The host bar's
-core, which follows the focused Machine, is decided by the same ADR and built
-separately; the arcs and ring of the product symbol still carry no claim.
+confirmed. The arcs and ring of the product symbol still carry no claim; its
+core in the host bar does (below).
+
+### Bar core
+
+In the host bar, and only there, the core of the product symbol follows
+focus (ADR 0064). `ShellState.focusedMachine` derives one of three answers
+from `focusedProvenance` and nothing else, plus the Machine inventory for
+the state the sphere draws:
+
+| Answer | When | Core | Focus item |
+| --- | --- | --- | --- |
+| host | the resolver named the surface host-native | filled, HOST grey | host sphere, `Host` |
+| machine | the resolver named one reviewed guest identity from the host-owned VM spec of a registered viewer | filled, the domain colour | the Machine's sphere, `dev-01 · dev` |
+| unknown | loading, resolving, unresolved, unavailable, a stale focus source, or an inventory that names the Machine in another domain | hollow outline in the text tone | neutral outline, `Unknown` |
+
+The mapping is the one the window borders use: the resolver
+(`tools/surface_provenance.py`) answers for the focused PID, app id and
+window id, verified against the per-user viewer registry and the reviewed
+spec; the title, clipboard and guest-agent data never enter. While a new
+surface is resolving the answer is already unknown, so a Machine never
+stays on the window that replaced it. The inventory only confirms the
+Machine's state for its sphere: if it does not list the Machine, the
+domain stays and the sphere draws the neutral outline; if it lists it in
+another domain, neither source is believed. A new colour fades in from
+transparent over `motionExpand`, never through another hue, and only when
+the proven answer changes; with reduced motion it is instant.
+`IsolationGlyph.qml` accepts a `core` colour and `coreHollow`;
+`IdentityMark.qml` forwards both, with the primary text tone and a filled
+core as defaults for every other surface. The idle desktop, wallpapers and
+lock surface keep the grey core. A fullscreen guest covers the bar
+([open record](../problems/bar-core-hidden-under-fullscreen-guest.md)).
+`tests/bar_core_focus_contract.py` checks five fixture states (host
+terminal, dev viewer, dirty viewer, unmapped window, stale source) under
+Sway and Hyprland through the real adapter, shell state, resolver and bar,
+on captured pixels. Software-verified; Nitro acceptance under both
+compositors stays open.
 
 ## Security boundaries
 

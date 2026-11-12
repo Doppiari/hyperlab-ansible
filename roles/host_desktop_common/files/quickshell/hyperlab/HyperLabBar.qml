@@ -6,7 +6,11 @@
 //
 //   left    where am I          identity, compositor workspaces
 //   centre  when, and on what   the clock, the focused host surface
-//   right   what is the host doing   provenance, GPU, system readouts
+//   right   what is the host doing   focus, GPU, system readouts
+//
+// One more question is answered on both sides at once: where am I typing?
+// The core of the product glyph and the focus item follow the Machine that
+// owns the focused window (ADR 0064), from ShellState.focusedMachine.
 //
 // The side regions are bounded, so the clock keeps the display centre while
 // there is room for it and the rail reduces in a defined order rather than
@@ -44,6 +48,63 @@ PanelWindow {
     readonly property bool wideRail: bar.width >= 1280
     readonly property bool mediumRail: bar.width >= 1000
     readonly property bool narrowRail: bar.width < 820
+
+    // The bar core (ADR 0064): the palette colour of the host or of the
+    // Machine that has focus; hollow, in the neutral outline tone, while
+    // focus cannot be placed. A new colour fades in from the rail, never
+    // through another hue, and only when the proven answer changes, so a
+    // re-validation of the same window does not blink. Reduced motion makes
+    // it instant.
+    readonly property var focusedMachine: bar.shellState.focusedMachine
+
+    readonly property string coreIdentity:
+        bar.focusedMachine.kind === "host"
+        ? "host"
+        : (bar.focusedMachine.kind === "machine"
+            ? String(bar.focusedMachine.identity)
+            : "")
+
+    readonly property bool coreKnown:
+        bar.coreIdentity.length > 0
+        && bar.theme.provenanceAvailable
+        && bar.theme.knownProvenance(bar.coreIdentity)
+
+    readonly property color coreTone:
+        bar.coreKnown
+        ? bar.theme.provenanceColor(bar.coreIdentity)
+        : bar.theme.textPrimary
+
+    property color coreFill: bar.theme.textPrimary
+    property real coreLevel: 1
+
+    function followCore() {
+        if (!bar.coreKnown || Qt.colorEqual(bar.coreTone, bar.coreFill))
+            return;
+
+        bar.coreFill = bar.coreTone;
+        coreFade.stop();
+
+        if (bar.tokens.reducedMotion) {
+            bar.coreLevel = 1;
+            return;
+        }
+
+        bar.coreLevel = 0;
+        coreFade.start();
+    }
+
+    onCoreToneChanged: bar.followCore()
+    Component.onCompleted: bar.followCore()
+
+    NumberAnimation {
+        id: coreFade
+
+        target: bar
+        property: "coreLevel"
+        to: 1
+        duration: bar.tokens.motionExpand
+        easing.type: Easing.OutCubic
+    }
 
     anchors {
         top: true
@@ -85,6 +146,11 @@ PanelWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 tokens: bar.tokens
                 theme: bar.theme
+                core:
+                    bar.coreKnown
+                    ? bar.theme.alpha(bar.coreFill, bar.coreLevel)
+                    : bar.theme.textPrimary
+                coreHollow: !bar.coreKnown
                 productName: bar.shellState.productName
                 productByline: bar.shellState.productByline
                 wordmarkVisible: bar.mediumRail
@@ -171,18 +237,16 @@ PanelWindow {
                 onActivated: bar.shellSurfaces.openWorkspace("machines")
             }
 
+            // Where am I typing, in shape and words. Always shown: it is the
+            // answer the core gives in colour.
             ProvenanceBadge {
                 objectName: "provenance-badge"
                 anchors.verticalCenter: parent.verticalCenter
-                visible: bar.wideRail || badgeShown
                 tokens: bar.tokens
                 theme: bar.theme
                 icons: bar.icons
                 provenance: bar.shellState.focusedProvenance
-
-                readonly property bool badgeShown:
-                    bar.shellState.focusedProvenance.available === true
-                    || bar.shellState.focusedProvenance.state === "unresolved"
+                machine: bar.focusedMachine
 
                 onDetailsRequested: {
                     bar.shellSurfaces.openWorkspacePage(
