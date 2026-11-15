@@ -136,18 +136,18 @@ check is reproducible rather than a one-off.
 `tests/cli_domain_spheres_contract.py` and the focused render component suite
 were run against isolated copies of the current CLI sources. Each changed file
 was backed up before the break, restored
-byte-for-byte afterwards, and checked green before the next mutation. All 28
+byte-for-byte afterwards, and checked green before the next mutation. All 33
 final breaks exited 1 and every restored check exited 0. The complete component
 suite also passes.
 
 | Mutation | File | Break | Result | Observed check |
 | --- | --- | --- | --- | --- |
-| `pipe-colour` | `cli.py` | Ignore stdout TTY detection | red | Frozen pipe bytes change before any terminal check |
-| `ignore-no-color` | `cli.py` | Ignore NO_COLOR presence | red | Automatic suppression with NO_COLOR present and empty |
-| `ignore-dumb` | `cli.py` | Ignore TERM=dumb | red | Automatic suppression with TERM=dumb |
-| `ignore-never` | `cli.py` | Ignore never mode | red | Never/alias plain terminal output |
-| `alias-always` | `cli.py` | Make --no-color select always | red | Legacy --no-color plain terminal output |
-| `drop-color-normalization` | `cli.py` | Stop normalizing --color=VALUE | red | Trailing --color=auto is rejected |
+| `pipe-colour` | `cli.py` | Ignore stdout TTY detection | red | The plain-output inventory sentinel fires before the frozen pipe-byte check |
+| `ignore-no-color` | `cli.py` | Ignore NO_COLOR presence | red | The inventory sentinel forbids reads with NO_COLOR present and empty |
+| `ignore-dumb` | `cli.py` | Ignore TERM=dumb | red | The inventory sentinel forbids reads with TERM=dumb |
+| `ignore-never` | `cli.py` | Ignore never mode | red | The inventory sentinel forbids reads in never mode |
+| `alias-always` | `cli.py` | Make --no-color select always | red | The inventory sentinel forbids reads with the legacy alias |
+| `drop-color-normalization` | `cli.py` | Stop normalizing --color=VALUE | red | Trailing --color=always is rejected in the plain-path fixture |
 | `suppress-always` | `cli.py` | Remove the explicit always environment override | red | Explicit always overrides terminal environment suppression |
 | `literal-colour` | `render.py` | Replace domain RGB lookup with a hex literal | red | AST refuses a typed CLI colour |
 | `fixed-rgb` | `render.py` | Replace domain RGB lookup with a fixed RGB triple | red | Exact RGB domain prefix differs from the palette |
@@ -163,13 +163,26 @@ suite also passes.
 | `aliased-palette` | `render.py` | Remove YAML alias refusal | red | Aliased complete domain table is refused |
 | `incomplete-palette` | `render.py` | Remove exact domain-key validation | red after added fixtures | Additional unreviewed domain key is refused |
 | `raw-vm-identity` | `commands/vm.py` | Use the raw trust_profile instead of product provenance | red | External GPU-profile fallback remains neutral |
+| `machine-intent-identity` | `commands/machine.py` | Use record network_profile instead of inventory provenance | red | The drifting sample-5 must have a neutral outline |
+| `machine-membership-refusal` | `commands/machine.py` | Catch only ContractError instead of HyperlabError during classification | red | An unreadable membership reread must still print neutral Machine rows |
+| `plain-vm-inventory` | `commands/vm.py` | Replace the args.color inventory guard with True | red | The failing call sentinel detects a product-inventory read on a pipe |
+| `plain-machine-inventory` | `commands/machine.py` | Replace the args.color inventory guard with True | red | The failing call sentinel detects a product-inventory read on a pipe |
+| `json-colour-guard` | `cli.py` | Remove not args.json from the colour policy | red | test_json_dispatch_disables_colour_even_with_a_terminal_and_always observes True instead of False |
 | `missing-vm-dot` | `commands/vm.py` | Remove the VM row prefix | red | VM terminal prefix |
-| `missing-machine-dot` | `commands/machine.py` | Remove the Machine row prefix | red | Machine intent terminal prefix |
+| `missing-machine-dot` | `commands/machine.py` | Remove the Machine row prefix | red | Machine confirmed-provenance terminal prefix |
 | `missing-net-dot` | `commands/net.py` | Remove the network row prefix | red | Network terminal prefix |
 | `missing-trust-dot` | `commands/trust.py` | Remove the ladder row prefix | red | Trust ladder terminal prefix |
 | `invalid-mode` | `cli.py` | Remove the colour option choices | red | An unknown colour mode must be rejected |
 | `tie-high-index` | `render.py` | Walk fixed colour indices backwards when choosing the minimum | red | Equidistant greys select the lowest fixed index |
 | `standalone-import` | `render.py` | Add a top-level package-relative import | red | `test_status_renderers_still_support_loading_by_filename` raises the original import error |
+
+The read-boundary fixtures forbid the additional product-inventory call on
+pipes, suppressed terminals and JSON, and forbid palette reads on JSON. They
+raise `AssertionError` rather than a handled availability error, so unchanged
+output bytes cannot hide an unwanted read. The JSON dispatch component test
+separately detects a lost colour-policy guard even when each JSON renderer
+returns before painting. Machine fixtures also cover uncreated and unreadable
+runtime, while an unreadable initial registry still refuses its record listing.
 
 ### Two palette mutations first stayed green
 

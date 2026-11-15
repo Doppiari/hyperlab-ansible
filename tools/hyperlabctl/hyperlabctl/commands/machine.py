@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import document as doc
-from ..errors import ContractError, Unavailable
+from ..errors import ContractError, HyperlabError, Unavailable
 from ..inventory import domain_names
 from ..machine_factory import (
     image_os_label,
@@ -719,9 +719,17 @@ class MachineCommand(Command):
             return 0
 
         spheres = DomainSpheres(ctx.config.repo_root, args.color, ctx.environ)
+        identities = {}
+        if args.color:
+            try:
+                identities = {row["name"]: row["provenance"]
+                              for row in build_product_inventory(ctx)["machines"]}
+            except HyperlabError:
+                # Intent alone cannot confirm an observed trust identity.
+                identities = {}
         for record in records:
             print(
-                spheres.prefix(record["network_profile"]) + "%-28s %-11s %-8s %s"
+                spheres.prefix(identities.get(record["id"])) + "%-28s %-11s %-8s %s"
                 % (
                     record["id"],
                     record["lifecycle"],

@@ -92,8 +92,21 @@ def fixture() -> tuple[list[dict], dict]:
 
 def invoke(root: Path, argv: tuple[str, ...], *, terminal: bool = False,
            environ: dict[str, str] | None = None,
-           registry_error: bool = False) -> tuple[int, str, str]:
+           registry_error: bool = False,
+           runtime_state: str = "observed") -> tuple[int, str, str]:
     records, built = fixture()
+    if runtime_state == "unavailable":
+        built["domains"] = None
+    elif runtime_state == "not-created":
+        built["domains"] = []
+    else:
+        require(runtime_state == "observed", "unknown runtime fixture")
+    registry_failure = None
+    if registry_error:
+        registry_failure = Unavailable("unreadable registry")
+        if argv[:2] == ("machine", "list"):
+            # Listing intent succeeds; the extra provenance read fails.
+            registry_failure = [copy.deepcopy(records), registry_failure]
     variables = {
         "network_domains": [{"name": name} for name in (*DOMAINS, "unclassified")],
         "gpu_trust_levels": built["trust"]["ladder"],
@@ -106,7 +119,7 @@ def invoke(root: Path, argv: tuple[str, ...], *, terminal: bool = False,
     output, errors = Output(terminal), io.StringIO()
     with (patch("hyperlabctl.document.build", return_value=copy.deepcopy(built)),
           patch.object(machine, "list_machines", return_value=copy.deepcopy(records),
-                       side_effect=Unavailable("unreadable registry") if registry_error else None),
+                       side_effect=registry_failure),
           redirect_stdout(output), redirect_stderr(errors)):
         try:
             code = cli.main(list(argv), ctx=ctx)
@@ -166,7 +179,7 @@ def literal_contract() -> None:
 def output_contract(root: Path, palette: dict) -> None:
     identities = {
         ("vm", "list"): [*DOMAINS, None, None],
-        ("machine", "list"): [*DOMAINS, "dev"],
+        ("machine", "list"): [*DOMAINS, None],
         ("net", "list"): [*DOMAINS, None],
         ("trust",): ["clean", "dev", "dirty", "lab"],
     }
@@ -230,12 +243,46 @@ def output_contract(root: Path, palette: dict) -> None:
         require(code == 0 and tty_json == plain_json and "\x1b" not in tty_json and not errors,
                 f"JSON decoration: {command}")
 
-    code, output, errors = invoke(root, ("vm", "list"), terminal=True, registry_error=True)
-    require(code == 0 and not errors and all(line.startswith("○ ") for line in output.splitlines()),
-            "unknown membership gained an identity")
+    for command in (("vm", "list"), ("machine", "list")):
+        code, output, errors = invoke(root, command, terminal=True, registry_error=True)
+        require(code == 0 and not errors and output
+                and all(line.startswith("○ ") for line in output.splitlines()),
+                f"unknown membership gained an identity: {command}")
     code, output, errors = invoke(root, ("vm", "list"), registry_error=True)
     require(code == 0 and not errors and hashlib.sha256(output.encode()).hexdigest()
             == PIPE_DIGESTS[("vm", "list")], "pipe depends on registry membership")
+    for state in ("unavailable", "not-created"):
+        code, output, errors = invoke(root, ("machine", "list"), terminal=True,
+                                      runtime_state=state)
+        require(code == 0 and not errors and len(output.splitlines()) == len(fixture()[0])
+                and all(line.startswith("○ ") for line in output.splitlines()),
+                f"unconfirmed Machine runtime gained an identity: {state}")
+
+
+def read_boundary_contract(root: Path) -> None:
+    for command in (("vm", "list"), ("machine", "list")):
+        for terminal, options, environment in (
+            (False, (), {}),
+            (False, ("--color=always",), {}),
+            (True, ("--color=never",), {}),
+            (True, ("--no-color",), {}),
+            (True, (), {"NO_COLOR": ""}),
+            (True, (), {"TERM": "dumb"}),
+            (True, ("--json", "--color=always"), {}),
+        ):
+            with patch.object(machine, "build_product_inventory",
+                              side_effect=AssertionError("plain output read product inventory")):
+                code, output, errors = invoke(root, (*command, *options), terminal=terminal,
+                                              environ=environment)
+            require(code == 0 and output and not errors,
+                    f"plain output failed: {command} {options}")
+    for command in COMMANDS:
+        with patch("hyperlabctl.render._domain_palette",
+                   side_effect=AssertionError("JSON read the domain palette")):
+            code, output, errors = invoke(root, (*command, "--json", "--color=always"),
+                                          terminal=True)
+        require(code == 0 and not errors, f"JSON read boundary failed: {command}")
+        json.loads(output)
 
 
 def unsafe_palette_contract(root: Path, original: str) -> None:
@@ -302,6 +349,7 @@ def main() -> int:
         spheres = DomainSpheres(root, True, {"COLORTERM": "truecolor"})
         for domain in ("host", "Host", "HOST", "Dev", "external", "unclassified", None):
             require(spheres.prefix(domain) == "○ ", f"reserved/noncanonical domain coloured: {domain}")
+        read_boundary_contract(root)
         output_contract(root, palette)
         shifted = copy.deepcopy(palette)
         for index, domain in enumerate(DOMAINS):

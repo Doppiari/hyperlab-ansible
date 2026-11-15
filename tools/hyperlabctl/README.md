@@ -43,11 +43,12 @@ sections can be complete.
 `vm list`, `machine list`, `net list` and `trust` prefix terminal rows with a
 domain-coloured `●`, or a plain `○` when the identity is external or
 unclassified. The existing words, columns and order stay in place. In `vm list`
-the dot uses the same confirmed product provenance as `machine inventory`;
-an external domain, unreadable registry or drifting runtime stays neutral,
-even with a GPU gate or a trust-network attachment. Its existing network column
-still reports attachment. `machine list` shows persistent intent, so its dot
-uses the record's declared network profile rather than claiming a live identity.
+and `machine list` the dot uses the same confirmed product provenance as
+`machine inventory`. An external domain, drifting runtime or failed identity
+read stays neutral, even with a GPU gate or a trust-network attachment. A
+Machine without a created or readable runtime also stays neutral. `vm list`'s
+network column still reports attachment; `machine list`'s words still report
+the recorded intent. Reading those records must succeed to list them at all.
 
 `--color=auto` is the default: stdout must be a terminal, `NO_COLOR` must be
 unset (even an empty value suppresses colour), and `TERM` must differ from
@@ -55,6 +56,9 @@ unset (even an empty value suppresses colour), and `TERM` must differ from
 `--color=never` and the legacy `--no-color` suppress both dots and colour.
 The last colour option wins, before or after the command. Pipes and `--json`
 always retain their previous bytes, including with `--color=always`.
+This policy also applies to every command's status colours, including `status`,
+`doctor`, `logs` and `image`; `NO_COLOR` and `TERM=dumb` suppress those tones in
+automatic mode too.
 
 Domain colours come only from the selected checkout's
 `tools/palette/palette.yml`, independently of the appearance theme. A missing,

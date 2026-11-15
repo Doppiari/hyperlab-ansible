@@ -17,6 +17,9 @@ proof.
 - [`cli-render-standalone-import.md`](cli-render-standalone-import.md):
   a terminal palette dependency broke direct loading of the status renderers;
   the package import now stays inside the palette reader.
+- [`cli-machine-intent-colour.md`](cli-machine-intent-colour.md):
+  terminal Machine dots coloured requested intent as confirmed provenance;
+  both Machine and VM lists now use the shared inventory classification.
 
 - [`release-campaign-missed-v1-scope.md`](release-campaign-missed-v1-scope.md):
   the historical service campaign could not describe the selected v1; a

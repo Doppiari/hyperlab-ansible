@@ -681,7 +681,8 @@ remain.
 - [ADR 0066](0066-terminal-domain-spheres.md)
   - Decision: proposed.
   - Built: built — shared palette reader and terminal dots for four CLI views,
-    with byte-preserving plain output and existing product provenance.
+    with byte-preserving plain output and confirmed product provenance in both
+    VM and Machine lists.
   - Activation: default — decorated text only on a terminal under colour policy.
   - Source: [`render.py`](../../tools/hyperlabctl/hyperlabctl/render.py),
     [`cli.py`](../../tools/hyperlabctl/hyperlabctl/cli.py),

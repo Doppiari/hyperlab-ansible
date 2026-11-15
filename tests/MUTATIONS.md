@@ -5757,14 +5757,27 @@ palette is also shifted independently of appearance colours.
 
 | Mutation | Break | Observed red diagnostic | After restoration |
 | --- | --- | --- | --- |
-| `pipe-colour` | In `tools/hyperlabctl/hyperlabctl/cli.py`, replace the stdout TTY condition with true. | `pipe bytes changed: ('vm', 'list')` | Exit 0, contract OK. |
+| `pipe-colour` | In `tools/hyperlabctl/hyperlabctl/cli.py`, replace the stdout TTY condition with true. | `plain output read product inventory` (the read sentinel now runs before frozen-byte checks) | Exit 0, contract OK. |
+| `machine-intent-identity` | In `commands/machine.py`, replace `identities.get(record["id"])` with `record["network_profile"]`. | `domain prefix: ('machine', 'list') row 5` | Exit 0, contract OK. |
+| `machine-membership-refusal` | In `commands/machine.py`, catch only `ContractError` during classification. | `unknown membership gained an identity: ('machine', 'list')` | Exit 0, contract OK. |
+| `plain-vm-inventory` | In `commands/vm.py`, replace `if args.color:` with `if True:`. | `plain output read product inventory` | Exit 0, contract OK. |
+| `plain-machine-inventory` | In `commands/machine.py`, replace `if args.color:` with `if True:`. | `plain output read product inventory` | Exit 0, contract OK. |
+| `json-colour-guard` | In `cli.py`, remove `not args.json` from the colour policy; run the CLI component suite. | `FAIL json_dispatch_colour -- expected False, got True` | Exit 0, component suite OK. |
 
 The [component mutation catalogue](../tools/hyperlabctl/MUTATIONS.md#terminal-domain-spheres)
-records all 28 breaks, including palette-only colour, RGB/indexed conversion,
+records all 33 breaks, including palette-only colour, RGB/indexed conversion,
 option/environment policy, neutral provenance, the four call sites and unsafe
 palette inputs. Every final break exited 1 and every restored check exited 0.
 The initial green duplicate-key and exact-key replays, their independent-refusal
 reason and the added isolating fixtures are recorded there as well.
+
+The plain-output read sentinel raises an assertion if VM or Machine list builds
+the additional product inventory on a pipe, suppressed terminal or JSON path.
+A separate sentinel forbids domain-palette reads on JSON. This catches extra
+reads even if their output would have kept every frozen byte unchanged. The
+Machine intent mutation now also proves that runtime drift cannot borrow the
+record's requested domain colour. See the
+[problem note](../problems/cli-machine-intent-colour.md).
 
 The additional `standalone-import` mutation adds a top-level package-relative
 import to `render.py`. The focused component suite fails on

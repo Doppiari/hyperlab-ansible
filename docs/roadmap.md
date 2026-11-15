@@ -739,7 +739,8 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
       reference renders
 
 - [x] terminal domain dots in `vm list`, `machine list`, `net list` and
-      `trust`: semantic palette, RGB/indexed colour, neutral unresolved rows,
+      `trust`: semantic palette, RGB/indexed colour, confirmed product
+      provenance for VM and Machine rows, neutral unresolved rows,
       environment/flag controls and byte-identical pipes and JSON
       ([ADR 0066](adr/0066-terminal-domain-spheres.md), proposed;
       `tests/cli_domain_spheres_contract.py`, software-verified)
