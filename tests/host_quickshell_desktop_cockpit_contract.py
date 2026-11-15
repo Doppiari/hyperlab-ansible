@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from host_quickshell_qml_wiring_contract import blocks, strip_noise
+from host_quickshell_qml_wiring_contract import strip_noise
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -160,10 +160,12 @@ def main() -> int:
     )
 
     for source in (projection, strip_noise((QML / "MachineListRow.qml").read_text(encoding="utf-8"))):
-        for forbidden in ("Image", "AnimatedImage", "ScreencopyView"):
+        # Include image subtypes and qualified QML names, not only Image.
+        object_types = re.findall(r"(?<![\w.])(?:\w+\.)*(\w+)\s*\{", source)
+        for object_type in object_types:
             require(
-                not list(blocks(source, forbidden, skip_root=False)),
-                f"machine module gained backend behavior: {forbidden}",
+                not object_type.endswith("Image") and object_type != "ScreencopyView",
+                f"machine module gained backend behavior: {object_type}",
             )
         for forbidden in ("shutdown", "destroy"):
             require(

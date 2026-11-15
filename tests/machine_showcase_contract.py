@@ -258,6 +258,24 @@ CHECKS = r'''
             check(tile("service-desk").activeFocus, "Down did not cross a domain group");
             keyEvents.keyClick(Qt.Key_Up);
             check(tile("dev-desk").activeFocus, "Up did not return to the nearest tile");
+            // Give adjacent groups a second column for this key sequence.
+            // A single SERVICES tile would reset the current column to zero.
+            update(@@ROWS@@.concat([Object.assign({}, @@ROWS@@[3], {name: "service-build"})]));
+            tile("dev-build").forceActiveFocus();
+            keyEvents.keyClick(Qt.Key_Down);
+            check(tile("service-build").activeFocus,
+                  "Down must keep the nearest second column across domain groups");
+            keyEvents.keyClick(Qt.Key_Down);
+            check(tile("lab-desk").activeFocus,
+                  "Down must keep the nearest second column across domain groups");
+            keyEvents.keyClick(Qt.Key_Up);
+            check(tile("service-build").activeFocus,
+                  "Up must keep the nearest second column across domain groups");
+            keyEvents.keyClick(Qt.Key_Up);
+            check(tile("dev-build").activeFocus,
+                  "Up must keep the nearest second column across domain groups");
+            update(@@ROWS@@);
+            tile("dev-desk").forceActiveFocus();
             const viewport = viewportFor(tile("dev-desk"));
             check(viewport !== null, "showcase has no scroll viewport");
             if (viewport) {

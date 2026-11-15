@@ -285,8 +285,11 @@ Enter or Space opens the pane. Filtering still applies to both populations.
 Every tile has an accessible name; external tiles are read-only groups and
 never enter the action tab order. **Selection never starts anything.**
 The presentation contract guards the rendered `MachineTile` and dense row
-against guest images, screen copies and lifecycle calls. The unused former
-`MachineModule` is absent from the source and deployment inventory.
+against guest images (including derived and qualified image types), screen
+copies and lifecycle calls. The unused former `MachineModule` is absent from
+the source and deployment inventory. Existing installations may retain an
+unreferenced `MachineModule.qml`: the source-copy task does not prune
+destination files.
 
 A readable empty registry shows the host's grey sphere and one **Create a
 Machine** action, which opens the same Create view as **New Machine** in a

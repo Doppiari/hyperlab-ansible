@@ -5671,7 +5671,8 @@ remain open.
 
 The cockpit contract parses the host-projection references in `MachineTile`
 and the forbidden QML object blocks and lifecycle call tokens in the tile and
-dense row. The unused former component is removed from the deployment inventory.
+dense row. Image types include every name ending in Image and qualified QML
+names. The unused former component is removed from the deployment inventory.
 Run `python tests/host_quickshell_desktop_cockpit_contract.py` for each break
 below, except the inventory mutation, which runs
 `python tests/host_quickshell_shared_shell_contract.py`. Save each source before
@@ -5682,14 +5683,26 @@ mutation and restore it before the next check.
 | `tile-screencopy` | `MachineTile.qml` | Add `ScreencopyView {}` inside the tile. | `machine module gained backend behavior: ScreencopyView` | Exit 0, contract OK. |
 | `tile-image` | `MachineTile.qml` | Add `Image {}` inside the tile. | `machine module gained backend behavior: Image` | Exit 0, contract OK. |
 | `tile-animated-image` | `MachineTile.qml` | Add `AnimatedImage {}` inside the tile. | `machine module gained backend behavior: AnimatedImage` | Exit 0, contract OK. |
+| `tile-border-image` | `MachineTile.qml` | Add `BorderImage {}` inside the tile. | `machine module gained backend behavior: BorderImage` | Exit 0, contract OK. |
+| `dense-icon-image` | `MachineListRow.qml` | Add `IconImage {}` inside the dense row. | `machine module gained backend behavior: IconImage` | Exit 0, contract OK. |
+| `tile-qualified-image` | `MachineTile.qml` | Add `QtQuick.Image {}` inside the tile. | `machine module gained backend behavior: Image` | Exit 0, contract OK. |
+| `dense-qualified-icon-image` | `MachineListRow.qml` | Add `Quickshell.IconImage {}` inside the dense row. | `machine module gained backend behavior: IconImage` | Exit 0, contract OK. |
+| `tile-custom-image` | `MachineTile.qml` | Add `GuestPreviewImage {}` inside the tile. | `machine module gained backend behavior: GuestPreviewImage` | Exit 0, contract OK. |
 | `tile-shutdown` | `MachineTile.qml` | Add a `shutdown ()` call. | `machine module gained backend behavior: shutdown(` | Exit 0, contract OK. |
 | `tile-destroy` | `MachineTile.qml` | Add a `tile.destroy ()` call. | `machine module gained backend behavior: destroy(` | Exit 0, contract OK. |
 | `dense-image` | `MachineListRow.qml` | Add `Image {}` inside the dense row. | `machine module gained backend behavior: Image` | Exit 0, contract OK. |
+| `tile-virsh` | `MachineTile.qml` | Add a string property containing the direct hypervisor command `virsh`. | `MachineTile.qml: forbidden virsh` | Exit 0, contract OK. |
 | `retired-module-inventory` | `group_vars/all/host-desktop.yml` | Reinsert MachineModule.qml into surface_files. | `shared shell stage invariant changed: surface_files` | Exit 0, contract OK. |
 
-All seven breaks exited 1 with the listed diagnostic, then 0 after byte-identical
-restoration. Before removal, the cockpit contract refused the installed former
+All seven original breaks exited 1 with the listed diagnostic, then 0 after
+byte-identical restoration. Before removal, the cockpit contract refused the installed former
 component with `unused machine module is still deployed`.
+The BorderImage and IconImage mutations initially stayed green: exact-type
+matching had lost the former image-subtype refusal. After checking all Image
+suffixes, both fail with exit 1 and the listed diagnostic. Qualified and custom
+image variants also fail. The six original image/screen-copy/lifecycle breaks
+were replayed, along with the direct virsh refusal; each returned 0 after
+byte-identical restoration.
 
 ### Showcase feedback, header facts and viewport geometry
 
@@ -5698,6 +5711,11 @@ the running DEV GPU owner. It checks the exact 7% resting domain mix, real Qt
 pointer feedback and selection precedence, external column widths and sphere
 padding, a full external row followed by another row, and the complete focused
 LAB tile inside the scrolled viewport at both requested sizes.
+An additional navigation fixture temporarily adds a second SERVICES tile,
+so real Up/Down events can keep column 1 across DEV, SERVICES and LAB.
+The single SERVICES tile in the six-Machine fixture would reset focus to
+column 0 and could not distinguish nearest-column selection from first-tile
+selection. The six-Machine fixture is restored for scrolling and captures.
 
 Save each file, apply one break, run `python tests/machine_showcase_contract.py`,
 restore the saved copy and run again. QML paths below are under
@@ -5717,8 +5735,14 @@ restore the saved copy and run again. QML paths below are under
 | `external-inset-drift` | `MachineStage.qml` | Use spaceSm for the external sphere's horizontal inset. | `external sphere inset must align with managed grid tiles` | Exit 0, contract OK. |
 | `external-final-column-lost` | `MachineStage.qml` | Omit the external GridView's trailing cell gap from its width. | `external grid must fit the same full columns as managed tiles` | Exit 0, contract OK. |
 | `focus-follow-disabled` | `WorkspaceFrame.qml` | Redirect the body FocusFollow to chipStrip. | `arrow focus must scroll the complete LAB tile into the viewport` | Exit 0, contract OK. |
+| `no-column-affinity` | `MachineStage.qml` | Drop `Math.abs(point.x - origin.x)` from the focus distance. | `Down must keep the nearest second column across domain groups` | Exit 0, contract OK. |
+| `no-up-column-affinity` | `MachineStage.qml` | Use zero for the horizontal distance only for Up. | `Up must keep the nearest second column across domain groups` | Exit 0, contract OK. |
 
-All twelve breaks exited 1 with the listed diagnostic, followed by exit 0 after
-byte-identical restoration. The pointer test first failed before the tile's
+All twelve original breaks exited 1 with the listed diagnostic, followed by
+exit 0 after byte-identical restoration. The pointer test first failed before the tile's
 hover/press fill was restored. The focused LAB tile starts below the viewport;
 an activeFocus flag alone cannot satisfy the visibility assertion.
+Removing column affinity initially stayed green because all vertical checks
+used column 0. Both new mutations now exit 1 at their respective column-1
+assertion, then 0 after byte-identical restoration; the restored contract
+passes both requested sizes without changing the production focus algorithm.
