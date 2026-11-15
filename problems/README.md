@@ -10,6 +10,9 @@ proof.
 - [`machine-tile-enter-activated-twice.md`](machine-tile-enter-activated-twice.md):
   a tile and its shared card both handled Enter; real key events now require
   one activation, with the shared card owning that key.
+- [`machine-tile-wash-hid-shared-feedback.md`](machine-tile-wash-hid-shared-feedback.md):
+  the domain wash replaced the shared card's hover and press fill; the tile now
+  uses the same handler states to add neutral feedback over the wash.
 
 - [`release-campaign-missed-v1-scope.md`](release-campaign-missed-v1-scope.md):
   the historical service campaign could not describe the selected v1; a
@@ -467,5 +470,10 @@ proof.
 - [`external-machines-hidden-and-coloured.md`](external-machines-hidden-and-coloured.md):
   native Machines hid external domains and undercounted running state, while
   recovery assigned DEV without a reviewed spec.
+
+- [`machine-projection-guard-missed-rendered-tiles.md`](machine-projection-guard-missed-rendered-tiles.md):
+  the Machine presentation guard checked an unused component instead of the
+  rendered tiles; tiles and dense rows now retain the guest-pixel and lifecycle
+  refusals.
 
 Author: [importriri](https://github.com/importriri).

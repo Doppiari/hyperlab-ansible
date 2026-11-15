@@ -87,6 +87,11 @@ SETUP = r'''
                 return nodes(root, item => item.domainWord !== undefined && item.drawnState !== undefined)[0];
             }
             function tile(name) { return find(stage, "machine-tile-" + name); }
+            function viewportFor(item) {
+                let view = item.parent;
+                while (view && view.contentY === undefined) view = view.parent;
+                return view;
+            }
             function update(rows) {
                 sharedSurfaces.clearMachineSelection();
                 sharedState.applyMachinePayload(JSON.stringify({machines_available: true, machines: rows}));
@@ -95,6 +100,8 @@ SETUP = r'''
                 keyEvents.wait(30);
             }
             keyEvents.wait(40);
+            keyEvents.mouseMove(window.contentItem, 0, 0);
+            keyEvents.wait(30);
 '''.replace("@@EXTERNAL@@", json.dumps(EXTERNAL))
 
 CHECKS = r'''
@@ -124,6 +131,9 @@ CHECKS = r'''
                 check(card.width >= 300 && card.width <= 420 && card.height >= 150,
                       "tile dimensions escape the reviewed range");
                 check(!Qt.colorEqual(card.color, sharedTheme.raised), "tile has no domain wash");
+                check(Qt.colorEqual(card.color,
+                      sharedTheme.mix(sharedTheme.provenanceColor(row.provenance), sharedTheme.raised, 0.07)),
+                      "tile domain wash must remain the subtle seven-percent mix");
             }
             const cards = sharedState.machines.map(row => tile(row.name));
             for (let left = 0; left < cards.length; left++) {
@@ -140,6 +150,38 @@ CHECKS = r'''
             check(visibleText(tile("dev-build"), "Passthrough configured")
                   && visibleText(tile("dev-desk"), "Holds the GPU"),
                   "tile lost passthrough configuration or ownership words");
+            const hoverCard = tile("clean-desk");
+            const restingFill = Qt.rgba(hoverCard.color.r, hoverCard.color.g, hoverCard.color.b, hoverCard.color.a);
+            const feedbackFill = sharedTheme.mix(sharedTheme.textPrimary, restingFill, 0.05);
+            keyEvents.mouseMove(hoverCard, hoverCard.width / 2, hoverCard.height / 2);
+            keyEvents.wait(30);
+            check(hoverCard.hovered === true, "real pointer motion must hover the Machine tile");
+            check(Qt.colorEqual(hoverCard.color, feedbackFill)
+                  && !Qt.colorEqual(hoverCard.color, restingFill),
+                  "hover must lighten the Machine tile wash");
+            keyEvents.mousePress(hoverCard, hoverCard.width / 2, hoverCard.height / 2);
+            keyEvents.wait(30);
+            check(hoverCard.pressed === true && Qt.colorEqual(hoverCard.color, feedbackFill),
+                  "press must retain Machine tile wash feedback");
+            check(sharedSurfaces.selectedMachineId === "", "press alone must not select a Machine");
+            keyEvents.mouseRelease(hoverCard, hoverCard.width / 2, hoverCard.height / 2);
+            keyEvents.wait(30);
+            check(sharedSurfaces.selectedMachineId === "clean-desk"
+                  && Qt.colorEqual(hoverCard.color, sharedTheme.mix(sharedTheme.textPrimary, restingFill, 0.08)),
+                  "selected tile feedback must take precedence over hover");
+            keyEvents.mouseMove(window.contentItem, 1, 1);
+            sharedSurfaces.clearMachineSelection();
+            keyEvents.wait(30);
+            check(!hoverCard.hovered, "pointer exit must clear tile hover");
+            check(!hoverCard.pressed, "pointer release must clear tile press");
+            check(Qt.colorEqual(hoverCard.color, restingFill),
+                  "leaving a tile must restore its wash");
+            hoverCard.enabled = false;
+            keyEvents.mouseMove(hoverCard, hoverCard.width / 2, hoverCard.height / 2);
+            keyEvents.wait(30);
+            check(Qt.colorEqual(hoverCard.color, restingFill), "disabled tile gained hover feedback");
+            keyEvents.mouseMove(window.contentItem, 0, 0);
+            hoverCard.enabled = true;
             const external = find(stage, "external-machine-outside-desk");
             check(external && external.visible && sphere(external), "external tile has no sphere");
             if (external) {
@@ -151,16 +193,59 @@ CHECKS = r'''
                 check(external.Accessible.name.indexOf("outside-desk") >= 0
                       && !external.activeFocusOnTab && external.activated === undefined,
                       "external tile lost accessibility or gained selection");
+                check(external.width === tile("clean-desk").width,
+                      "external and managed grid tile widths must match");
+                const outsideInset = sphere(external).mapToItem(external, 0, 0);
+                const managedInset = sphere(tile("clean-desk")).mapToItem(tile("clean-desk"), 0, 0);
+                check(outsideInset.x === managedInset.x && outsideInset.y === managedInset.y,
+                      "external sphere inset must align with managed grid tiles");
                 const last = tile("lab-desk").mapToItem(stage, 0, 0);
                 check(external.mapToItem(stage, 0, 0).y > last.y,
                       "external group must follow every managed group");
             }
+            // A GridView cell includes its trailing gap; exercise a full
+            // row and the next one so a lost final column cannot hide.
+            const inventoryFrame = find(stage, "machine-inventory-summary");
+            const columns = Math.floor((inventoryFrame.bodyWidth + stage.tokens.cardGap)
+                                      / (tile("clean-desk").width + stage.tokens.cardGap));
+            const outsideRows = Array.from({length: columns + 1}, (_, index) =>
+                Object.assign({}, @@EXTERNAL@@, {name: "outside-" + index}));
+            sharedState.applyOutsideDomainsPayload(JSON.stringify({machines_available: true,
+                machines: sharedState.machines.concat(outsideRows)}));
+            keyEvents.wait(30);
+            const grid = find(stage, "external-machine-list");
+            const firstOutside = find(stage, "external-machine-outside-0");
+            const lastInRow = find(stage, "external-machine-outside-" + (columns - 1));
+            const nextRow = find(stage, "external-machine-outside-" + columns);
+            check(firstOutside && lastInRow && nextRow, "external grid row fixture was not drawn");
+            if (firstOutside && lastInRow && nextRow) {
+                const firstPoint = firstOutside.mapToItem(grid, 0, 0);
+                const lastPoint = lastInRow.mapToItem(grid, 0, 0);
+                const nextPoint = nextRow.mapToItem(grid, 0, 0);
+                check(lastPoint.y === firstPoint.y
+                      && lastPoint.x + lastInRow.width <= inventoryFrame.bodyWidth
+                      && nextPoint.x === firstPoint.x && nextPoint.y === firstPoint.y + grid.cellHeight,
+                      "external grid must fit the same full columns as managed tiles");
+            }
+            sharedState.applyOutsideDomainsPayload(JSON.stringify({machines_available: true,
+                machines: sharedState.machines.concat([@@EXTERNAL@@])}));
+            keyEvents.wait(30);
             tile("dev-desk").activated();
             keyEvents.wait(30);
             const header = find(stage, "machine-context-sphere");
             check(header && header.size > sphere(tile("dev-desk")).size
                   && header.domain === "dev" && header.state === "running" && header.gpuOwner,
                   "context header has no matching larger sphere");
+            tile("lab-test").activated();
+            keyEvents.wait(30);
+            const labHeader = find(stage, "machine-context-sphere");
+            const labSphere = sphere(tile("lab-test"));
+            check(labHeader && labHeader.size > labSphere.size
+                  && labHeader.machineName === "lab-test"
+                  && labHeader.domain === labSphere.domain && labHeader.state === labSphere.state
+                  && labHeader.disposable === labSphere.disposable && labHeader.disposable
+                  && labHeader.gpuOwner === labSphere.gpuOwner && !labHeader.gpuOwner,
+                  "context header must follow the selected disposable shut-off LAB Machine");
             check(sharedMachineActions.operations.length === 0, "selection started a Machine");
             sharedSurfaces.clearMachineSelection();
             keyEvents.wait(30);
@@ -173,6 +258,25 @@ CHECKS = r'''
             check(tile("service-desk").activeFocus, "Down did not cross a domain group");
             keyEvents.keyClick(Qt.Key_Up);
             check(tile("dev-desk").activeFocus, "Up did not return to the nearest tile");
+            const viewport = viewportFor(tile("dev-desk"));
+            check(viewport !== null, "showcase has no scroll viewport");
+            if (viewport) {
+                viewport.contentY = 0;
+                const target = tile("lab-desk");
+                const before = target.mapToItem(viewport, 0, 0);
+                check(before.y + target.height > viewport.height,
+                      "focus-scroll fixture must start with the LAB tile below the viewport");
+                keyEvents.keyClick(Qt.Key_Down);
+                keyEvents.keyClick(Qt.Key_Down);
+                keyEvents.keyClick(Qt.Key_Right);
+                keyEvents.wait(30);
+                const after = target.mapToItem(viewport, 0, 0);
+                check(target.activeFocus && viewport.contentY > 0
+                      && after.y >= 0 && after.y + target.height <= viewport.height
+                      && after.x >= 0 && after.x + target.width <= viewport.width,
+                      "arrow focus must scroll the complete LAB tile into the viewport");
+                tile("dev-desk").forceActiveFocus();
+            }
             let activations = 0;
             tile("dev-desk").activated.connect(function() { activations += 1; });
             keyEvents.keyClick(Qt.Key_Return);

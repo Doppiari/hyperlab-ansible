@@ -9,6 +9,8 @@ from pathlib import Path
 
 import yaml
 
+from host_quickshell_qml_wiring_contract import blocks, strip_noise
+
 
 ROOT = Path(__file__).resolve().parents[1]
 QML = ROOT / "roles/host_desktop_common/files/quickshell/hyperlab"
@@ -40,6 +42,10 @@ def main() -> int:
     require(
         set(registered) == {path.name for path in QML.glob("*.qml")},
         "unregistered or missing QML",
+    )
+    require(
+        "MachineModule.qml" not in registered,
+        "unused machine module is still deployed",
     )
     require(
         set(shell_stage["bridge_owner_files"]) == BRIDGE_OWNERS,
@@ -78,7 +84,7 @@ def main() -> int:
     workspace = (QML / "WorkspaceSurface.qml").read_text(
         encoding="utf-8"
     )
-    module = (QML / "MachineModule.qml").read_text(
+    tile = (QML / "MachineTile.qml").read_text(
         encoding="utf-8"
     )
     stage = (QML / "MachineStage.qml").read_text(
@@ -136,21 +142,14 @@ def main() -> int:
 
     # Machine presentation remains a truthful host projection. It does not
     # acquire lifecycle or hypervisor authority.
-    for marker in (
-        "module.machine.provenance",
-        "module.machine.state",
-        "module.machine.gpu_relation",
-        "module.machine.memory_mb",
-        "module.machine.vcpus",
-        "module.machine.networks",
-        "module.machine.name",
-        # Allocation is what the machine was given, never what it is using.
-        'text: "Memory"',
-        'text: "vCPU"',
+    projection = strip_noise(tile)
+    fields = set(re.findall(r"\btile\s*\.\s*machine\s*\.\s*(\w+)", projection))
+    for field in (
+        "provenance", "state", "gpu_relation", "memory_mb", "vcpus", "name",
     ):
         require(
-            marker in module,
-            f"machine module missing {marker}",
+            field in fields,
+            f"machine module missing tile.machine.{field}",
         )
 
     require(
@@ -160,18 +159,17 @@ def main() -> int:
         "the shared card lost its activation signal",
     )
 
-    for forbidden in (
-        "Image {",
-        "AnimatedImage",
-        "ScreencopyView",
-        "virsh",
-        "shutdown(",
-        "destroy(",
-    ):
-        require(
-            forbidden not in module,
-            f"machine module gained backend behavior: {forbidden}",
-        )
+    for source in (projection, strip_noise((QML / "MachineListRow.qml").read_text(encoding="utf-8"))):
+        for forbidden in ("Image", "AnimatedImage", "ScreencopyView"):
+            require(
+                not list(blocks(source, forbidden, skip_root=False)),
+                f"machine module gained backend behavior: {forbidden}",
+            )
+        for forbidden in ("shutdown", "destroy"):
+            require(
+                not re.search(r"\b" + forbidden + r"\s*\(", source),
+                f"machine module gained backend behavior: {forbidden}(",
+            )
 
     for marker in (
         "MachineTile {",

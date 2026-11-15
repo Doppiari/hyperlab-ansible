@@ -590,11 +590,12 @@ Item {
                 GridView {
                     id: externalGrid
                     objectName: "external-machine-list"
-                    width: parent.width
+                    // GridView reserves the trailing gap as part of a cell.
+                    // Include that gap so it fits the same columns as Flow.
+                    width: parent.width + (stage.layout === "grid" ? stage.tokens.cardGap : 0)
                     visible: stage.filteredOutside.length > 0
                     cellWidth: stage.layout === "grid"
-                        ? width / Math.max(1, Math.floor((width + stage.tokens.cardGap)
-                            / (stage.tokens.cardMinWidth + stage.tokens.cardGap))) : width
+                        ? stage.cardWidth(frame.bodyWidth) + stage.tokens.cardGap : width
                     cellHeight: stage.layout === "grid"
                         ? stage.tokens.cardHeight + stage.tokens.cardGap : stage.tokens.listRowHeight
                     height: visible ? Math.min(
@@ -622,8 +623,8 @@ Item {
 
                         MachineSphere {
                             id: outsideSphere
-                            x: stage.tokens.spaceSm
-                            y: stage.tokens.spaceSm
+                            x: stage.layout === "grid" ? stage.tokens.cardPadding : stage.tokens.spaceSm
+                            y: stage.layout === "grid" ? stage.tokens.cardPadding : stage.tokens.spaceSm
                             tokens: stage.tokens
                             theme: stage.theme
                             machineName: modelData.name
@@ -636,10 +637,12 @@ Item {
                             anchors.right: parent.right
                             anchors.top: parent.top
                             anchors.leftMargin: stage.layout === "grid"
-                                ? stage.tokens.spaceSm : outsideSphere.size + stage.tokens.spaceMd
-                            anchors.rightMargin: stage.tokens.spaceSm
+                                ? stage.tokens.cardPadding : outsideSphere.size + stage.tokens.spaceMd
+                            anchors.rightMargin: stage.layout === "grid"
+                                ? stage.tokens.cardPadding : stage.tokens.spaceSm
                             anchors.topMargin: stage.layout === "grid"
-                                ? outsideSphere.size + stage.tokens.spaceMd : stage.tokens.spaceSm
+                                ? stage.tokens.cardPadding + outsideSphere.size + stage.tokens.spaceMd
+                                : stage.tokens.spaceSm
                             spacing: stage.tokens.spaceXs
                             ShellLabel {
                                 width: parent.width

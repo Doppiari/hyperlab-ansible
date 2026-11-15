@@ -143,7 +143,6 @@ def main() -> int:
             "WorkspaceSurface.qml",
             "WorkspaceFrame.qml",
             "MachineStage.qml",
-            "MachineModule.qml",
             "MachineTile.qml",
             "MachineListRow.qml",
             "MachineContextPane.qml",

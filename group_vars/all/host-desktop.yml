@@ -205,7 +205,6 @@ host_desktop_common_shell_stage:
     - WorkspaceSurface.qml
     - WorkspaceFrame.qml
     - MachineStage.qml
-    - MachineModule.qml
     - MachineTile.qml
     - MachineListRow.qml
     - MachineContextPane.qml

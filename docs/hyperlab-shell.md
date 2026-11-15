@@ -251,14 +251,17 @@ Product tiles are 300–420 units wide, grouped in the palette's domain order
 (CLEAN, DEV, SERVICES, DIRTY, LAB, then Unclassified), followed by Not managed.
 Empty groups are omitted. Each tile starts with a `MachineSphere` and a state
 word, followed by its name and **memory · vCPU · domain** allocation line.
-A subtle wash uses only the resolved domain's palette colour. Passthrough
+A 7% wash mixes the resolved domain's palette colour over the raised surface.
+Hover and press add the shared card's neutral feedback over that wash;
+selection takes precedence. Passthrough
 configuration or ownership is written below; ownership also docks the GPU
 mark on the sphere, and disposable lifecycle adds its dashed ring.
 Unclassified Machines keep a neutral sphere and surface without a domain
 wash. External tiles remain unfilled even if their network names a domain.
 Their existing read-only projection omits memory and vCPU, so the allocation
 line says **Unknown · Unknown vCPU · external**; network attachment supplies
-neither an allocation nor an identity.
+neither an allocation nor an identity. External grid tiles use the same
+column widths and sphere padding as product tiles.
 
 The operating system in dense rows and the pane comes from the Machine's
 checked-in image manifest (`os_variant`), read by the host: `Arch Linux`,
@@ -281,6 +284,9 @@ or following drawn row, across domain groups. Focus scrolls into view, and
 Enter or Space opens the pane. Filtering still applies to both populations.
 Every tile has an accessible name; external tiles are read-only groups and
 never enter the action tab order. **Selection never starts anything.**
+The presentation contract guards the rendered `MachineTile` and dense row
+against guest images, screen copies and lifecycle calls. The unused former
+`MachineModule` is absent from the source and deployment inventory.
 
 A readable empty registry shows the host's grey sphere and one **Create a
 Machine** action, which opens the same Create view as **New Machine** in a

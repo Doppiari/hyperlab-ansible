@@ -33,7 +33,12 @@ ShellCard {
     objectName: "machine-tile-" + tile.machine.name
     height: tile.tokens.cardHeight
     interactive: true
-    color: tile.selected ? tile.theme.mix(tile.theme.textPrimary, tile.wash, 0.08) : tile.wash
+    color:
+        tile.selected
+        ? tile.theme.mix(tile.theme.textPrimary, tile.wash, 0.08)
+        : (tile.actionable && (tile.hovered || tile.pressed)
+            ? tile.theme.mix(tile.theme.textPrimary, tile.wash, 0.05)
+            : tile.wash)
     accessibleName:
         sphere.Accessible.name + ", allocation " + tile.resourceText
         + (tile.hardwareText.length > 0 ? ", " + tile.hardwareText : "")

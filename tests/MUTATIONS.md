@@ -5666,3 +5666,59 @@ the resolver correction. The Enter exact-once assertion also failed before
 the duplicate handler was removed. These checks establish software behaviour;
 Nitro keyboard focus, perceived state light and physical display acceptance
 remain open.
+
+### Rendered Machine projection boundary
+
+The cockpit contract parses the host-projection references in `MachineTile`
+and the forbidden QML object blocks and lifecycle call tokens in the tile and
+dense row. The unused former component is removed from the deployment inventory.
+Run `python tests/host_quickshell_desktop_cockpit_contract.py` for each break
+below, except the inventory mutation, which runs
+`python tests/host_quickshell_shared_shell_contract.py`. Save each source before
+mutation and restore it before the next check.
+
+| Mutation | File | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- | --- |
+| `tile-screencopy` | `MachineTile.qml` | Add `ScreencopyView {}` inside the tile. | `machine module gained backend behavior: ScreencopyView` | Exit 0, contract OK. |
+| `tile-image` | `MachineTile.qml` | Add `Image {}` inside the tile. | `machine module gained backend behavior: Image` | Exit 0, contract OK. |
+| `tile-animated-image` | `MachineTile.qml` | Add `AnimatedImage {}` inside the tile. | `machine module gained backend behavior: AnimatedImage` | Exit 0, contract OK. |
+| `tile-shutdown` | `MachineTile.qml` | Add a `shutdown ()` call. | `machine module gained backend behavior: shutdown(` | Exit 0, contract OK. |
+| `tile-destroy` | `MachineTile.qml` | Add a `tile.destroy ()` call. | `machine module gained backend behavior: destroy(` | Exit 0, contract OK. |
+| `dense-image` | `MachineListRow.qml` | Add `Image {}` inside the dense row. | `machine module gained backend behavior: Image` | Exit 0, contract OK. |
+| `retired-module-inventory` | `group_vars/all/host-desktop.yml` | Reinsert MachineModule.qml into surface_files. | `shared shell stage invariant changed: surface_files` | Exit 0, contract OK. |
+
+All seven breaks exited 1 with the listed diagnostic, then 0 after byte-identical
+restoration. Before removal, the cockpit contract refused the installed former
+component with `unused machine module is still deployed`.
+
+### Showcase feedback, header facts and viewport geometry
+
+The executable showcase also selects the shut-off disposable LAB Machine after
+the running DEV GPU owner. It checks the exact 7% resting domain mix, real Qt
+pointer feedback and selection precedence, external column widths and sphere
+padding, a full external row followed by another row, and the complete focused
+LAB tile inside the scrolled viewport at both requested sizes.
+
+Save each file, apply one break, run `python tests/machine_showcase_contract.py`,
+restore the saved copy and run again. QML paths below are under
+`roles/host_desktop_common/files/quickshell/hyperlab/`.
+
+| Mutation | File | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- | --- |
+| `header-disposable-fixed` | `MachineContextPane.qml` | Bind the header disposable input to false. | `context header must follow the selected disposable shut-off LAB Machine` | Exit 0, contract OK. |
+| `header-domain-fixed` | `MachineContextPane.qml` | Bind the header domain to dev. | `context header must follow the selected disposable shut-off LAB Machine` | Exit 0, contract OK. |
+| `header-state-fixed` | `MachineContextPane.qml` | Bind the header state to running. | `context header must follow the selected disposable shut-off LAB Machine` | Exit 0, contract OK. |
+| `wash-too-heavy` | `MachineTile.qml` | Increase the resting domain mix from 0.07 to 0.5. | `tile domain wash must remain the subtle seven-percent mix` | Exit 0, contract OK. |
+| `no-pointer-feedback` | `MachineTile.qml` | Disable the actionable hover/press colour branch. | `hover must lighten the Machine tile wash` | Exit 0, contract OK. |
+| `lost-hover-state` | `ShellCard.qml` | Expose hovered as false instead of the existing handler state. | `real pointer motion must hover the Machine tile` | Exit 0, contract OK. |
+| `lost-press-state` | `ShellCard.qml` | Expose pressed as false instead of the existing handler state. | `press must retain Machine tile wash feedback` | Exit 0, contract OK. |
+| `lost-selected-feedback` | `MachineTile.qml` | Disable selection's colour branch. | `selected tile feedback must take precedence over hover` | Exit 0, contract OK. |
+| `external-width-drift` | `MachineStage.qml` | Divide the external grid width independently instead of reusing cardWidth. | `external and managed grid tile widths must match` | Exit 0, contract OK. |
+| `external-inset-drift` | `MachineStage.qml` | Use spaceSm for the external sphere's horizontal inset. | `external sphere inset must align with managed grid tiles` | Exit 0, contract OK. |
+| `external-final-column-lost` | `MachineStage.qml` | Omit the external GridView's trailing cell gap from its width. | `external grid must fit the same full columns as managed tiles` | Exit 0, contract OK. |
+| `focus-follow-disabled` | `WorkspaceFrame.qml` | Redirect the body FocusFollow to chipStrip. | `arrow focus must scroll the complete LAB tile into the viewport` | Exit 0, contract OK. |
+
+All twelve breaks exited 1 with the listed diagnostic, followed by exit 0 after
+byte-identical restoration. The pointer test first failed before the tile's
+hover/press fill was restored. The focused LAB tile starts below the viewport;
+an activeFocus flag alone cannot satisfy the visibility assertion.
