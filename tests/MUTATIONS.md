@@ -6022,8 +6022,9 @@ checks, because the core is not hollow while the new surface resolves.
 
 ## The wiring contract and a component's root bindings
 
-`tests/host_quickshell_qml_wiring_contract.py` counts a property that a
-component binds on its own root object as declared for that component
+`tests/host_quickshell_qml_wiring_contract.py` counts only the Qt input
+`MachineSphere.state`, documented by ADR 0064, as declared while its
+component binds it on the root. Other root bindings grant no exception
 (`problems/wiring-contract-refused-item-state.md`). Replay one break at a
 time from a saved copy, run `python tests/host_quickshell_qml_wiring_contract.py`,
 restore the copy and run it again. Every break edits a file in
@@ -6034,7 +6035,12 @@ restore the copy and run it again. Every break edits a file in
 | `icons-to-sphere` | `ProvenanceBadge.qml` assigns `icons: badge.icons` to its `MachineSphere`. | `ProvenanceBadge.qml assigns ['icons'] to MachineSphere, which declares no such property` | Exit 0, contract OK. |
 | `sphere-root-unbound` | Delete `state: ""` from the root of `MachineSphere.qml`. | `ProvenanceBadge.qml assigns ['state'] to MachineSphere, which declares no such property` | Exit 0, contract OK. |
 | `state-to-gpu-badge` | `HyperLabBar.qml` assigns `state: "x"` to its `GpuBadge`. | `HyperLabBar.qml assigns ['state'] to GpuBadge, which declares no such property` | Exit 0, contract OK. |
+| `unreviewed-root-state` | Bind `state: ""` on `GpuBadge.qml`'s root and assign `state: "x"` to the badge in `HyperLabBar.qml` (two files). | `HyperLabBar.qml assigns ['state'] to GpuBadge, which declares no such property` | Exit 0, contract OK. |
 
-All three breaks exited 1 with the diagnostic listed, and the restored tree
-exited 0. Before the correction the unmodified tree failed with the
-`sphere-root-unbound` diagnostic.
+All four breaks exited 1 with the diagnostic listed; each byte-identical
+restoration exited 0. With the earlier rule that counted every root binding
+as declared, `unreviewed-root-state` stayed green (exit 0): the broad rule
+authorized the injected name. Narrowing the exception to the documented
+sphere input makes that break red while the existing three stay red.
+Before the original Item.state correction the unmodified tree failed with
+the `sphere-root-unbound` diagnostic.

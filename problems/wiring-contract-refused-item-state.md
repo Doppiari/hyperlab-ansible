@@ -30,15 +30,17 @@ a shared word turned one of them into a HyperLab name.
 
 ## Correction
 
-A property a component binds on its own root object now counts as declared
-for that component, because it exists on the component's type by
-construction. Only that component gains the name: a component that merely
-shares the word still refuses the assignment. The check that caught the C9
-defect (an injected name the component neither declares nor binds) is
-unchanged.
+The contract lists only `MachineSphere.state` as a Qt input, following
+ADR 0064, and counts it as declared only while the component binds it on
+its own root. No other root binding authorizes an injected property. The
+initial correction counted every root binding as declared; that was broader
+than the documented input and could hide a wiring error. The explicit,
+component-specific exception preserves the check that caught the C9 defect.
 
 ## Regression proof
 
 `tests/MUTATIONS.md` ("The wiring contract and a component's root
 bindings"): injecting `icons` into the sphere, deleting the sphere's root
 `state: ""` and assigning `state` to `GpuBadge` each turn the contract red.
+Binding `state` on `GpuBadge`'s root while injecting it from the bar also
+stays red: a root binding alone grants no exception.

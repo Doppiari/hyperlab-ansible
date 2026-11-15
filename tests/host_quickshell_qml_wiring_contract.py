@@ -13,9 +13,9 @@ a text search cannot:
   1. every required property of a HyperLab component is assigned wherever
      that component is instantiated;
   2. a property name that belongs to the HyperLab vocabulary is only ever
-     assigned to a component that actually declares it, or binds it on its
-     own root object (a Qt property the component takes as an input, such as
-     MachineSphere's Item.state).
+     assigned to a component that actually declares it. The one exception is
+     a Qt property a reviewed decision makes a component's input, listed in
+     QT_INPUTS, and only while the component binds it on its root object.
 
 It deliberately says nothing about Qt's own properties: this is a contract
 about HyperLab's own wiring, not a QML type checker.
@@ -34,6 +34,12 @@ VIEW_PROVIDED = {"modelData", "index"}
 
 # Assigned by Quickshell's Variants from its model.
 VARIANT_PROVIDED = {"modelData"}
+
+# Qt properties a reviewed decision makes a component's input. ADR 0064:
+# MachineSphere takes the Machine state through Item.state, which it binds on
+# its root so that no QML States can change it. A name here counts as
+# declared for that component only, and only while its root binds it.
+QT_INPUTS: dict[str, set[str]] = {"MachineSphere": {"state"}}
 
 PROPERTY_DECLARATION = re.compile(
     r"^[ \t]*(?:(required)[ \t]+)?(?:readonly[ \t]+)?property[ \t]+"
@@ -118,12 +124,10 @@ def components() -> dict[str, dict[str, object]]:
             if item[0] == "required"
         }
 
-        # A property the component binds on its own root object exists on
-        # its type even when a Qt base type declares it: MachineSphere takes
-        # its Machine state through Item.state (ADR 0064). Such a name is
-        # declared for this component only, never for a component that
-        # merely shares the word.
-        declared |= assignments(root_body(source, match.end()))
+        # A reviewed Qt input counts as declared while the root binds it.
+        declared |= QT_INPUTS.get(name, set()) & assignments(
+            root_body(source, match.end())
+        )
 
         found[name] = {
             "base": match.group(1),
