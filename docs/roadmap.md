@@ -753,7 +753,8 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
       Unknown when focus cannot be placed; the focus item draws the same
       answer as a sphere with the Machine's name and domain; mapping from
       host provenance only, never a title; an incomplete domain palette
-      makes both signals Unknown (ADR 0064;
+      makes both signals Unknown; unsupported inventory states keep the
+      domain core and add their state word beside a neutral sphere (ADR 0064;
       `tests/bar_core_focus_contract.py`, software-verified under Sway and
       Hyprland fixtures)
 - [ ] the bar core accepted on Nitro under both compositors: focus host →

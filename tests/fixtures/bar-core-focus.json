@@ -17,6 +17,10 @@
       "state": "running"
     }
   ],
+  "inventory_states": [
+    {"state": "crashed", "words": "dev-01 · dev · crashed"},
+    {"state": "unknown", "words": "dev-01 · dev · unknown"}
+  ],
   "states": [
     {
       "name": "host",

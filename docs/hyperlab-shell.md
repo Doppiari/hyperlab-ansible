@@ -1087,8 +1087,15 @@ show the hollow core and `Unknown` and change the focus item's width even
 when focus has not moved; its visibility depends on resolver latency.
 A Machine never stays on the window that replaced it. The inventory only
 confirms the Machine's state for its sphere: if it does not list the Machine,
-the domain stays and the sphere draws the neutral outline; if it lists it in
-another domain, neither source is believed. The bar also requires a complete
+the domain stays and the sphere draws the neutral outline with
+`state not confirmed` beside it. A reported state the sphere cannot draw,
+such as `crashed` or `unknown`, also keeps the proven domain core and adds
+the state word to the focus item (`dev-01 · dev · crashed`). These inventory
+states differ from unresolved provenance, which still reads only `Unknown`
+with a hollow core. Inventory updates change the state word without a new
+focus event; returning to a supported state removes it. If the inventory
+lists the Machine in another domain, neither source is believed.
+The bar also requires a complete
 domain palette: a missing `dom_*` key makes both the core and the focus item
 Unknown, including host focus, until the palette is complete again. This
 presentation check leaves the resolver's answer intact in Diagnostics.
@@ -1104,7 +1111,9 @@ lock surface keep the grey core. A fullscreen guest covers the bar
 `tests/bar_core_focus_contract.py` checks five fixture states (host
 terminal, dev viewer, dirty viewer, unmapped window, stale source) under
 Sway and Hyprland through the real adapter, shell state, resolver and bar,
-on captured pixels. Software-verified; Nitro acceptance under both
+on captured pixels, plus `crashed` and `unknown` inventory states with a
+neutral sphere, a visible state word and the retained domain core.
+Software-verified; Nitro acceptance under both
 compositors stays open.
 
 ## Security boundaries

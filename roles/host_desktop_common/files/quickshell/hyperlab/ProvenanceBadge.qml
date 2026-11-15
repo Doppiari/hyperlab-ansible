@@ -6,6 +6,8 @@
 // outline with "Unknown" when focus cannot be placed. Colour is carried by
 // the sphere only and never without the domain word; the words stay in the
 // primary text tone.
+// A proven Machine whose inventory state the sphere cannot draw keeps its
+// domain and adds that state word beside the neutral outline (ADR 0064).
 //
 // The bar passes ShellState.focusedMachine after checking that the domain
 // palette is complete: host resolution of the focused surface, never a
@@ -41,9 +43,14 @@ ShellControl {
     readonly property string kind:
         badge.machine ? String(badge.machine.kind) : "unknown"
 
+    readonly property string stateWords:
+        badge.kind === "machine" && !focusSphere.knownState
+        ? (focusSphere.state.length > 0 ? focusSphere.state : "state not confirmed")
+        : ""
+
     readonly property string words:
         badge.kind === "host" || badge.kind === "machine"
-        ? String(badge.machine.words)
+        ? String(badge.machine.words) + (badge.stateWords.length > 0 ? " · " + badge.stateWords : "")
         : "Unknown"
 
     readonly property string reason:
@@ -63,6 +70,8 @@ ShellControl {
 
     content: [
         MachineSphere {
+            id: focusSphere
+
             objectName: "focus-sphere"
             anchors.verticalCenter: parent.verticalCenter
             theme: badge.theme

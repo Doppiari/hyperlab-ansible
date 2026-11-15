@@ -154,6 +154,11 @@ focus item draws the same answer as a `MachineSphere` and words
 colour never appears without its domain word. The window title, clipboard
 and guest-agent data never enter this mapping: it reads only the resolver's
 answer for the focused process and the inventory row of the same Machine.
+A proven Machine with an unsupported inventory state keeps its domain core
+and shows the state word beside the neutral sphere (`dev-01 · dev · crashed`
+or `dev-01 · dev · unknown`); without a confirmed state it says
+`state not confirmed`. State uncertainty does not erase a proven identity:
+the hollow core and the word `Unknown` remain for unplaced focus.
 An incomplete domain palette makes both signals Unknown, even when the
 resolver named a host or Machine identity; restoring the palette restores
 the presentation of that answer. Every focus snapshot, including an

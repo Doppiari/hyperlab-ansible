@@ -23,8 +23,10 @@ also proves the resolver's answer does not depend on the title and that the
 shell's mapping reads nothing but host provenance and the inventory.
 Removing each domain palette key makes both the core and the words Unknown
 under host and Machine focus; restoring it recovers the current answer.
+Inventory states crashed and unknown keep the proven domain core, draw a
+neutral sphere and display the state word beside the Machine name and domain.
 
-`--renders DIR` keeps the ten bar captures (`<compositor>-<state>.png`).
+`--renders DIR` keeps the fourteen bar captures (`<compositor>-<state>.png`).
 What this does not prove: the real Quickshell runtime, real compositor
 events and how the core reads on a real display. That is the operator's
 check on the Nitro under both compositors.
@@ -120,6 +122,7 @@ SCENARIO = r"""
                     "hollow": glyph.coreHollow, "level": rail.coreLevel,
                     "sphere": [ball.x, ball.y], "sphereSize": sphere.size,
                     "classified": sphere.classified, "sphereDomain": sphere.domain,
+                    "sphereTone": String(sphere.tone),
                     "isHost": sphere.isHost, "sphereState": String(sphere.state),
                     "words": words.text, "wordsVisible": words.visible,
                     "wordsColour": String(words.color), "text": String(sharedTheme.textPrimary),
@@ -138,8 +141,15 @@ SCENARIO = r"""
                     return;
                 }
                 const event = states[index];
+                sharedState.applyMachinePayload(JSON.stringify(event.inventory));
                 focus(event);
                 answer(event);
+                if (event.machineState) {
+                    check(String(sphere.state) === event.machineState && !sphere.classified,
+                          "an unsupported Machine state was normalized or drawn as supported");
+                    check(words.text === event.words,
+                          "an unsupported Machine state has no visible state word");
+                }
                 // A new proven colour fades in; it never jumps or blends
                 // through another hue.
                 if (event.expect !== "unknown" && event.expect !== previous)
@@ -161,6 +171,7 @@ SCENARIO = r"""
             function finish() {
                 const dev = states[1];
                 const host = states[0];
+                sharedState.applyMachinePayload(JSON.stringify(dev.inventory));
 
                 // Re-validating the same Machine reads Unknown until the
                 // resolver answers (checked in focus()), and the answer then
@@ -226,8 +237,24 @@ SCENARIO = r"""
                 focus(dev);
                 answer(dev);
                 check(sharedState.focusedMachine.kind === "machine" && !glyph.coreHollow
-                      && words.text === dev.words && !sphere.classified,
+                      && words.text === dev.words + " · state not confirmed" && !sphere.classified,
                       "an unconfirmed Machine state was drawn, or its domain was lost");
+
+                // State updates do not need a new focus or resolver answer.
+                const request = sharedState.provenanceRequest;
+                for (const event of states.filter(event => event.machineState)) {
+                    sharedState.applyMachinePayload(JSON.stringify(event.inventory));
+                    check(sharedState.provenanceRequest === request
+                          && rail.focusedMachine.kind === "machine" && !glyph.coreHollow
+                          && rail.coreIdentity === dev.expect && !sphere.classified
+                          && String(sphere.state) === event.machineState
+                          && words.visible && words.text === event.words,
+                          "an inventory-only update hid the unsupported state or its domain");
+                }
+                sharedState.applyMachinePayload(JSON.stringify(dev.inventory));
+                check(sharedState.provenanceRequest === request && sphere.classified
+                      && String(sphere.state) === "running" && words.text === dev.words,
+                      "a confirmed running state did not clear the unsupported-state word");
 
                 Qt.exit(window.firstFailure < 0 ? 0 : @@BASE@@ + window.firstFailure);
             }
@@ -251,7 +278,21 @@ def load_fixture() -> dict:
             f"the fixture must hold the five reviewed states in order: {names}")
     require(len({machine["name"] for machine in fixture["machines"]}) == len(fixture["machines"]),
             "duplicated fixture Machine")
+    require([case["state"] for case in fixture["inventory_states"]] == ["crashed", "unknown"],
+            "the fixture must exercise crashed and unknown inventory states")
     return fixture
+
+
+def focus_states(fixture: dict) -> list[dict]:
+    """Reuse the registered dev window with each unsupported inventory state."""
+    dev = fixture["states"][1]
+    unsupported = [
+        dict(dev, name="dev-" + case["state"], machine_state=case["state"], words=case["words"])
+        for case in fixture["inventory_states"]
+    ]
+    # Capture inventory states before the stale fixture moves the clock
+    # forward: returning it would revalidate the previous window as well.
+    return fixture["states"][:-1] + unsupported + fixture["states"][-1:]
 
 
 # ------------------------------------------------------------ compositors
@@ -272,7 +313,7 @@ def adapter_lines(fixture: dict, scratch: Path) -> dict[str, list[str]]:
     lines: dict[str, list[str]] = {}
     for compositor in COMPOSITORS:
         lines[compositor] = []
-        for state in fixture["states"]:
+        for state in focus_states(fixture):
             node = dict(state[compositor])
             if compositor == "sway":
                 node["focused"] = True
@@ -343,7 +384,7 @@ def title_independence(fixture: dict, lines: dict[str, list[str]], resolve) -> N
     """The resolver's answer is the same whatever the window says it is."""
     names = [machine["name"] for machine in fixture["machines"]] + ["host", "", "CLEAN trusted"]
     for compositor in COMPOSITORS:
-        for state, line in zip(fixture["states"], lines[compositor], strict=True):
+        for state, line in zip(focus_states(fixture), lines[compositor], strict=True):
             surface = json.loads(line)
             surface.pop("fullscreen", None)
             plain = dict(surface, title="")
@@ -407,21 +448,26 @@ def inventory(fixture: dict) -> list[dict]:
 
 
 def scene(fixture: dict, lines: list[str], resolve, out: Path) -> tuple[str, list[str]]:
-    states = []
-    for state, line in zip(fixture["states"], lines, strict=True):
-        surface = json.loads(line)
-        request = {"pid": surface["pid"], "app_id": surface["app_id"],
-                   "window_id": surface["window_id"]}
-        states.append({"name": state["name"], "expect": state["expect"],
-                       "words": state["words"], "stale_seconds": state.get("stale_seconds", 0),
-                       "line": line, "request": request, "answer": resolve(request)})
-    rows = inventory(fixture)
-    contradiction = [dict(row, provenance="clean") if row["name"] == "dev-01" else row for row in rows]
-    unlisted = [row for row in rows if row["name"] != "dev-01"]
-
     def payload(machines: list[dict]) -> dict:
         return {"text": f"{len(machines)}/{len(machines)}", "class": "ok",
                 "machines_available": True, "machines": machines}
+
+    rows = inventory(fixture)
+    states = []
+    for state, line in zip(focus_states(fixture), lines, strict=True):
+        surface = json.loads(line)
+        request = {"pid": surface["pid"], "app_id": surface["app_id"],
+                   "window_id": surface["window_id"]}
+        answer = resolve(request)
+        machines = [dict(row, state=state["machine_state"])
+                    if "machine_state" in state and row["name"] == answer["domain"] else row
+                    for row in rows]
+        states.append({"name": state["name"], "expect": state["expect"],
+                       "words": state["words"], "stale_seconds": state.get("stale_seconds", 0),
+                       "line": line, "request": request, "answer": answer,
+                       "machineState": state.get("machine_state", ""), "inventory": payload(machines)})
+    contradiction = [dict(row, provenance="clean") if row["name"] == "dev-01" else row for row in rows]
+    unlisted = [row for row in rows if row["name"] != "dev-01"]
 
     body = (SCENARIO
             .replace("@@STATES@@", json.dumps(states))
@@ -540,15 +586,44 @@ def check_render(compositor: str, state: dict, record: dict, image: bytes, palet
     require(not record["hollow"] and record["level"] == 1, f"{where}: the core is not filled")
     require(distance(centre, identities[domain]) <= 6,
             f"{where}: the core is {centre}, not the {domain} colour {identities[domain]}")
-    require(record["classified"] and record["sphereDomain"] == domain
-            and record["isHost"] == (domain == "host"),
+    require(record["sphereDomain"] == domain and record["isHost"] == (domain == "host"),
             f"{where}: the focus sphere is not the {domain} sphere")
     sphere = pixel(image, width, *record["sphere"])
-    require(hue_nearest(sphere, palette) == domain,
-            f"{where}: the focus sphere is drawn {sphere}, not in the {domain} colour")
+    identity_words = record["words"]
+    if "machine_state" in state:
+        require(not record["classified"] and record["sphereState"] == state["machine_state"],
+                f"{where}: an unsupported Machine state was normalized or drawn as supported")
+        require(distance(sphere, ground) <= 6,
+                f"{where}: the unsupported-state sphere is filled: {sphere}")
+        sx, sy = record["sphere"]
+        reach = record["sphereSize"] / 2
+        ring = [pixel(image, width, sx + dx, sy + dy)
+                for dy in range(-int(reach), int(reach) + 1)
+                for dx in range(-int(reach), int(reach) + 1)
+                if (dx + 0.5) ** 2 + (dy + 0.5) ** 2 <= reach ** 2]
+        brightest = max(ring, key=sum)
+        require(rgb(record["sphereTone"]) == text,
+                f"{where}: the unsupported-state sphere tone is not neutral")
+        # The one-pixel rim is antialiased at bar size. Its pixels must be
+        # the text tone composited over the rail, with a visible coverage.
+        coverage = (sum(brightest) - sum(ground)) / (sum(text) - sum(ground))
+        composite = tuple(round(back + coverage * (front - back))
+                          for back, front in zip(ground, text, strict=True))
+        require(0.75 <= coverage <= 1 and distance(brightest, composite) <= 6,
+                f"{where}: the unsupported-state sphere has no neutral outline: {brightest}")
+        for identity, colour in identities.items():
+            require(distance(brightest, colour) >= NEUTRAL_DISTANCE,
+                    f"{where}: the unsupported-state outline uses the {identity} colour")
+        require(state["machine_state"] in record["words"].split(" · ")
+                and record["accessible"].endswith(", " + state["machine_state"]),
+                f"{where}: the unsupported Machine state is not visible and accessible")
+        identity_words = identity_words.removesuffix(" · " + state["machine_state"])
+    else:
+        require(record["classified"] and hue_nearest(sphere, palette) == domain,
+                f"{where}: the focus sphere is drawn {sphere}, not in the {domain} colour")
     # Colour never stands alone: a coloured sphere has its domain as a word.
-    require(record["words"] == "Host" if domain == "host"
-            else record["words"].endswith(" · " + domain),
+    require(identity_words == "Host" if domain == "host"
+            else identity_words.endswith(" · " + domain),
             f"{where}: the focus item shows a colour without the domain word")
     require(domain in record["accessible"].lower(),
             f"{where}: accessible name {record['accessible']!r}")
@@ -576,10 +651,10 @@ def main() -> int:
                 source, messages = scene(fixture, lines[compositor], resolve, out)
                 records = run_scene(staged, source, messages, compositor)
                 require([record["name"] for record in records]
-                         == [state["name"] for state in fixture["states"]],
+                         == [state["name"] for state in focus_states(fixture)],
                          f"{compositor}: not every state was captured")
                 images = []
-                for state, record in zip(fixture["states"], records, strict=True):
+                for state, record in zip(focus_states(fixture), records, strict=True):
                     capture = Path(f"{out}-{state['name']}.png")
                     image = png_pixels(capture, (int(record["width"]), int(record["height"])))
                     if args.renders:
@@ -594,7 +669,7 @@ def main() -> int:
 
     print("Bar core focus contract: OK (Sway and Hyprland: host, dev, dirty, unmapped and "
           "stale focus; title-independent mapping; hollow Unknown; one answer for core and item; "
-          "fade and reduced motion)")
+          "visible unsupported inventory states; fade and reduced motion)")
     return 0
 
 

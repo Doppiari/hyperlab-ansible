@@ -486,6 +486,9 @@ proof.
 - [`bar-core-hidden-under-fullscreen-guest.md`](bar-core-hidden-under-fullscreen-guest.md):
   a fullscreen guest covers the bar core and focus item; only the ADR 0039
   ring remains, in colour alone and without a hollow Unknown. Open.
+- [`bar-focus-omitted-unsupported-state-word.md`](bar-focus-omitted-unsupported-state-word.md):
+  the focus item omitted crashed and unknown inventory state words beside
+  the neutral sphere despite retaining the proven Machine domain.
 - [`wiring-contract-refused-item-state.md`](wiring-contract-refused-item-state.md):
   the QML wiring contract read a shared word as a HyperLab property and
   refused MachineSphere's Item.state; root bindings now count as declared.

@@ -6027,6 +6027,23 @@ and restore the palette without another focus event. The pre-correction bar
 failed with the incomplete-palette diagnostic above. Both palette mutations
 exited 1, and each byte-identical restoration exited 0.
 
+The inventory-state fixtures also reuse the registered dev viewer with
+`crashed` and `unknown`. The core keeps the proven dev colour while the
+sphere is an empty neutral outline with a visible state word. Inventory-only
+updates and recovery to running need no new focus or resolver answer.
+Replay each break below in `ProvenanceBadge.qml`, run the same contract,
+restore the saved copy and rerun it.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| `unsupported-state-word-removed` | Remove the `stateWords` suffix from the visible `words` binding. | `sway: "an unsupported Machine state has no visible state word"` | Exit 0, contract OK. |
+| `crashed-normalized-to-running` | Pass `running` to the sphere when `machineState` is `crashed`. | `sway: "an unsupported Machine state was normalized or drawn as supported"` | Exit 0, contract OK. |
+| `unconfirmed-state-word-removed` | Replace the `state not confirmed` fallback in `stateWords` with an empty string. | `sway: "an unconfirmed Machine state was drawn, or its domain was lost"` | Exit 0, contract OK. |
+
+All three breaks exited 1. Each saved copy was restored byte-identically,
+and the contract exited 0 after each restoration. The expanded contract
+failed on the missing state word before the badge correction.
+
 ## The wiring contract and a component's root bindings
 
 `tests/host_quickshell_qml_wiring_contract.py` counts only the Qt input
