@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import configparser
 import json
 import os
@@ -15,6 +15,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 from types import ModuleType, SimpleNamespace
 from typing import Any, Iterator
 from unittest.mock import Mock, patch
@@ -1032,6 +1033,103 @@ def replacement_contract(module: Any, directory: Path) -> None:
             require(signals == [(123, signal.SIGSTOP),
                                 (123, signal.SIGKILL if outcome == "idle" else signal.SIGCONT)],
                     "paused shell resumed before termination or not resumed on refusal")
+
+
+@contextmanager
+def retry_inert_pause(pause: Any, pid: int, started: int) -> Iterator[Any]:
+    """Retry only incomplete context entry, with the inert process resumed."""
+    deadline = time.monotonic() + 5
+    with ExitStack() as stack:
+        while True:
+            try:
+                process = stack.enter_context(pause(pid, started))
+            except RuntimeError as exc:
+                if str(exc) != "Shell did not stop every thread; reapply":
+                    raise
+                if time.monotonic() >= deadline:
+                    raise AssertionError("inert process never completed its stop") from exc
+                time.sleep(0.01)
+            else:
+                break
+        yield process
+
+
+def inert_pause_retry_contract() -> None:
+    for outcome in ("delayed", "exhausted", "other-entry", "os-entry", "body"):
+        inert_pause_retry_case(outcome)
+
+
+def inert_pause_retry_case(outcome: str) -> None:
+    incomplete = "Shell did not stop every thread; reapply"
+    attempts = 0
+    bodies = 0
+    paused = False
+    marker = object()
+    events = []
+
+    @contextmanager
+    def pause(pid: int, started: int) -> Iterator[object]:
+        nonlocal attempts, paused
+        require((pid, started) == (41, 50), "retry changed the pinned identity")
+        attempts += 1
+        require(attempts <= 2, "incomplete stop was not bounded")
+        paused = True
+        events.append("stop")
+        try:
+            if outcome == "exhausted" or (outcome == "delayed" and attempts == 1):
+                raise RuntimeError(incomplete)
+            if outcome == "other-entry":
+                raise RuntimeError("Shell identity changed or was already stopped")
+            if outcome == "os-entry":
+                raise ProcessLookupError("inert process exited")
+            yield marker
+        finally:
+            paused = False
+            events.append("resume")
+
+    ticks = iter([0, 5 if outcome == "exhausted" else 1])
+
+    def clock() -> float:
+        require(not paused, "retry deadline read while the inert process is paused")
+        return next(ticks)
+
+    def wait(seconds: float) -> None:
+        require(not paused, "retry slept before resuming the inert process")
+        require(seconds == 0.01, "unexpected inert retry delay")
+        events.append("wait")
+
+    error = None
+    with patch.object(time, "monotonic", side_effect=clock), \
+            patch.object(time, "sleep", side_effect=wait):
+        try:
+            with retry_inert_pause(pause, 41, 50) as process:
+                bodies += 1
+                require(process is marker, "retry did not yield the paused process")
+                if outcome == "body":
+                    raise RuntimeError(incomplete)
+        except (RuntimeError, OSError, AssertionError) as exc:
+            error = exc
+    if outcome == "delayed":
+        require(error is None and attempts == 2 and bodies == 1,
+                "incomplete stop was not retried to a successful pause")
+        require(events == ["stop", "resume", "wait", "stop", "resume"],
+                "inert retry did not wait between resumed attempts")
+    else:
+        expected = {
+            "exhausted": (AssertionError, "inert process never completed its stop"),
+            "other-entry": (RuntimeError, "Shell identity changed or was already stopped"),
+            "os-entry": (ProcessLookupError, "inert process exited"),
+            "body": (RuntimeError, incomplete),
+        }[outcome]
+        require(type(error) is expected[0] and str(error) == expected[1],
+                "retry swallowed or changed a non-retryable failure")
+        require(attempts == 1 and bodies == (1 if outcome == "body" else 0),
+                "retry repeated a body failure or unrelated entry failure")
+        require(events == ["stop", "resume"], "failure retried or left the inert process paused")
+
+
+def inert_replacement_contract(module: Any, directory: Path) -> None:
+    env = {"XDG_RUNTIME_DIR": "/private"}
     # A real inert launcher is asked to fork AFTER the final inspection.
     # SIGSTOP prevents that request executing before the pinned SIGKILL.
     marker = directory / "late-child-ran"
@@ -1043,7 +1141,7 @@ def replacement_contract(module: Any, directory: Path) -> None:
         require(launcher.stdout.readline().strip() == "ready", "inert launcher did not start")
         try:
             started = module.process_ticks(launcher.pid)
-            with module.paused_shell(launcher.pid, started) as process:
+            with retry_inert_pause(module.paused_shell, launcher.pid, started) as process:
                 require(all(state == "T" for state in module.thread_states(launcher.pid)), "launcher not stopped")
                 launcher.stdin.write("launch\n")
                 launcher.stdin.flush()
@@ -1058,14 +1156,29 @@ def replacement_contract(module: Any, directory: Path) -> None:
     with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"]) as child, \
             subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"]) as shell:
         try:
+            samples = []
+
             def members(state: Any) -> list[int]:
-                return [child.pid] if "T" in module.thread_states(shell.pid) else []
+                stopped = all(state == "T" for state in module.thread_states(shell.pid))
+                samples.append(stopped)
+                return [child.pid] if stopped else []
+
+            pause = module.paused_shell
 
             with patch.object(module, "busy_members", side_effect=members), \
                     patch.object(module, "shell_properties", return_value=properties(MainPID=str(shell.pid))), \
+                    patch.object(module, "paused_shell",
+                                 side_effect=lambda pid, started: retry_inert_pause(pause, pid, started)), \
                     patch.object(module.subprocess, "run"):
-                refused(lambda: module.replace_shell(env, properties(MainPID=str(shell.pid))),
-                        "existing non-observer was killed")
+                try:
+                    module.replace_shell(env, properties(MainPID=str(shell.pid)))
+                except RuntimeError as exc:
+                    require(str(exc) == f"Shell refresh refused: shell child PIDs [{child.pid}] appeared before "
+                            "the pause. Finish or close them, then reapply.",
+                            "busy-child fixture refused before its paused cgroup inspection")
+                else:
+                    raise AssertionError("existing non-observer was killed")
+            require(samples == [False, True], "busy-child fixture missed the paused cgroup inspection")
             require(child.poll() is None and "T" not in module.thread_states(shell.pid),
                     "busy refusal killed a child or left shell stopped")
         finally:
@@ -1073,6 +1186,39 @@ def replacement_contract(module: Any, directory: Path) -> None:
             shell.terminate()
             child.wait(timeout=5)
             shell.wait(timeout=5)
+
+
+def delayed_stop_contract(module: Any, directory: Path) -> None:
+    """Signal submission need not stop a real process before its next sample."""
+    send = module.signal.pidfd_send_signal
+    states = module.thread_states
+    delayed: set[int] = set()
+    pending = False
+    resumes = 0
+    current_pid = 0
+
+    def send_signal(descriptor: int, sent: int) -> None:
+        nonlocal pending, resumes
+        if sent == signal.SIGSTOP and current_pid not in delayed:
+            delayed.add(current_pid)
+            pending = True
+        if sent == signal.SIGCONT:
+            resumes += 1
+        send(descriptor, sent)
+
+    def sample(pid: int) -> list[str]:
+        nonlocal pending, current_pid
+        current_pid = pid
+        if pending:
+            pending = False
+            return ["S"]
+        return states(pid)
+
+    with patch.object(module.signal, "pidfd_send_signal", side_effect=send_signal), \
+            patch.object(module, "thread_states", side_effect=sample):
+        inert_replacement_contract(module, directory)
+    require(resumes >= 2, "delayed stopping did not exercise resume in both real fixtures")
+    require(len(delayed) == 2, "delayed stopping did not reach both real fixtures")
 
 
 def review_regressions(module: Any, directory: Path) -> None:
@@ -1117,6 +1263,11 @@ def main() -> int:
         checkpoint_contract(module, directory)
         clock_step_contract(module, directory)
         replacement_contract(module, directory)
+        inert_pause_retry_contract()
+        inert_replacement_contract(module, directory)
+        delayed = directory / "delayed-stop"
+        delayed.mkdir()
+        delayed_stop_contract(module, delayed)
         gtk_transport_contract(module)
         ansible_contract(tasks, handlers, directory)
     print("Shell reload after apply contract: OK")

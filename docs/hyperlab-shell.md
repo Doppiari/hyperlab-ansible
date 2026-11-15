@@ -102,7 +102,12 @@ order, tags and exact final task; every observer and the post-exec
 resolver; generation and transport refusals; both directions of clock
 correction; zero sleeps or monotonic waits during the pause; immediate
 late-child refusal; and queued launches against a real inert paused
-subprocess.
+subprocess. Real fixtures also force an incomplete first stop sample. Only
+that pause-entry refusal is retried, after resume and for at most five
+seconds; all other failures propagate. The busy-child fixture requires the
+paused inspection and its specific refusal, so an earlier stop refusal
+cannot stand in for child-survival evidence. Installed refresh still
+refuses an incomplete stop immediately and requires a later apply.
 Its isolated Ansible fixture covers a later failure and retry, a failed
 refresh and retry, adapter-only and unit-only changes followed immediately
 by `changed=0`, already stale residents, unrelated helpers and check mode. This is

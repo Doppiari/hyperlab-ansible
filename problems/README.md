@@ -483,4 +483,8 @@ proof.
   rendered tiles; tiles and dense rows now retain the guest-pixel and lifecycle
   refusals.
 
+- [`shell-refresh-contract-assumed-synchronous-stop.md`](shell-refresh-contract-assumed-synchronous-stop.md):
+  real refresh fixtures assumed synchronous SIGSTOP delivery and could accept
+  an early stop refusal without inspecting the busy child.
+
 Author: [importriri](https://github.com/importriri).

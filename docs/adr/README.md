@@ -641,6 +641,8 @@ remain.
   - Built: built — content-generation checkpoints, pinned shell pause and busy
     cgroup refusal, exact post-exec observer validation and resident recovery
     retirement, with clock-step, launch-race, retry and idempotence checks.
+    Inert-process fixtures cover asynchronous stopping and require the actual
+    paused busy-child refusal, with bounded retries only after resume.
   - Activation: default — after the copies in `host_desktop_common` and
     `host_desktop_sway` and after the Hyprland unit copy in
     `playbooks/v1-host.yml`. Only existing presentation processes are refreshed.

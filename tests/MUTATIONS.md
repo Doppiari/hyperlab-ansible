@@ -4561,6 +4561,42 @@ strict checkout refusal before the fix.
 | V52 | Remove `include(resolver, str(resolver))` from `source_generation` | symlinked checkout | `symlinked checkout resolver omitted from installed generation` |
 | V53 | Remove the `resolver.resolve(strict=True) != resolver` refusal | symlinked checkout | `redirected checkout tools directory accepted` |
 
+### Asynchronous stopping in inert-process fixtures
+
+`delayed_stop_contract(module, directory)` forces the first post-SIGSTOP
+sample for each real fixture to report a running thread. Before the fixture
+fix it reproduced CI's `Shell did not stop every thread; reapply` error.
+Installed `paused_shell` still samples once and immediately resumes on
+refusal. Only inert fixtures retry that exact entry failure, after cleanup
+and within five seconds. They must still complete the real launch-prevention
+and paused busy-child checks. Other entry errors and all body errors
+propagate, including a body error with the same message as incomplete entry.
+`inert_pause_retry_contract()` checks retry scope, identity, deadline and
+resume before waiting without real delays.
+
+For replay, load the contract using `runpy.run_path()`. The `delayed` stage
+calls `delayed_stop_contract(load_refresh(), Path(temporary))` with a fresh
+`TemporaryDirectory`; `retry` calls `inert_pause_retry_contract()`; and
+`replacement` calls `replacement_contract(load_refresh(), Path(temporary))`.
+The ordinary real-process checks now also have their own
+`inert_replacement_contract(module, directory)` stage. Save the file before
+each mutation, restore the exact saved bytes and rerun the same focused
+stage. Every case below was observed red for the stated behavioral reason
+and then green after restoration. No mutation survived. An initial V56 edit
+caused a syntax error; the corrected mutation was rerun to obtain the
+behavioral failure recorded here.
+
+| ID | Break | Focused stage | Observed red result |
+| --- | --- | --- | --- |
+| V54 | Replace the launcher's `retry_inert_pause(...)` with direct `module.paused_shell(...)` | delayed | `Shell did not stop every thread; reapply` |
+| V55 | Remove the exact-message filter from the retry helper's entry exception handler | retry | `retry swallowed or changed a non-retryable failure` |
+| V56 | Move `yield process` inside the helper's retry `try`, after `enter_context`, so body errors reach the retry handler | retry | `retry swallowed or changed a non-retryable failure` |
+| V57 | Replace the retry deadline condition with `False` | retry | `retry swallowed or changed a non-retryable failure` |
+| V58 | Add `time.sleep(0.01)` immediately after successful `enter_context` | retry | `incomplete stop was not retried to a successful pause` |
+| V59 | Replace the busy-child fixture's retry wrapper with its original `pause` callable | delayed | `busy-child fixture refused before its paused cgroup inspection` |
+| V60 | Omit the production cleanup's pinned `SIGCONT` | replacement | `paused shell resumed before termination or not resumed on refusal` |
+| V61 | Remove the real launcher's `process.terminate()` | delayed | `non-observer appeared after the final inspection` |
+
 ## Disposable boot access and SSH identity (ADR 0018)
 
 All twenty-three mutations below were observed red (exit 1), restored from
