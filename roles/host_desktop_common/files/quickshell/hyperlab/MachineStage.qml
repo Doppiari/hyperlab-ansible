@@ -1,8 +1,8 @@
 // HyperLab Machines workspace (V447-C9.3).
 //
 // The inventory and the machine an operator is working on, in one page. The
-// inventory is grouped by host-resolved provenance — the grouping the older
-// product got right — with a count per group, an explicit Unclassified group
+// inventory is grouped by host-resolved provenance, with sphere tiles, a
+// count per group and an explicit Unclassified group
 // last. Other libvirt domains remain read-only in their own Not managed
 // group, without gaining product membership or operational controls.
 //
@@ -245,6 +245,7 @@ Item {
                     tokens: stage.tokens
                     theme: stage.theme
                     accessibleName: "New Machine"
+                    visible: !stage.inventoryAvailable || stage.shellState.machines.length > 0
 
                     content: [
                         ShellLabel {
@@ -264,7 +265,7 @@ Item {
 
                 Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: frame.width > 640
+                    visible: frame.width > 640 && (stage.total > 0 || !stage.inventoryAvailable)
                     width: Math.min(240, frame.width / 3)
                     height: stage.tokens.controlHeightLarge
                     radius: stage.tokens.radiusControl
@@ -330,6 +331,7 @@ Item {
                     tokens: stage.tokens
                     theme: stage.theme
                     flat: true
+                    visible: stage.total > 0 || !stage.inventoryAvailable
                     accessibleName:
                         stage.layout === "grid"
                         ? "Switch to list layout"
@@ -371,17 +373,55 @@ Item {
                         + "Diagnostics has the observation detail."
                 }
 
-                EmptyState {
+                Column {
+                    objectName: "machine-empty-state"
                     width: parent.width
                     visible: stage.inventoryAvailable && stage.shellState.machines.length === 0
-                    tokens: stage.tokens
-                    theme: stage.theme
-                    kind: "empty"
-                    title: "No Machines yet"
-                    description:
-                        "Create a Machine from a reviewed Template."
-                        + (stage.shellState.outsideDomains.length > 0
-                            ? " Other libvirt domains appear below as Not managed." : "")
+                    spacing: stage.tokens.spaceMd
+
+                    MachineSphere {
+                        objectName: "empty-host-sphere"
+                        tokens: stage.tokens
+                        theme: stage.theme
+                        machineName: "Host"
+                        domain: "host"
+                        isHost: true
+                        state: "running"
+                        size: stage.tokens.spaceSection * 2
+                    }
+                    ShellLabel {
+                        tokens: stage.tokens
+                        role: "heading"
+                        text: "No Machines yet"
+                        color: stage.theme.textPrimary
+                    }
+                    ShellLabel {
+                        width: parent.width
+                        tokens: stage.tokens
+                        role: "body"
+                        objectName: "machine-empty-description"
+                        text: "Create a Machine from a reviewed Template."
+                            + (stage.shellState.outsideDomains.length > 0
+                                ? " Other libvirt domains appear below as Not managed." : "")
+                        color: stage.theme.textSecondary
+                    }
+                    ShellControl {
+                        tokens: stage.tokens
+                        theme: stage.theme
+                        accessibleName: "Create a Machine"
+                        content: [
+                            ShellLabel {
+                                tokens: stage.tokens
+                                role: "label"
+                                text: "Create a Machine"
+                                color: stage.theme.textPrimary
+                            }
+                        ]
+                        onActivated: {
+                            stage.shellSurfaces.clearMachineSelection();
+                            stage.creating = true;
+                        }
+                    }
                 }
 
                 EmptyState {
@@ -402,6 +442,7 @@ Item {
 
                 // Grouped grid.
                 Repeater {
+                    id: gridGroups
                     model:
                         stage.layout === "grid" && stage.filtered.length > 0
                         ? stage.groups
@@ -409,6 +450,8 @@ Item {
 
                     delegate: Column {
                         required property var modelData
+                        property alias tiles: tileRepeater
+                        objectName: "machine-group-" + modelData.identity
 
                         width: frame.bodyWidth
                         spacing: stage.tokens.spaceMd
@@ -437,9 +480,11 @@ Item {
                             spacing: stage.tokens.cardGap
 
                             Repeater {
+                                id: tileRepeater
                                 model: modelData.machines
 
-                                delegate: MachineModule {
+                                delegate: MachineTile {
+                                    id: machineTile
                                     required property var modelData
 
                                     width: stage.cardWidth(frame.bodyWidth)
@@ -450,6 +495,8 @@ Item {
                                     selected:
                                         String(modelData.name)
                                         === stage.selectedId
+
+                                    onNavigationRequested: key => stage.moveTileFocus(machineTile, key)
 
                                     onActivated:
                                         stage.shellSurfaces.selectMachine(
@@ -540,13 +587,19 @@ Item {
                     color: stage.theme.textSecondary
                 }
 
-                ListView {
+                GridView {
+                    id: externalGrid
                     objectName: "external-machine-list"
                     width: parent.width
                     visible: stage.filteredOutside.length > 0
+                    cellWidth: stage.layout === "grid"
+                        ? width / Math.max(1, Math.floor((width + stage.tokens.cardGap)
+                            / (stage.tokens.cardMinWidth + stage.tokens.cardGap))) : width
+                    cellHeight: stage.layout === "grid"
+                        ? stage.tokens.cardHeight + stage.tokens.cardGap : stage.tokens.listRowHeight
                     height: visible ? Math.min(
-                        stage.filteredOutside.length * stage.tokens.listRowHeight,
-                        Math.max(stage.tokens.listRowHeight, stage.height / 2)
+                        Math.ceil(stage.filteredOutside.length / Math.max(1, Math.floor(width / cellWidth))) * cellHeight,
+                        Math.max(cellHeight, stage.height / 2)
                     ) : 0
                     model: stage.filteredOutside
                     clip: true
@@ -556,16 +609,38 @@ Item {
                         required property var modelData
                         readonly property string lifecycle: modelData.lifecycle
                         objectName: "external-machine-" + modelData.name
-                        width: ListView.view.width
-                        height: stage.tokens.listRowHeight
+                        width: externalGrid.cellWidth - (stage.layout === "grid" ? stage.tokens.cardGap : 0)
+                        height: externalGrid.cellHeight - (stage.layout === "grid" ? stage.tokens.cardGap : 1)
                         radius: stage.tokens.radiusCard
-                        color: "transparent"
+                        color: stage.theme.alpha(stage.theme.textPrimary, 0)
+                        Accessible.role: Accessible.Grouping
+                        Accessible.name: modelData.name + ", "
+                            + (stage.inventoryAvailable ? "external" : "membership unknown")
+                            + ", " + stage.icons.machineStateWord(modelData.state)
                         border.width: stage.tokens.borderSize
                         border.color: stage.theme.textPrimary
 
+                        MachineSphere {
+                            id: outsideSphere
+                            x: stage.tokens.spaceSm
+                            y: stage.tokens.spaceSm
+                            tokens: stage.tokens
+                            theme: stage.theme
+                            machineName: modelData.name
+                            domain: "unclassified"
+                            state: stage.inventoryAvailable ? "external" : "unclassified"
+                            size: stage.layout === "grid" ? stage.tokens.spaceSection : stage.tokens.spaceHuge
+                        }
                         Column {
-                            anchors.fill: parent
-                            anchors.margins: stage.tokens.spaceSm
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.leftMargin: stage.layout === "grid"
+                                ? stage.tokens.spaceSm : outsideSphere.size + stage.tokens.spaceMd
+                            anchors.rightMargin: stage.tokens.spaceSm
+                            anchors.topMargin: stage.layout === "grid"
+                                ? outsideSphere.size + stage.tokens.spaceMd : stage.tokens.spaceSm
+                            spacing: stage.tokens.spaceXs
                             ShellLabel {
                                 width: parent.width
                                 tokens: stage.tokens
@@ -579,6 +654,15 @@ Item {
                                 role: "meta"
                                 text: (stage.inventoryAvailable ? "external" : "membership unknown")
                                     + " · " + stage.icons.machineStateWord(modelData.state)
+                                color: stage.theme.textSecondary
+                            }
+                            ShellLabel {
+                                width: parent.width
+                                visible: stage.layout === "grid"
+                                tokens: stage.tokens
+                                role: "mono"
+                                text: "Unknown · Unknown vCPU · "
+                                    + (stage.inventoryAvailable ? "external" : "membership unknown")
                                 color: stage.theme.textSecondary
                             }
                         }
@@ -620,6 +704,36 @@ Item {
             machine: stage.machine
             showBack: stage.paneOnly
         }
+    }
+
+    function moveTileFocus(source, key) {
+        const tiles = [];
+        for (let group = 0; group < gridGroups.count; group++) {
+            const repeater = gridGroups.itemAt(group).tiles;
+            for (let index = 0; index < repeater.count; index++)
+                tiles.push(repeater.itemAt(index));
+        }
+        const index = tiles.indexOf(source);
+        let target = null;
+        if (key === Qt.Key_Left || key === Qt.Key_Right) {
+            target = tiles[index + (key === Qt.Key_Left ? -1 : 1)];
+        } else {
+            const origin = source.mapToItem(stage, 0, 0);
+            let best = Infinity;
+            for (const tile of tiles) {
+                const point = tile.mapToItem(stage, 0, 0);
+                const dy = point.y - origin.y;
+                if ((key === Qt.Key_Up && dy >= 0) || (key === Qt.Key_Down && dy <= 0))
+                    continue;
+                const distance = Math.abs(dy) * stage.width + Math.abs(point.x - origin.x);
+                if (distance < best) {
+                    best = distance;
+                    target = tile;
+                }
+            }
+        }
+        if (target)
+            target.forceActiveFocus(Qt.TabFocusReason);
     }
 
     // Cards stay inside the reviewed 300-420 range and fill the row evenly

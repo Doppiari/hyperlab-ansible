@@ -269,6 +269,18 @@ Item {
                 }
             }
 
+            MachineSphere {
+                objectName: "machine-context-sphere"
+                tokens: pane.tokens
+                theme: pane.theme
+                machineName: pane.identifier
+                domain: pane.present ? String(pane.machine.provenance) : "unclassified"
+                state: pane.present ? String(pane.machine.state) : "unknown"
+                disposable: pane.present && pane.machine.lifecycle === "disposable"
+                gpuOwner: pane.present && pane.machine.gpu_relation === "held"
+                size: pane.tokens.spaceXl * 4
+            }
+
             // Identity. The name survives even when the machine does not, so
             // an operator can see which machine disappeared.
             ShellLabel {

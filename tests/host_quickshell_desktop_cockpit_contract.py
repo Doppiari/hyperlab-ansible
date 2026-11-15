@@ -174,7 +174,7 @@ def main() -> int:
         )
 
     for marker in (
-        "MachineModule {",
+        "MachineTile {",
         "MachineListRow {",
         "machinesAvailable",
         "shellState",

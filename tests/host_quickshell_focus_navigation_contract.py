@@ -43,7 +43,7 @@ def check_routes() -> None:
         "openSubpage": {"ControlCenterView.qml": 1, "DiagnosticsView.qml": 1},
         "toggleWorkspace": {"HyperLabBar.qml": 1},
         "forceActiveFocus": {"ConfirmationSurface.qml": 2,
-                             "LauncherSurface.qml": 1},
+                             "LauncherSurface.qml": 1, "MachineStage.qml": 1},
         "requestActivate": {},
     }
     for method, owners in expected.items():

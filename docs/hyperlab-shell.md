@@ -198,8 +198,9 @@ survive.
 Product inventory grouped by host-resolved provenance, with a count per group
 and an explicit Unclassified group last. Every other observed libvirt domain
 appears below in **Not managed**, with lifecycle **external**, name and state.
-Those rows have a neutral outline and transparent fill, never a domain colour
-or HOST grey, and carry no selection, power or console actions. The same raw
+Those tiles have a neutral sphere and border with transparent fill, never a
+domain colour or HOST grey, and carry no selection, power or console actions.
+The dense layout keeps the same neutral outline and sphere. The same raw
 inventory stays in Diagnostics. This is visibility without adoption
 ([ADR 0060](adr/0060-external-machine-visibility.md): accepted population
 change; proposed external visual state).
@@ -246,25 +247,53 @@ VM pill, with a separate 30-second command timeout for the full document
 build. Command failure, timeout and malformed JSON show **VM ?**. Installed
 read latency still needs measurement on Nitro.
 
-Product cards are 300–420 units wide and carry, in
-order: name and operating system, provenance, state, the allocation the
-machine was given (memory, vCPU, network), and its relationship to the
-passthrough GPU.
+Product tiles are 300–420 units wide, grouped in the palette's domain order
+(CLEAN, DEV, SERVICES, DIRTY, LAB, then Unclassified), followed by Not managed.
+Empty groups are omitted. Each tile starts with a `MachineSphere` and a state
+word, followed by its name and **memory · vCPU · domain** allocation line.
+A subtle wash uses only the resolved domain's palette colour. Passthrough
+configuration or ownership is written below; ownership also docks the GPU
+mark on the sphere, and disposable lifecycle adds its dashed ring.
+Unclassified Machines keep a neutral sphere and surface without a domain
+wash. External tiles remain unfilled even if their network names a domain.
+Their existing read-only projection omits memory and vCPU, so the allocation
+line says **Unknown · Unknown vCPU · external**; network attachment supplies
+neither an allocation nor an identity.
 
-The operating system comes from the Machine's checked-in image manifest
-(`os_variant`), read by the host: `Arch Linux`, `Debian 13`, `Fedora 44`,
-`Windows 11`. A guest cannot rename itself there, and a variant the host
-does not know reads **OS unknown** instead of a guess.
+The operating system in dense rows and the pane comes from the Machine's
+checked-in image manifest (`os_variant`), read by the host: `Arch Linux`,
+`Debian 13`, `Fedora 44`, `Windows 11`. A guest cannot rename itself there.
+An unknown variant reads **OS unknown** in the row and **Unknown** in the pane.
 
-Memory and vCPU are labelled **allocation**, never consumption. A value the
-host did not publish says Unknown; `networks: null` (the domain could not be
-read) and `networks: []` (the domain declares none) are different facts and
+Memory and vCPU describe **allocation**, never consumption; the accessible
+name also labels them as allocation. A value the host did not publish says
+Unknown; `networks: null` (the domain could not be read) and `networks: []`
+(the domain declares none) are different facts and
 never share a sentence.
 
 Large inventories switch to a virtualized list, so every machine stays
 reachable. There is no two-row cap and no self-referential "view all" tile.
 
-Selecting a card opens the machine pane. **Selection never starts anything.**
+Selecting a tile opens the existing machine pane, whose header shows the
+same sphere at a larger size. Tab reaches every product tile; Left/Right
+follow tile order, and Up/Down move to the closest column in the preceding
+or following drawn row, across domain groups. Focus scrolls into view, and
+Enter or Space opens the pane. Filtering still applies to both populations.
+Every tile has an accessible name; external tiles are read-only groups and
+never enter the action tab order. **Selection never starts anything.**
+
+A readable empty registry shows the host's grey sphere and one **Create a
+Machine** action, which opens the same Create view as **New Machine** in a
+populated inventory. If no domains are present, the filter and layout switch
+are hidden. Existing external domains remain below that guidance.
+Unavailable inventory and a filter with no matches keep their separate
+messages and never become the empty-host view.
+
+`python tests/machine_showcase_contract.py` executes the production QML with
+six synthetic Machines across four domains and one external domain, including
+real Qt key events. Its optional `--render-dir DIRECTORY` writes native
+1440×900 and 1920×1080 captures and a GTK comparison using the same fixture.
+Only transports are substituted; physical acceptance on Nitro remains open.
 
 ### The selected machine
 
@@ -974,8 +1003,10 @@ Nitro acceptance under both compositors or Predator replay.
 
 Every Machine is a sphere and the host is the grey symbol at the centre
 ([ADR 0064](adr/0064-spheres-are-machines.md), accepted operator decision).
-`MachineSphere.qml` is the one drawing of a Machine; no surface uses it yet,
-and each adopts it in its own change. Its inputs are `domain`, `state`,
+`MachineSphere.qml` is the one drawing of a Machine. The Machines showcase
+uses it on product tiles, dense rows, neutral external tiles, the selected
+Machine header and the empty host view; other surfaces adopt it separately.
+Its inputs are `domain`, `state`,
 `disposable`, `gpuOwner`, `size`, `machineName` and `isHost`, with the
 shell's `theme` and `tokens`. The ADR's operator decision fixes the table
 below; how the component reads it (the outline tone, the libvirt words, the

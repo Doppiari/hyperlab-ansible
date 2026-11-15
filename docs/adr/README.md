@@ -200,6 +200,10 @@ entered the pipeline.
     Its component choices (themed neutral outline, reserved HOST grey,
     libvirt state words) are proposed.
 
+65. [`0065-qml-inherited-item-state.md`](0065-qml-inherited-item-state.md)
+    — proposed: recognise Item.state in the structural wiring resolver,
+    retaining the refusal of that property on QtObject-based components.
+
 The pre-VM baseline that led to these decisions remains available as
 [`../historical-audit-m0.md`](../historical-audit-m0.md); it is archival evidence,
 not current implementation documentation.
@@ -658,3 +662,14 @@ remain.
     reviewed clean/dirty/lab and unmapped PCI fixtures,
     real lease controls, complete recording/privacy review and portable
     Predator checks; every physical campaign observation remains pending.
+
+- [ADR 0065](0065-qml-inherited-item-state.md)
+  - Decision: proposed.
+  - Built: built — the structural wiring resolver recognises inherited
+    Item.state and checks both Item and QtObject component boundaries.
+  - Activation: on request — the discovered QML wiring and showcase
+    contracts execute during the repository verification battery.
+  - Source: [`host_quickshell_qml_wiring_contract.py`](../../tests/host_quickshell_qml_wiring_contract.py),
+    [`machine_showcase_contract.py`](../../tests/machine_showcase_contract.py)
+  - Prerequisites: acceptance of the structural resolver correction;
+    software checks do not establish physical showcase acceptance.

@@ -5600,3 +5600,69 @@ was byte-identical to the original and exited 0. `theme-tinted` is caught by
 the exact 128-pixel rim colour before the per-appearance comparison runs;
 that comparison independently refuses any accent-dependent sphere. The first
 test-first run refused the missing ADR before the component was rewritten.
+
+## Machines showcase with spheres
+`tests/machine_showcase_contract.py` executes the production view with the
+real Theme, Tokens, ShellState and selection coordinator. Its six registry
+Machines span four domains; the seventh domain is external. Runtime checks
+read sphere inputs, allocation and state words, accessibility, neutral
+external presentation, geometry, filtering, real Qt key events, the selected
+header and empty/unavailable states. The lexer rejects hexadecimal and named
+colour literals, including GTK-parsed colour names, and colour constructors.
+The optional render output contains native 1440×900 and 1920×1080 captures
+and the real GTK showcase built from the same fixture and palette.
+
+For each break, save the named file, change only the described behaviour,
+run `python tests/machine_showcase_contract.py`, restore the saved copy and
+run it again. The installation break instead runs
+`python tests/host_quickshell_shared_shell_contract.py`. Restored files were
+compared byte for byte. Most paths are under
+`roles/host_desktop_common/files/quickshell/hyperlab/`; the table names the
+other two explicitly.
+
+Two first experiments stayed green and led to more precise checks:
+
+| Experiment | Observed result | Explanation and correction |
+| --- | --- | --- |
+| Remove only MachineTile's local Enter activation. | Exit 0 before the exact-once assertion. | ShellCard already handled Enter. Both handlers together emitted twice; the tile now handles arrows only. The exact-once assertion failed on the duplicated version, and both missing and duplicated shared activation fail below. |
+| Add state to the resolver's QtObject roots, checking Theme as the negative case. | Exit 0. | Theme's production root is Scope, so this did not exercise QtObject. The negative check now also resolves the actual QtObject-based Icons; the same mutation fails below. |
+
+| Mutation | File | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- | --- |
+| `no-tile-sphere` | `MachineTile.qml` | Remove the MachineSphere block from MachineTile. | `MachineTile must contain one MachineSphere` | Exit 0, contract OK. |
+| `literal-colour` | `MachineTile.qml` | Give the tile the literal colour #5b8cff. | `colour literal in MachineTile.qml` | Exit 0, contract OK. |
+| `external-domain-wash` | `MachineStage.qml` | Fill an external tile with the DEV palette colour. | `external tile borrowed a domain colour or fill` | Exit 0, contract OK. |
+| `reversed-domains` | `MachineStage.qml` | Read the provenance order backwards. | `groups must follow palette order and omit empty domains` | Exit 0, contract OK. |
+| `empty-domain-drawn` | `MachineStage.qml` | Draw groups whose row count is zero. | `groups must follow palette order and omit empty domains` | Exit 0, contract OK. |
+| `no-gpu-fact` | `MachineTile.qml` | Bind the tile sphere GPU owner input to false. | `tile sphere lost confirmed Machine facts` | Exit 0, contract OK. |
+| `no-disposable-fact` | `MachineTile.qml` | Bind the tile sphere disposable input to false. | `tile sphere lost confirmed Machine facts` | Exit 0, contract OK. |
+| `no-allocation-line` | `MachineTile.qml` | Replace the allocation label with an empty string. | `tile lost state, name or allocation line` | Exit 0, contract OK. |
+| `no-passthrough-word` | `MachineTile.qml` | Remove the configured passthrough wording. | `tile lost passthrough configuration or ownership words` | Exit 0, contract OK. |
+| `no-wash` | `MachineTile.qml` | Use the plain raised surface for classified tiles. | `tile has no domain wash` | Exit 0, contract OK. |
+| `small-context-sphere` | `MachineContextPane.qml` | Make the context sphere the same size as the tile sphere. | `context header has no matching larger sphere` | Exit 0, contract OK. |
+| `no-arrow-navigation` | `MachineStage.qml` | Disconnect the tile navigation signal from the stage. | `Right did not move to the next tile` | Exit 0, contract OK. |
+| `no-shared-enter-activation` | `ShellCard.qml` | Remove the activation emission in ShellCard.activate(). | `Enter must activate a tile exactly once` | Exit 0, contract OK. |
+| `double-enter-activation` | `MachineTile.qml` | Add a second Return handler in MachineTile. | `Enter must activate a tile exactly once` | Exit 0, contract OK. |
+| `filter-disconnected` | `MachineStage.qml` | Make the search field always assign an empty query. | `filter no longer controls the drawn tiles` | Exit 0, contract OK. |
+| `empty-host-unreserved` | `MachineStage.qml` | Set the empty host sphere isHost input to false. | `empty registry has no host sphere` | Exit 0, contract OK. |
+| `duplicate-empty-create` | `MachineStage.qml` | Keep the header New Machine action visible for an empty registry. | `empty registry must offer one Create a Machine action` | Exit 0, contract OK. |
+| `no-accessible-name` | `MachineTile.qml` | Remove the tile accessible name and allocation description. | `tile has no accessible name or keyboard focus` | Exit 0, contract OK. |
+| `no-dense-sphere` | `MachineListRow.qml` | Remove the sphere from MachineListRow. | `dense rows lost their spheres` | Exit 0, contract OK. |
+| `lost-item-state` | `tests/host_quickshell_qml_wiring_contract.py` | Remove inherited Item.state recognition from the wiring resolver. | `QML wiring lost the inherited Item.state property` | Exit 0, contract OK. |
+| `tile-not-installed` | `group_vars/all/host-desktop.yml` | Remove MachineTile.qml from the installed surface file inventory. | `HyperLab shared shell contract: shared shell stage invariant changed: surface_files` | Exit 0, contract OK. |
+| `named-colour` | `MachineTile.qml` | Give the tile the named colour steelblue. | `named colour literal in MachineTile.qml` | Exit 0, contract OK. |
+| `external-invented-allocation` | `MachineStage.qml` | Replace the external unknown allocation with 8 GiB and 4 vCPU. | `external allocation must remain unknown when the projection omits it` | Exit 0, contract OK. |
+| `tile-width-escapes` | `MachineStage.qml` | Make each tile wider than the workspace. | `tile dimensions escape the reviewed range` | Exit 0, contract OK. |
+| `overlapping-tiles` | `MachineStage.qml` | Use a negative card gap in the managed Flow. | `Machine tiles overlap` | Exit 0, contract OK. |
+| `unavailable-looks-empty` | `MachineStage.qml` | Show the empty host view without requiring available inventory. | `unavailable inventory was presented as empty` | Exit 0, contract OK. |
+| `invented-allocation` | `MachineTile.qml` | Turn a missing memory value into 0 GiB. | `missing facts became a classified or plausible default` | Exit 0, contract OK. |
+| `state-on-qtobject-caught` | `tests/host_quickshell_qml_wiring_contract.py` | Give QtObject roots the Item.state property in the resolver. | `QML wiring gave a non-Item the Item.state property` | Exit 0, contract OK. |
+| `empty-extra-action` | `MachineStage.qml` | Keep the layout switch visible in an actually empty view. | `an empty view must expose only the creation action` | Exit 0, contract OK. |
+
+All twenty-nine deliberate breaks in the final table exited 1, followed by
+exit 0 after restoring the saved copy. The first showcase test refused the
+existing literal colour; the Item.state regression separately failed before
+the resolver correction. The Enter exact-once assertion also failed before
+the duplicate handler was removed. These checks establish software behaviour;
+Nitro keyboard focus, perceived state light and physical display acceptance
+remain open.

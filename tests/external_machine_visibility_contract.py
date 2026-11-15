@@ -364,24 +364,17 @@ NATIVE = '''
             check(sharedState.outsideDomains.length === 7 && sharedState.machinesRunning === 1,
                   "an empty product registry hid libvirt domains");
             sharedSurfaces.openWorkspace("machines");
-            function firstGuidance(node) {
-                if (node.title === "No Machines yet") return node;
-                for (let index = 0; index < node.children.length; index++) {
-                    const found = firstGuidance(node.children[index]);
-                    if (found) return found;
-                }
-                return null;
-            }
             observe(outside);
-            const guidance = firstGuidance(stage);
-            check(guidance && guidance.visible
+            const guidance = find(stage, "machine-empty-state");
+            const guidanceDescription = find(stage, "machine-empty-description");
+            check(guidance && guidance.visible && visibleText(guidance, "No Machines yet")
                   && sharedState.outsideDomains.length === 4
                   && find(stage, "external-machines-heading").visible,
                   "an empty registry with external domains lost first-Machine guidance");
-            check(guidance.description.indexOf("Not managed") >= 0,
+            check(guidanceDescription.text.indexOf("Not managed") >= 0,
                   "first-Machine guidance omitted the existing external group");
             observe([]);
-            check(guidance.visible && guidance.description.indexOf("Not managed") < 0,
+            check(guidance.visible && guidanceDescription.text.indexOf("Not managed") < 0,
                   "empty guidance claims domains appear below when none exist");
             observe(raw);
             sharedState.applyMachinePayload("not json");

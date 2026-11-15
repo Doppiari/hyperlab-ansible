@@ -4,6 +4,13 @@ These notes keep the failures that changed a HyperLab contract. Start from the
 symptom; each page records what was actually wrong, the fix and the regression
 proof.
 
+- [`qml-wiring-missed-inherited-item-state.md`](qml-wiring-missed-inherited-item-state.md):
+  structural wiring rejected the sphere's inherited Item.state, although
+  Qt applied it; the resolver now recognises its actual property owner.
+- [`machine-tile-enter-activated-twice.md`](machine-tile-enter-activated-twice.md):
+  a tile and its shared card both handled Enter; real key events now require
+  one activation, with the shared card owning that key.
+
 - [`release-campaign-missed-v1-scope.md`](release-campaign-missed-v1-scope.md):
   the historical service campaign could not describe the selected v1; a
   separate version-bound campaign records each required observation.

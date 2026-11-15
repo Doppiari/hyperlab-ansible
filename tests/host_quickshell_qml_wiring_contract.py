@@ -138,6 +138,13 @@ def resolve(name: str, catalogue: dict[str, dict[str, object]], key: str):
         collected |= catalogue[current][key]
         current = catalogue[current]["base"]
 
+    # MachineSphere uses Item.state without redeclaring it. StateChip's
+    # required state puts that Qt property in the injection vocabulary;
+    # recognise its actual owner instead of rejecting valid Item bindings.
+    # QtObject-based components must still reject the same assignment.
+    if key == "declared" and current in {"Item", "Rectangle", "Text", "Canvas"}:
+        collected.add("state")
+
     return collected
 
 

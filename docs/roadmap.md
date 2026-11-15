@@ -561,6 +561,14 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
       ([ADR 0060](adr/0060-external-machine-visibility.md), software-verified)
 - [ ] external visibility and running counts accepted on Nitro and Predator
 
+- [x] native Machines showcase: nonempty domain groups in palette order,
+      sphere tiles with allocation and passthrough facts, neutral read-only
+      external tiles, a larger selected sphere, arrow/Enter navigation and
+      host-sphere first-Machine guidance (software-verified;
+      `tests/machine_showcase_contract.py`)
+- [ ] Machines showcase accepted on Nitro: domain groups and spheres,
+      running light, selection and keyboard navigation
+
 ### 8a. Test infrastructure
 
 - [x] a nested lab host for host-level tests, made without privilege and
@@ -723,8 +731,8 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
 
 - [x] spheres are Machines: one `MachineSphere.qml` draws every state of
       the table for every domain from the palette alone, with a neutral
-      external outline, reduced motion and an accessible name; no surface
-      uses it yet ([ADR 0064](adr/0064-spheres-are-machines.md), accepted;
+      external outline, reduced motion and an accessible name; adopted by
+      the Machines showcase ([ADR 0064](adr/0064-spheres-are-machines.md), accepted;
       `tests/machine_sphere_contract.py`, software-verified)
 - [ ] sphere contact sheet accepted by the operator: each domain told apart
       at 16 px, each state told apart without colour, spheres like the
