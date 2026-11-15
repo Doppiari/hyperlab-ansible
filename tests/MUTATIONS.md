@@ -5746,3 +5746,29 @@ Removing column affinity initially stayed green because all vertical checks
 used column 0. Both new mutations now exit 1 at their respective column-1
 assertion, then 0 after byte-identical restoration; the restored contract
 passes both requested sizes without changing the production focus algorithm.
+
+
+## Terminal domain spheres
+
+`python tests/cli_domain_spheres_contract.py` runs the four real CLI views with
+isolated provider/registry inputs and terminal/pipe streams. Frozen UTF-8 byte
+digests pin the previous pipe output and terminal row bodies; the semantic
+palette is also shifted independently of appearance colours.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| `pipe-colour` | In `tools/hyperlabctl/hyperlabctl/cli.py`, replace the stdout TTY condition with true. | `pipe bytes changed: ('vm', 'list')` | Exit 0, contract OK. |
+
+The [component mutation catalogue](../tools/hyperlabctl/MUTATIONS.md#terminal-domain-spheres)
+records all 28 breaks, including palette-only colour, RGB/indexed conversion,
+option/environment policy, neutral provenance, the four call sites and unsafe
+palette inputs. Every final break exited 1 and every restored check exited 0.
+The initial green duplicate-key and exact-key replays, their independent-refusal
+reason and the added isolating fixtures are recorded there as well.
+
+The additional `standalone-import` mutation adds a top-level package-relative
+import to `render.py`. The focused component suite fails on
+`test_status_renderers_still_support_loading_by_filename` with the original
+`ImportError`; its restored source passes. The existing desktop cockpit
+contract also passes without changes. See the
+[problem note](../problems/cli-render-standalone-import.md).

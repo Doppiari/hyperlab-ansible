@@ -1,7 +1,7 @@
 import json
 
 from .. import document as doc
-from ..render import paint
+from ..render import DomainSpheres, paint
 from .base import Command
 
 
@@ -36,6 +36,7 @@ class TrustCommand(Command):
             print(json.dumps({"claimed": trust.get("claimed"), "level": current,
                               "ladder": rows}, indent=2))
             return 0
+        spheres = DomainSpheres(ctx.config.repo_root, args.color, ctx.environ)
         if current is None:
             print("GPU unclaimed this boot: every level is still reachable")
         else:
@@ -44,7 +45,7 @@ class TrustCommand(Command):
         for row in rows:
             mark = "->" if row["current"] else "  "
             label = "reachable" if row["reachable"] else "needs a reboot"
-            print("  %s %-8s %d  %s" % (mark, row["name"], row["level"],
+            print(spheres.prefix(row["name"]) + "  %s %-8s %d  %s" % (mark, row["name"], row["level"],
                                         paint(label, "ok" if row["reachable"] else "warn",
                                               args.color)))
         return 0

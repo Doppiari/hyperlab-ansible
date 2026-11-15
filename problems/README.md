@@ -14,6 +14,10 @@ proof.
   the domain wash replaced the shared card's hover and press fill; the tile now
   uses the same handler states to add neutral feedback over the wash.
 
+- [`cli-render-standalone-import.md`](cli-render-standalone-import.md):
+  a terminal palette dependency broke direct loading of the status renderers;
+  the package import now stays inside the palette reader.
+
 - [`release-campaign-missed-v1-scope.md`](release-campaign-missed-v1-scope.md):
   the historical service campaign could not describe the selected v1; a
   separate version-bound campaign records each required observation.

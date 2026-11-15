@@ -129,3 +129,57 @@ handler that had never bound `exc`, which would have raised `NameError` on the
 one path it was meant to describe. The suite did not catch it because that path
 only fires on a host without PyYAML. `ruff.toml` records the ruleset so the
 check is reproducible rather than a one-off.
+
+
+## Terminal domain spheres
+
+`tests/cli_domain_spheres_contract.py` and the focused render component suite
+were run against isolated copies of the current CLI sources. Each changed file
+was backed up before the break, restored
+byte-for-byte afterwards, and checked green before the next mutation. All 28
+final breaks exited 1 and every restored check exited 0. The complete component
+suite also passes.
+
+| Mutation | File | Break | Result | Observed check |
+| --- | --- | --- | --- | --- |
+| `pipe-colour` | `cli.py` | Ignore stdout TTY detection | red | Frozen pipe bytes change before any terminal check |
+| `ignore-no-color` | `cli.py` | Ignore NO_COLOR presence | red | Automatic suppression with NO_COLOR present and empty |
+| `ignore-dumb` | `cli.py` | Ignore TERM=dumb | red | Automatic suppression with TERM=dumb |
+| `ignore-never` | `cli.py` | Ignore never mode | red | Never/alias plain terminal output |
+| `alias-always` | `cli.py` | Make --no-color select always | red | Legacy --no-color plain terminal output |
+| `drop-color-normalization` | `cli.py` | Stop normalizing --color=VALUE | red | Trailing --color=auto is rejected |
+| `suppress-always` | `cli.py` | Remove the explicit always environment override | red | Explicit always overrides terminal environment suppression |
+| `literal-colour` | `render.py` | Replace domain RGB lookup with a hex literal | red | AST refuses a typed CLI colour |
+| `fixed-rgb` | `render.py` | Replace domain RGB lookup with a fixed RGB triple | red | Exact RGB domain prefix differs from the palette |
+| `theme-domains` | `render.py` | Read the appearance variant as the domain table | red | Appearance tokens fail semantic table validation |
+| `wrong-256` | `render.py` | Choose the farthest indexed colour | red | Fixed-index nearest/tie oracle, before the independent row-prefix comparison |
+| `ignore-truecolor` | `render.py` | Always emit indexed ANSI | red | Exact truecolor prefix oracle |
+| `missing-reset` | `render.py` | Omit the reset after the dot | red | Exact prefix includes a reset before the existing row |
+| `filled-external` | `render.py` | Return a filled dot for neutral identities | red | Neutral prefix is an uncoloured outline |
+| `guest-host-grey` | `render.py` | Allow a guest domain named host to use HOST grey | red | HOST grey remains reserved |
+| `fold-domain-case` | `render.py` | Fold domain case before lookup | red | Noncanonical Dev remains neutral |
+| `duplicate-keys` | `render.py` | Remove YAML duplicate-key refusal | red after added fixtures | Complete duplicate maps and repeated domain keys are refused |
+| `redirected-palette` | `render.py` | Remove palette path symlink refusal | red | Symlinked palette is refused |
+| `aliased-palette` | `render.py` | Remove YAML alias refusal | red | Aliased complete domain table is refused |
+| `incomplete-palette` | `render.py` | Remove exact domain-key validation | red after added fixtures | Additional unreviewed domain key is refused |
+| `raw-vm-identity` | `commands/vm.py` | Use the raw trust_profile instead of product provenance | red | External GPU-profile fallback remains neutral |
+| `missing-vm-dot` | `commands/vm.py` | Remove the VM row prefix | red | VM terminal prefix |
+| `missing-machine-dot` | `commands/machine.py` | Remove the Machine row prefix | red | Machine intent terminal prefix |
+| `missing-net-dot` | `commands/net.py` | Remove the network row prefix | red | Network terminal prefix |
+| `missing-trust-dot` | `commands/trust.py` | Remove the ladder row prefix | red | Trust ladder terminal prefix |
+| `invalid-mode` | `cli.py` | Remove the colour option choices | red | An unknown colour mode must be rejected |
+| `tie-high-index` | `render.py` | Walk fixed colour indices backwards when choosing the minimum | red | Equidistant greys select the lowest fixed index |
+| `standalone-import` | `render.py` | Add a top-level package-relative import | red | `test_status_renderers_still_support_loading_by_filename` raises the original import error |
+
+### Two palette mutations first stayed green
+
+Removing duplicate-key refusal initially stayed green: the duplicated fixtures
+also removed required keys, so the independent completeness check still refused
+them. Complete duplicate top-level maps and repeated domain keys now isolate
+that invariant; replay is red.
+
+Removing exact-key validation initially stayed green too: missing required keys
+were still refused by the subsequent mandatory lookups. A complete table with
+an extra, unreviewed domain now isolates exact-key validation; replay is red.
+Neither green result was evidence that unsafe input was accepted. Both exposed
+a fixture that failed to distinguish the individual guard from another refusal.

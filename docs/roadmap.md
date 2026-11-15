@@ -738,6 +738,14 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
       at 16 px, each state told apart without colour, spheres like the
       reference renders
 
+- [x] terminal domain dots in `vm list`, `machine list`, `net list` and
+      `trust`: semantic palette, RGB/indexed colour, neutral unresolved rows,
+      environment/flag controls and byte-identical pipes and JSON
+      ([ADR 0066](adr/0066-terminal-domain-spheres.md), proposed;
+      `tests/cli_domain_spheres_contract.py`, software-verified)
+- [ ] terminal domain dots accepted on Nitro: all four commands in a
+      terminal, then piped through `cat` with no dots or escapes
+
 - [x] generated, text-free `trust-pool-v3` on geometry B: twelve 1672×941
       wallpapers, palette-owned sphere tints with packed literal rejection,
       exact pixel/hash, full negative-space and shared-geometry contracts;

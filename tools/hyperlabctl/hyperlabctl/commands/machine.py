@@ -38,7 +38,7 @@ from ..machine_registry import (
     withdraw_machine,
     withdraw_published,
 )
-from ..render import machine_cards
+from ..render import DomainSpheres, machine_cards
 from .base import Command
 
 
@@ -621,6 +621,7 @@ class MachineCommand(Command):
         if action == "list":
             return self._list(
                 args,
+                ctx,
             )
 
         if action == "show":
@@ -703,7 +704,7 @@ class MachineCommand(Command):
 
         return 0
 
-    def _list(self, args):
+    def _list(self, args, ctx):
         records = list_machines()
 
         if args.json:
@@ -717,9 +718,10 @@ class MachineCommand(Command):
             )
             return 0
 
+        spheres = DomainSpheres(ctx.config.repo_root, args.color, ctx.environ)
         for record in records:
             print(
-                "%-28s %-11s %-8s %s"
+                spheres.prefix(record["network_profile"]) + "%-28s %-11s %-8s %s"
                 % (
                     record["id"],
                     record["lifecycle"],

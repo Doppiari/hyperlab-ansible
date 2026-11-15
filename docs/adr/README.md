@@ -204,6 +204,10 @@ entered the pipeline.
     — proposed: recognise Item.state in the structural wiring resolver,
     retaining the refusal of that property on QtObject-based components.
 
+66. [`0066-terminal-domain-spheres.md`](0066-terminal-domain-spheres.md)
+    — proposed: palette-owned domain dots on terminal list rows, with
+    unchanged pipe bytes and existing product provenance.
+
 The pre-VM baseline that led to these decisions remains available as
 [`../historical-audit-m0.md`](../historical-audit-m0.md); it is archival evidence,
 not current implementation documentation.
@@ -673,3 +677,14 @@ remain.
     [`machine_showcase_contract.py`](../../tests/machine_showcase_contract.py)
   - Prerequisites: acceptance of the structural resolver correction;
     software checks do not establish physical showcase acceptance.
+
+- [ADR 0066](0066-terminal-domain-spheres.md)
+  - Decision: proposed.
+  - Built: built — shared palette reader and terminal dots for four CLI views,
+    with byte-preserving plain output and existing product provenance.
+  - Activation: default — decorated text only on a terminal under colour policy.
+  - Source: [`render.py`](../../tools/hyperlabctl/hyperlabctl/render.py),
+    [`cli.py`](../../tools/hyperlabctl/hyperlabctl/cli.py),
+    [`cli_domain_spheres_contract.py`](../../tests/cli_domain_spheres_contract.py)
+  - Prerequisites: operator review of the proposed terminal presentation choices
+    and the four-command terminal/pipe check on Nitro.
