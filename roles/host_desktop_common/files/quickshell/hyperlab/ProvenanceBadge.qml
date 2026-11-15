@@ -7,9 +7,10 @@
 // the sphere only and never without the domain word; the words stay in the
 // primary text tone.
 //
-// The answer is ShellState.focusedMachine: the host's resolution of the
-// focused surface, not a guess made from a window name. It is deliberately
-// not the GPU boot claim: which identity may hold the GPU this boot and
+// The bar passes ShellState.focusedMachine after checking that the domain
+// palette is complete: host resolution of the focused surface, never a
+// guess made from a window name. It is deliberately not the GPU boot claim:
+// which identity may hold the GPU this boot and
 // which identity owns the window in front of you are different questions
 // with different answers, and collapsing them is how a trust display starts
 // lying.

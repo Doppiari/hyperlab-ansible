@@ -21,6 +21,8 @@ mapping and a stale focus source. Every fixture window carries a title that
 names another Machine, so a mapping that read titles would be caught. It
 also proves the resolver's answer does not depend on the title and that the
 shell's mapping reads nothing but host provenance and the inventory.
+Removing each domain palette key makes both the core and the words Unknown
+under host and Machine focus; restoring it recovers the current answer.
 
 `--renders DIR` keeps the ten bar captures (`<compositor>-<state>.png`).
 What this does not prove: the real Quickshell runtime, real compositor
@@ -112,7 +114,7 @@ SCENARIO = r"""
                 const core = glyph.mapToItem(rail, glyph.width / 2, glyph.height / 2);
                 const ball = sphere.mapToItem(rail, sphere.width / 2, sphere.height / 2);
                 console.log("BARCORE " + JSON.stringify({
-                    "name": event.name, "kind": sharedState.focusedMachine.kind,
+                    "name": event.name, "kind": rail.focusedMachine.kind,
                     "core": [core.x, core.y], "coreRadius": glyph.coreRadius,
                     "outerRadius": glyph.outerRadius,
                     "hollow": glyph.coreHollow, "level": rail.coreLevel,
@@ -160,11 +162,47 @@ SCENARIO = r"""
                 const dev = states[1];
                 const host = states[0];
 
-                // Re-validating the same Machine never restarts the fade.
+                // Re-validating the same Machine reads Unknown until the
+                // resolver answers (checked in focus()), and the answer then
+                // restores the colour without restarting the fade.
                 focus(dev);
                 answer(dev);
                 check(sharedState.focusedMachine.kind === "machine" && rail.coreLevel === 1,
-                      "re-validating the same Machine blinked the core");
+                      "re-validating the same Machine restarted the fade");
+
+                // A missing domain colour makes both signals Unknown, even
+                // when it belongs to another domain. Check live palette
+                // changes as well as answers received during the gap.
+                const palette = sharedTheme.palette;
+                for (const event of [host, dev]) {
+                    focus(event);
+                    answer(event);
+                    for (const domain of sharedTheme.provenanceIdentities) {
+                        const partial = Object.assign({}, palette);
+                        delete partial["dom_" + domain];
+                        sharedTheme.palette = partial;
+                        check(!sharedTheme.provenanceAvailable,
+                              "the partial palette is still complete");
+                        checkPaletteGap(event);
+                        focus(event);
+                        answer(event);
+                        checkPaletteGap(event);
+                        sharedTheme.palette = palette;
+                        check(sharedTheme.provenanceAvailable && !glyph.coreHollow
+                              && words.text === event.words && sphere.classified
+                              && rail.focusedMachine.kind === sharedState.focusedMachine.kind,
+                              "restoring the palette did not restore the focus answer");
+                    }
+                }
+
+                function checkPaletteGap(event) {
+                    check(sharedState.focusedMachine.kind ===
+                          (event.expect === "host" ? "host" : "machine")
+                          && rail.focusedMachine.kind === "unknown" && glyph.coreHollow
+                          && words.text === "Unknown" && !sphere.classified
+                          && badge.accessibleName.indexOf("Focus unknown") === 0,
+                          "an incomplete palette left the core and the focus item disagreeing");
+                }
 
                 // With reduced motion a colour change is instant.
                 sharedTokens.reducedMotion = true;
@@ -555,7 +593,8 @@ def main() -> int:
             shutil.rmtree(staged, ignore_errors=True)
 
     print("Bar core focus contract: OK (Sway and Hyprland: host, dev, dirty, unmapped and "
-          "stale focus; title-independent mapping; hollow Unknown; fade and reduced motion)")
+          "stale focus; title-independent mapping; hollow Unknown; one answer for core and item; "
+          "fade and reduced motion)")
     return 0
 
 

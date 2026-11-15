@@ -6010,8 +6010,10 @@ edits a file in `roles/host_desktop_common/files/quickshell/hyperlab/`.
 | `no-fade` | `followCore()` sets `coreLevel` to 1 instead of starting the fade. | `sway: "a new core colour did not fade in"` | Exit 0, contract OK. |
 | `contradiction-ignored` | The inventory row that names the Machine in another domain is ignored (`if (false)`). | `sway: "the inventory named another domain and the bar still chose one"` | Exit 0, contract OK. |
 | `unresolved-is-host` | `focusedMachineFor()` answers host for an `unresolved` provenance. | `sway/unmapped: the bar placed focus on host` | Exit 0, contract OK. |
+| `palette-unchecked` | Remove `theme.provenanceAvailable` from the bar's presentation answer. | `sway: "an incomplete palette left the core and the focus item disagreeing"` | Exit 0, contract OK. |
+| `item-reads-shell-answer` | Pass `shellState.focusedMachine` directly to the focus item, bypassing the bar's palette check. | `sway: "an incomplete palette left the core and the focus item disagreeing"` | Exit 0, contract OK. |
 
-Twelve breaks exited 1 with the diagnostic listed; each restored copy was
+Fourteen breaks exited 1 with the diagnostic listed; each restored copy was
 byte-identical to the original, and the contract exited 0 after the
 restorations. `fade-ignores-reduced-motion` stays green and is equivalent,
 not missed: `motionExpand` is already 0 under reduced motion, and a
@@ -6019,6 +6021,11 @@ zero-duration animation lands at once, so the explicit branch is a second
 guard. `fade-fixed-duration` removes both guards and is refused.
 `unknown-host-grey` is refused by the first focus event, before the pixel
 checks, because the core is not hollow while the new surface resolves.
+The palette cases remove each `dom_*` key under both host and Machine focus,
+check the core, words and accessible name before and after a resolver answer,
+and restore the palette without another focus event. The pre-correction bar
+failed with the incomplete-palette diagnostic above. Both palette mutations
+exited 1, and each byte-identical restoration exited 0.
 
 ## The wiring contract and a component's root bindings
 

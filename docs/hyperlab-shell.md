@@ -1065,27 +1065,37 @@ core in the host bar does (below).
 ### Bar core
 
 In the host bar, and only there, the core of the product symbol follows
-focus (ADR 0064). `ShellState.focusedMachine` derives one of three answers
-from `focusedProvenance` and nothing else, plus the Machine inventory for
-the state the sphere draws:
+focus (ADR 0064). `ShellState.focusedMachine` derives the identity from
+`focusedProvenance` and uses the Machine inventory for the state the sphere
+draws. The bar combines that answer with domain palette availability to
+present one of three answers:
 
 | Answer | When | Core | Focus item |
 | --- | --- | --- | --- |
 | host | the resolver named the surface host-native | filled, HOST grey | host sphere, `Host` |
 | machine | the resolver named one reviewed guest identity from the host-owned VM spec of a registered viewer | filled, the domain colour | the Machine's sphere, `dev-01 · dev` |
-| unknown | loading, resolving, unresolved, unavailable, a stale focus source, or an inventory that names the Machine in another domain | hollow outline in the text tone | neutral outline, `Unknown` |
+| unknown | loading, resolving, unresolved, unavailable, a stale focus source, an inventory that names the Machine in another domain, or an incomplete domain palette | hollow outline in the text tone | neutral outline, `Unknown` |
 
 The mapping is the one the window borders use: the resolver
 (`tools/surface_provenance.py`) answers for the focused PID, app id and
 window id, verified against the per-user viewer registry and the reviewed
-spec; the title, clipboard and guest-agent data never enter. While a new
-surface is resolving the answer is already unknown, so a Machine never
-stays on the window that replaced it. The inventory only confirms the
-Machine's state for its sphere: if it does not list the Machine, the
-domain stays and the sphere draws the neutral outline; if it lists it in
-another domain, neither source is believed. A new colour fades in from
-transparent over `motionExpand`, never through another hue, and only when
-the proven answer changes; with reduced motion it is instant.
+spec; the title, clipboard and guest-agent data never enter. Every focus
+snapshot resets the answer to Unknown until the resolver answers again,
+including re-validation of the same window on the adapter's 30-second
+heartbeat and Sway window events such as title changes. This can briefly
+show the hollow core and `Unknown` and change the focus item's width even
+when focus has not moved; its visibility depends on resolver latency.
+A Machine never stays on the window that replaced it. The inventory only
+confirms the Machine's state for its sphere: if it does not list the Machine,
+the domain stays and the sphere draws the neutral outline; if it lists it in
+another domain, neither source is believed. The bar also requires a complete
+domain palette: a missing `dom_*` key makes both the core and the focus item
+Unknown, including host focus, until the palette is complete again. This
+presentation check leaves the resolver's answer intact in Diagnostics.
+A new colour fades in from transparent over `motionExpand`, never through
+another hue, only when it differs from the last proven colour drawn. An
+unchanged answer restores that colour without restarting the fade; the
+pending interval still reads Unknown. With reduced motion the fade is instant.
 `IsolationGlyph.qml` accepts a `core` colour and `coreHollow`;
 `IdentityMark.qml` forwards both, with the primary text tone and a filled
 core as defaults for every other surface. The idle desktop, wallpapers and

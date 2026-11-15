@@ -20,6 +20,9 @@ proof.
 - [`cli-machine-intent-colour.md`](cli-machine-intent-colour.md):
   terminal Machine dots coloured requested intent as confirmed provenance;
   both Machine and VM lists now use the shared inventory classification.
+- [`bar-core-palette-gap-disagreed-with-words.md`](bar-core-palette-gap-disagreed-with-words.md):
+  an incomplete domain palette made the core hollow while the focus words
+  still named an identity; both now consume one presentation answer.
 
 - [`release-campaign-missed-v1-scope.md`](release-campaign-missed-v1-scope.md):
   the historical service campaign could not describe the selected v1; a

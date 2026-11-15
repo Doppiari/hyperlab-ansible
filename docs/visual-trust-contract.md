@@ -154,6 +154,10 @@ focus item draws the same answer as a `MachineSphere` and words
 colour never appears without its domain word. The window title, clipboard
 and guest-agent data never enter this mapping: it reads only the resolver's
 answer for the focused process and the inventory row of the same Machine.
+An incomplete domain palette makes both signals Unknown, even when the
+resolver named a host or Machine identity; restoring the palette restores
+the presentation of that answer. Every focus snapshot, including an
+unchanged-window heartbeat, reads Unknown until the fresh resolver answer.
 A new colour fades in over the expansion motion token (180 ms),
 instantly with reduced motion, and never blends through another hue. The
 idle desktop, the wallpapers and the lock surface keep the grey core. A

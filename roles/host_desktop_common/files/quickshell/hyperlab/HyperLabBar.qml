@@ -52,22 +52,40 @@ PanelWindow {
     // The bar core (ADR 0064): the palette colour of the host or of the
     // Machine that has focus; hollow, in the neutral outline tone, while
     // focus cannot be placed. A new colour fades in from the rail, never
-    // through another hue, and only when the proven answer changes, so a
-    // re-validation of the same window does not blink. Reduced motion makes
-    // it instant.
-    readonly property var focusedMachine: bar.shellState.focusedMachine
+    // through another hue, and only when the proven colour differs from the
+    // last one drawn. Every re-validation of the same window, on each focus
+    // event and on the adapter's 30-second heartbeat, still reads Unknown
+    // until the resolver answers again: only a fresh answer restores an
+    // identity. Reduced motion makes the fade instant.
+    //
+    // The core and the focus item read this one answer, so they never
+    // disagree: an incomplete domain palette or an unknown identity makes
+    // a host or Machine answer Unknown for both.
+    readonly property var focusedMachine: {
+        const answer = bar.shellState.focusedMachine;
 
-    readonly property string coreIdentity:
-        bar.focusedMachine.kind === "host"
-        ? "host"
-        : (bar.focusedMachine.kind === "machine"
-            ? String(bar.focusedMachine.identity)
-            : "")
+        if (answer.kind !== "host" && answer.kind !== "machine")
+            return answer;
+
+        if (bar.theme.provenanceAvailable
+            && bar.theme.knownProvenance(String(answer.identity)))
+            return answer;
+
+        return {
+            "kind": "unknown",
+            "identity": "",
+            "name": "",
+            "machineState": "",
+            "words": "Unknown",
+            "reason": "The palette cannot display the focused identity"
+        };
+    }
 
     readonly property bool coreKnown:
-        bar.coreIdentity.length > 0
-        && bar.theme.provenanceAvailable
-        && bar.theme.knownProvenance(bar.coreIdentity)
+        bar.focusedMachine.kind === "host" || bar.focusedMachine.kind === "machine"
+
+    readonly property string coreIdentity:
+        bar.coreKnown ? String(bar.focusedMachine.identity) : ""
 
     readonly property color coreTone:
         bar.coreKnown
