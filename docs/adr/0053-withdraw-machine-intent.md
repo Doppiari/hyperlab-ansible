@@ -129,8 +129,8 @@ decision.
   `516f30e` adds the staged-create case that preserves another spec inode
   with identical bytes after real publication. The reviewed
   [mutation evidence](../../tests/MUTATIONS.md#the-creation-plan-agrees-with-the-factory-a-refused-creation-keeps-nothing)
-  records red and restored-green results for publication compensation,
-  cleanup order and invalid-spec refusal; the
+  records red and restored-green results for publication compensation and
+  cleanup order, and for malformed and duplicate-key refusal; the
   [replacement-inode mutation](../../tests/MUTATIONS.md#rollback-keeps-a-replacement-spec-with-identical-bytes)
   turns digest-only cleanup red specifically for removing the replacement.
 - Activation: on request — the shell's creation runs the staged step

@@ -154,7 +154,8 @@ entered the pipeline.
     the record last; a record is withdrawn only by its digest, under the
     registry lock, and never while a projection or a domain follows from it.
     Operator's decision, 2026-11-05; unpublished source in the record.
-    Transaction remediation and Nitro refusal evidence remain open.
+    Transaction remediation is software-verified; Nitro refusal tests and
+    manual-recovery limits remain open.
 
 54. [`0054-private-machine-diagnostics.md`](0054-private-machine-diagnostics.md) —
     proposed, software built: supervise one private diagnostics collection
