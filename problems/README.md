@@ -4,6 +4,13 @@ These notes keep the failures that changed a HyperLab contract. Start from the
 symptom; each page records what was actually wrong, the fix and the regression
 proof.
 
+- [`bar-focus-words-elided-domain.md`](bar-focus-words-elided-domain.md):
+  middle elision hid the domain beside a coloured core; a separate label now
+  keeps domain/state words unelided and tests their painted bounds.
+- [`bar-clock-overlapped-narrow-readouts.md`](bar-clock-overlapped-narrow-readouts.md):
+  the approximate clock centre collided with long focus and stale readouts;
+  measured bounds and compact gaps keep the 800-pixel fixtures apart.
+
 - [`qml-wiring-missed-inherited-item-state.md`](qml-wiring-missed-inherited-item-state.md):
   structural wiring rejected the sphere's inherited Item.state, although
   Qt applied it; the resolver now recognises its actual property owner.

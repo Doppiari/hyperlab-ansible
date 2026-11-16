@@ -35,8 +35,8 @@ ShellControl {
         badge.resolved ? String(badge.provenance.identity) : ""
 
     // A managed-looking surface without valid host provenance is a finding,
-    // not an absence; it reads Unknown with its reason in the accessible
-    // name and in Diagnostics.
+    // not an absence; it reads Unknown with an unresolved marker and its
+    // reason in the accessible name and in Diagnostics.
     readonly property bool unresolved:
         badge.provenance && badge.provenance.state === "unresolved"
 
@@ -89,15 +89,50 @@ ShellControl {
                 : "unclassified"
         },
 
-        ShellLabel {
-            objectName: "focus-words"
+        Row {
             anchors.verticalCenter: parent.verticalCenter
+            spacing: 0
+
+            // Reserve the domain and state words first. Only the Machine
+            // name may elide, including when its inventory is unconfirmed.
+            ShellLabel {
+                objectName: "focus-name"
+                anchors.verticalCenter: parent.verticalCenter
+                visible: badge.kind === "machine"
+                tokens: badge.tokens
+                role: "bar"
+                width: Math.min(implicitWidth, Math.max(badge.tokens.spaceXl,
+                    badge.tokens.navigationWidth - focusWords.implicitWidth))
+                elide: Text.ElideRight
+                text: badge.kind === "machine" ? String(badge.machine.name) : ""
+                color: badge.theme.textPrimary
+            }
+
+            ShellLabel {
+                id: focusWords
+
+                objectName: "focus-words"
+                anchors.verticalCenter: parent.verticalCenter
+                tokens: badge.tokens
+                role: "bar"
+                font.weight: badge.kind === "unknown" ? Font.Normal : Font.Medium
+                elide: Text.ElideNone
+                text:
+                    badge.kind === "machine"
+                    ? badge.words.slice(String(badge.machine.name).length)
+                    : badge.words
+                color: badge.theme.textPrimary
+            }
+        },
+
+        ShellLabel {
+            objectName: "focus-unresolved"
+            anchors.verticalCenter: parent.verticalCenter
+            visible: badge.unresolved
             tokens: badge.tokens
             role: "bar"
-            font.weight: badge.kind === "unknown" ? Font.Normal : Font.Medium
-            width: Math.min(implicitWidth, badge.tokens.navigationWidth)
-            elide: Text.ElideMiddle
-            text: badge.words
+            text: "unresolved"
+            elide: Text.ElideNone
             color: badge.theme.textPrimary
         }
     ]

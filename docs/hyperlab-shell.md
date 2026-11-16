@@ -180,7 +180,11 @@ it. Below that the rail reduces in a defined order rather than colliding:
 4. workspace chips fold into a counted overflow.
 
 Time, essential system access and any unavailable-data indication always
-survive.
+survive. Below 820 logical pixels the extra gaps between right-hand controls
+collapse to their own padding and the left group uses the smallest spacing.
+The clock reserves its actual measured width between the side groups. The
+focus item stays visible on narrow rails; only its Machine name may elide,
+while its domain and state words remain unelided.
 
 - **Workspace chips** show only what the compositor reported: active,
   occupied or urgent. An empty or unreadable snapshot says
@@ -198,8 +202,10 @@ survive.
   its name and domain (`dev-01 · dev`) for a verified viewer of one managed
   Machine, and a hollow core with the neutral outline and **Unknown** for
   anything else, a surface that looks managed but has no valid host
-  registration included. The item is always shown; the reason for Unknown
-  is in its accessible name, and the resolver's own answer is in
+  registration included. An unresolved answer adds the word `unresolved`;
+  pending re-validation and stale-source answers do not. The item is always
+  shown; the reason for Unknown is in its accessible name, and the resolver's
+  own answer is in
   Diagnostics, which the item opens. Context and focus never
   merge: Looking Glass stays the context while `dev-01 · dev` is the focus.
   The GPU entry shows a
@@ -1091,9 +1097,12 @@ the domain stays and the sphere draws the neutral outline with
 `state not confirmed` beside it. A reported state the sphere cannot draw,
 such as `crashed` or `unknown`, also keeps the proven domain core and adds
 the state word to the focus item (`dev-01 · dev · crashed`). These inventory
-states differ from unresolved provenance, which still reads only `Unknown`
-with a hollow core. Inventory updates change the state word without a new
-focus event; returning to a supported state removes it. If the inventory
+states differ from unresolved provenance, which reads `Unknown` plus the
+visible word `unresolved`, with a hollow core. A pending request instead
+shows `Unknown` alone. The Machine name can elide to the right, with its
+full name still accessible; the separate domain and state label never
+elides, including when inventory is unlisted or stale. Inventory updates
+change the state word without a new focus event; returning to a supported state removes it. If the inventory
 lists the Machine in another domain, neither source is believed.
 The bar also requires a complete
 domain palette: a missing `dom_*` key makes both the core and the focus item
@@ -1112,7 +1121,12 @@ lock surface keep the grey core. A fullscreen guest covers the bar
 terminal, dev viewer, dirty viewer, unmapped window, stale source) under
 Sway and Hyprland through the real adapter, shell state, resolver and bar,
 on captured pixels, plus `crashed` and `unknown` inventory states with a
-neutral sphere, a visible state word and the retained domain core.
+neutral sphere, a visible state word and the retained domain core. A
+31-character services Machine exercises crashed, unlisted and stale inventory;
+the contract reads the domain label's actual truncation and painted bounds.
+Every case also renders at 800 pixels and checks the focus item, clock,
+identity, workspaces, GPU, system readouts and settings for containment and
+overlap. The unresolved marker is absent while each request is pending.
 Software-verified; Nitro acceptance under both
 compositors stays open.
 

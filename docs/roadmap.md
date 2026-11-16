@@ -754,9 +754,11 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
       answer as a sphere with the Machine's name and domain; mapping from
       host provenance only, never a title; an incomplete domain palette
       makes both signals Unknown; unsupported inventory states keep the
-      domain core and add their state word beside a neutral sphere (ADR 0064;
-      `tests/bar_core_focus_contract.py`, software-verified under Sway and
-      Hyprland fixtures)
+      domain core and add their state word beside a neutral sphere;
+      domain/state words stay unelided for long names, unresolved answers
+      carry a word marker, and required items fit the 800-pixel fixtures
+      (ADR 0064; `tests/bar_core_focus_contract.py`, software-verified under
+      Sway and Hyprland fixtures)
 - [ ] the bar core accepted on Nitro under both compositors: focus host →
       Machine A → Machine B → host with two domains, and an unplaceable
       window reads Unknown

@@ -15,6 +15,14 @@
       "pid": 902,
       "start_ticks": "4343",
       "state": "running"
+    },
+    {
+      "name": "services-0123456789012345678901",
+      "network_profile": "services",
+      "surface_kind": "looking-glass",
+      "pid": 904,
+      "start_ticks": "4444",
+      "state": "running"
     }
   ],
   "inventory_states": [
@@ -57,6 +65,43 @@
       "stale_seconds": 600,
       "sway": {"id": 12, "pid": 901, "app_id": "looking-glass-client", "name": "dirty-01", "fullscreen_mode": 0},
       "hyprland": {"pid": 901, "class": "looking-glass-client", "address": "0x5a12", "title": "dirty-01", "fullscreen": 0}
+    }
+  ],
+  "long_name_focus": {
+    "expect": "services",
+    "words": "services-0123456789012345678901 · services",
+    "sway": {
+      "id": 15,
+      "pid": 904,
+      "app_id": "looking-glass-client",
+      "name": "dev-01",
+      "fullscreen_mode": 0
+    },
+    "hyprland": {
+      "pid": 904,
+      "class": "looking-glass-client",
+      "address": "0x5a15",
+      "title": "dev-01",
+      "fullscreen": 0
+    }
+  },
+  "long_name_inventory": [
+    {
+      "name": "long-crashed",
+      "machine_state": "crashed",
+      "words": "services-0123456789012345678901 · services · crashed"
+    },
+    {
+      "name": "long-unlisted",
+      "machine_state": "",
+      "inventory_mode": "unlisted",
+      "words": "services-0123456789012345678901 · services · state not confirmed"
+    },
+    {
+      "name": "long-stale-inventory",
+      "machine_state": "",
+      "inventory_mode": "stale",
+      "words": "services-0123456789012345678901 · services · state not confirmed"
     }
   ]
 }

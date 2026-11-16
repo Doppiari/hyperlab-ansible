@@ -26,7 +26,11 @@ under host and Machine focus; restoring it recovers the current answer.
 Inventory states crashed and unknown keep the proven domain core, draw a
 neutral sphere and display the state word beside the Machine name and domain.
 
-`--renders DIR` keeps the fourteen bar captures (`<compositor>-<state>.png`).
+Long Machine names cannot elide the domain or unsupported-state words. Both
+wide and 800-pixel rails keep the focus item, clock and required readouts
+inside the rail without overlap.
+
+`--renders DIR` keeps the wide and narrow bar captures.
 What this does not prove: the real Quickshell runtime, real compositor
 events and how the core reads on a real display. That is the operator's
 check on the Nitro under both compositors.
@@ -58,7 +62,7 @@ FIXTURE = ROOT / "tests/fixtures/bar-core-focus.json"
 PALETTE = ROOT / "themes/trust-model/rendered/hyperlab-palette-quickshell.json"
 COMPOSITORS = ("sway", "hyprland")
 DOMAINS = ("host", "clean", "dev", "services", "dirty", "lab")
-WIDTH, HEIGHT = 1440, 900
+WIDTHS, HEIGHT = (1440, 800), 900
 # Least per-channel distance between the Unknown core outline and the HOST
 # grey or any domain colour (the neutral distance of ADR 0064).
 NEUTRAL_DISTANCE = 48
@@ -79,13 +83,38 @@ SCENARIO = r"""
             const badge = window.find(rail, "provenance-badge");
             const sphere = window.find(rail, "focus-sphere");
             const words = window.find(rail, "focus-words");
+            const machineName = window.find(rail, "focus-name");
+            const unresolved = window.find(rail, "focus-unresolved");
             check(glyph !== null && badge !== null && sphere !== null && words !== null,
                   "the bar has no glyph core, focus item, sphere or words");
             if (window.firstFailure >= 0) {
                 Qt.exit(@@BASE@@ + window.firstFailure);
                 return;
             }
-            check(badge.visible, "the focus item is hidden on a wide rail");
+            check(badge.visible, "the focus item is hidden on the rail");
+
+            function visibleWords() {
+                return (machineName && machineName.visible ? machineName.text : "") + words.text;
+            }
+
+            function insideBadge(label) {
+                const point = label.mapToItem(badge, 0, 0);
+                return !label.truncated && label.paintedWidth <= label.width + 1
+                    && point.x >= 0 && point.x + label.paintedWidth <= badge.width
+                    && point.y >= 0 && point.y + label.paintedHeight <= badge.height;
+            }
+
+            function geometry() {
+                return ["rail-identity", "rail-workspaces", "rail-clock",
+                        "provenance-badge", "gpu-badge", "rail-system", "rail-controls"].map(name => {
+                    const item = window.find(rail, name);
+                    if (!item)
+                        return {name: name, visible: false, x: 0, y: 0, width: 0, height: 0};
+                    const point = item.mapToItem(rail, 0, 0);
+                    return {name: name, visible: item.visible, x: point.x, y: point.y,
+                            width: item.width, height: item.height};
+                });
+            }
 
             function focus(event) {
                 sharedState.observationNow = Date.now();
@@ -100,6 +129,8 @@ SCENARIO = r"""
                 check(sharedState.focusedMachine.kind === "unknown" && glyph.coreHollow
                       && words.text === "Unknown",
                       "a surface still being resolved kept the previous answer");
+                check(!unresolved || !unresolved.visible,
+                      "a pending request shows the unresolved warning");
             }
 
             function answer(event) {
@@ -124,10 +155,14 @@ SCENARIO = r"""
                     "classified": sphere.classified, "sphereDomain": sphere.domain,
                     "sphereTone": String(sphere.tone),
                     "isHost": sphere.isHost, "sphereState": String(sphere.state),
-                    "words": words.text, "wordsVisible": words.visible,
+                    "words": visibleWords(), "wordsVisible": words.visible,
                     "wordsColour": String(words.color), "text": String(sharedTheme.textPrimary),
                     "accessible": badge.accessibleName,
                     "rail": String(sharedTheme.rail),
+                    "domainWords": {text: words.text, truncated: words.truncated,
+                                    paintedWidth: words.paintedWidth, width: words.width},
+                    "nameTruncated": machineName ? machineName.truncated : false,
+                    "geometry": geometry(),
                     "width": rail.width, "height": rail.height
                 }));
             }
@@ -144,10 +179,16 @@ SCENARIO = r"""
                 sharedState.applyMachinePayload(JSON.stringify(event.inventory));
                 focus(event);
                 answer(event);
+                if (event.inventoryMode === "stale")
+                    sharedState.machinesObservedAt = Date.now() - 600000;
+                check(unresolved !== null
+                      && unresolved.visible === (event.name === "unmapped")
+                      && unresolved.text === "unresolved",
+                      "Unknown has no distinct unresolved warning, or shows it for another state");
                 if (event.machineState) {
                     check(String(sphere.state) === event.machineState && !sphere.classified,
                           "an unsupported Machine state was normalized or drawn as supported");
-                    check(words.text === event.words,
+                    check(visibleWords() === event.words,
                           "an unsupported Machine state has no visible state word");
                 }
                 // A new proven colour fades in; it never jumps or blends
@@ -157,6 +198,14 @@ SCENARIO = r"""
                 if (event.expect !== "unknown")
                     previous = event.expect;
                 settleTimer.callback = function() {
+                    check(insideBadge(words),
+                          "the painted domain/state words are truncated or escape the focus badge");
+                    if (unresolved && unresolved.visible)
+                        check(insideBadge(unresolved), "the unresolved warning is truncated or clipped");
+                    if (event.name.indexOf("long-") === 0)
+                        check(machineName && machineName.visible && machineName.truncated
+                              && machineName.elide === Text.ElideRight,
+                              "the long Machine name must elide right without hiding the domain");
                     record(event);
                     rail.grabToImage(function(result) {
                         check(result.saveToFile(@@OUT@@ + "-" + event.name + ".png"),
@@ -200,7 +249,7 @@ SCENARIO = r"""
                         checkPaletteGap(event);
                         sharedTheme.palette = palette;
                         check(sharedTheme.provenanceAvailable && !glyph.coreHollow
-                              && words.text === event.words && sphere.classified
+                              && visibleWords() === event.words && sphere.classified
                               && rail.focusedMachine.kind === sharedState.focusedMachine.kind,
                               "restoring the palette did not restore the focus answer");
                     }
@@ -237,23 +286,24 @@ SCENARIO = r"""
                 focus(dev);
                 answer(dev);
                 check(sharedState.focusedMachine.kind === "machine" && !glyph.coreHollow
-                      && words.text === dev.words + " · state not confirmed" && !sphere.classified,
+                      && visibleWords() === dev.words + " · state not confirmed" && !sphere.classified,
                       "an unconfirmed Machine state was drawn, or its domain was lost");
 
                 // State updates do not need a new focus or resolver answer.
                 const request = sharedState.provenanceRequest;
-                for (const event of states.filter(event => event.machineState)) {
+                for (const event of states.filter(event => event.machineState
+                                                  && event.answer.domain === dev.answer.domain)) {
                     sharedState.applyMachinePayload(JSON.stringify(event.inventory));
                     check(sharedState.provenanceRequest === request
                           && rail.focusedMachine.kind === "machine" && !glyph.coreHollow
                           && rail.coreIdentity === dev.expect && !sphere.classified
                           && String(sphere.state) === event.machineState
-                          && words.visible && words.text === event.words,
+                          && words.visible && visibleWords() === event.words,
                           "an inventory-only update hid the unsupported state or its domain");
                 }
                 sharedState.applyMachinePayload(JSON.stringify(dev.inventory));
                 check(sharedState.provenanceRequest === request && sphere.classified
-                      && String(sphere.state) === "running" && words.text === dev.words,
+                      && String(sphere.state) === "running" && visibleWords() === dev.words,
                       "a confirmed running state did not clear the unsupported-state word");
 
                 Qt.exit(window.firstFailure < 0 ? 0 : @@BASE@@ + window.firstFailure);
@@ -280,19 +330,26 @@ def load_fixture() -> dict:
             "duplicated fixture Machine")
     require([case["state"] for case in fixture["inventory_states"]] == ["crashed", "unknown"],
             "the fixture must exercise crashed and unknown inventory states")
+    require(len(fixture["machines"][-1]["name"]) == 31,
+            "the long-name Machine must exercise the 31-character limit")
+    require([case["name"] for case in fixture["long_name_inventory"]]
+            == ["long-crashed", "long-unlisted", "long-stale-inventory"],
+            "the long-name fixture must exercise crashed, unlisted and stale inventory")
     return fixture
 
 
 def focus_states(fixture: dict) -> list[dict]:
-    """Reuse the registered dev window with each unsupported inventory state."""
+    """Exercise unsupported and unconfirmed inventory with short and long names."""
     dev = fixture["states"][1]
     unsupported = [
         dict(dev, name="dev-" + case["state"], machine_state=case["state"], words=case["words"])
         for case in fixture["inventory_states"]
     ]
+    long_names = [dict(fixture["long_name_focus"], **case)
+                  for case in fixture["long_name_inventory"]]
     # Capture inventory states before the stale fixture moves the clock
     # forward: returning it would revalidate the previous window as well.
-    return fixture["states"][:-1] + unsupported + fixture["states"][-1:]
+    return fixture["states"][:-1] + long_names + unsupported + fixture["states"][-1:]
 
 
 # ------------------------------------------------------------ compositors
@@ -447,7 +504,7 @@ def inventory(fixture: dict) -> list[dict]:
     return rows
 
 
-def scene(fixture: dict, lines: list[str], resolve, out: Path) -> tuple[str, list[str]]:
+def scene(fixture: dict, lines: list[str], resolve, out: Path, width: int) -> tuple[str, list[str]]:
     def payload(machines: list[dict]) -> dict:
         return {"text": f"{len(machines)}/{len(machines)}", "class": "ok",
                 "machines_available": True, "machines": machines}
@@ -460,12 +517,16 @@ def scene(fixture: dict, lines: list[str], resolve, out: Path) -> tuple[str, lis
                    "window_id": surface["window_id"]}
         answer = resolve(request)
         machines = [dict(row, state=state["machine_state"])
-                    if "machine_state" in state and row["name"] == answer["domain"] else row
+                    if "machine_state" in state and state.get("inventory_mode") != "stale"
+                    and row["name"] == answer["domain"] else row
                     for row in rows]
+        if state.get("inventory_mode") == "unlisted":
+            machines = [row for row in machines if row["name"] != answer["domain"]]
         states.append({"name": state["name"], "expect": state["expect"],
                        "words": state["words"], "stale_seconds": state.get("stale_seconds", 0),
                        "line": line, "request": request, "answer": answer,
-                       "machineState": state.get("machine_state", ""), "inventory": payload(machines)})
+                       "machineState": state.get("machine_state", ""),
+                       "inventoryMode": state.get("inventory_mode", ""), "inventory": payload(machines)})
     contradiction = [dict(row, provenance="clean") if row["name"] == "dev-01" else row for row in rows]
     unlisted = [row for row in rows if row["name"] != "dev-01"]
 
@@ -479,7 +540,7 @@ def scene(fixture: dict, lines: list[str], resolve, out: Path) -> tuple[str, lis
     require(harness.count("@@GRAB@@") == 1, "the runtime harness changed shape")
     runtime.HARNESS = harness.replace("@@GRAB@@", "")
     try:
-        return runtime.scenario_source(WIDTH, HEIGHT, rows, body)
+        return runtime.scenario_source(width, HEIGHT, rows, body)
     finally:
         runtime.HARNESS = harness
 
@@ -543,6 +604,20 @@ def hue_nearest(colour: tuple[int, int, int], palette: dict) -> str:
 def check_render(compositor: str, state: dict, record: dict, image: bytes, palette: dict) -> None:
     where = f"{compositor}/{state['name']}"
     width = int(record["width"])
+    bounds = []
+    for item in record["geometry"]:
+        require(item["visible"] and item["width"] > 0 and item["height"] > 0,
+                f"{where}: required item {item['name']} is hidden or has no geometry")
+        require(0 <= item["x"] < item["x"] + item["width"] <= width
+                and 0 <= item["y"] < item["y"] + item["height"] <= record["height"],
+                f"{where}: {item['name']} escapes the {width}-pixel rail: {item}")
+        for other in bounds:
+            require(item["x"] + item["width"] <= other["x"]
+                    or other["x"] + other["width"] <= item["x"]
+                    or item["y"] + item["height"] <= other["y"]
+                    or other["y"] + other["height"] <= item["y"],
+                    f"{where}: {item['name']} overlaps {other['name']} on the {width}-pixel rail")
+        bounds.append(item)
     ground = rgb(record["rail"])
     text = rgb(record["text"])
     identities = {domain: rgb(palette["dom_" + domain]) for domain in DOMAINS}
@@ -614,10 +689,11 @@ def check_render(compositor: str, state: dict, record: dict, image: bytes, palet
         for identity, colour in identities.items():
             require(distance(brightest, colour) >= NEUTRAL_DISTANCE,
                     f"{where}: the unsupported-state outline uses the {identity} colour")
-        require(state["machine_state"] in record["words"].split(" · ")
-                and record["accessible"].endswith(", " + state["machine_state"]),
+        state_word = state["machine_state"] or "state not confirmed"
+        require(state_word in record["words"].split(" · ")
+                and record["accessible"].endswith(", " + state_word),
                 f"{where}: the unsupported Machine state is not visible and accessible")
-        identity_words = identity_words.removesuffix(" · " + state["machine_state"])
+        identity_words = identity_words.removesuffix(" · " + state_word)
     else:
         require(record["classified"] and hue_nearest(sphere, palette) == domain,
                 f"{where}: the focus sphere is drawn {sphere}, not in the {domain} colour")
@@ -646,13 +722,19 @@ def main() -> int:
 
         staged = runtime.stage()
         try:
-            for compositor in COMPOSITORS:
-                out = scratch / compositor
-                source, messages = scene(fixture, lines[compositor], resolve, out)
-                records = run_scene(staged, source, messages, compositor)
+            for compositor, width in ((compositor, width) for compositor in COMPOSITORS
+                                      for width in WIDTHS):
+                label = compositor if width == WIDTHS[0] else f"{compositor}-{width}"
+                out = scratch / label
+                source, messages = scene(fixture, lines[compositor], resolve, out, width)
+                records = run_scene(staged, source, messages, label)
                 require([record["name"] for record in records]
                          == [state["name"] for state in focus_states(fixture)],
                          f"{compositor}: not every state was captured")
+                if args.renders:
+                    args.renders.mkdir(parents=True, exist_ok=True)
+                    (args.renders / f"{label}.json").write_text(
+                        json.dumps(records, indent=2) + "\n", encoding="utf-8")
                 images = []
                 for state, record in zip(focus_states(fixture), records, strict=True):
                     capture = Path(f"{out}-{state['name']}.png")
@@ -660,7 +742,7 @@ def main() -> int:
                     if args.renders:
                         args.renders.mkdir(parents=True, exist_ok=True)
                         shutil.copyfile(capture, args.renders / capture.name)
-                    check_render(compositor, state, record, image, palette)
+                    check_render(label, state, record, image, palette)
                     images.append(image)
                 require(len(set(images[:4])) == 4,
                         f"{compositor}: two focus states share one bar drawing")
@@ -669,7 +751,8 @@ def main() -> int:
 
     print("Bar core focus contract: OK (Sway and Hyprland: host, dev, dirty, unmapped and "
           "stale focus; title-independent mapping; hollow Unknown; one answer for core and item; "
-          "visible unsupported inventory states; fade and reduced motion)")
+          "unelided domain/state words for 31-character names; unresolved marker; "
+          "1440/800-pixel geometry; fade and reduced motion)")
     return 0
 
 

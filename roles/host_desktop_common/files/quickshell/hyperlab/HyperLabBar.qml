@@ -158,9 +158,10 @@ PanelWindow {
             anchors.leftMargin: bar.tokens.gapOuter - bar.tokens.spaceSm
             anchors.verticalCenter: parent.verticalCenter
             anchors.verticalCenterOffset: -1
-            spacing: bar.tokens.spaceMd
+            spacing: bar.narrowRail ? bar.tokens.spaceXs : bar.tokens.spaceMd
 
             IdentityMark {
+                objectName: "rail-identity"
                 anchors.verticalCenter: parent.verticalCenter
                 tokens: bar.tokens
                 theme: bar.theme
@@ -194,6 +195,7 @@ PanelWindow {
             }
 
             WorkspaceStrip {
+                objectName: "rail-workspaces"
                 anchors.verticalCenter: parent.verticalCenter
                 tokens: bar.tokens
                 theme: bar.theme
@@ -219,7 +221,9 @@ PanelWindow {
             anchors.rightMargin: bar.tokens.gapOuter - bar.tokens.spaceSm
             anchors.verticalCenter: parent.verticalCenter
             anchors.verticalCenterOffset: -1
-            spacing: bar.tokens.spaceSm
+            // Controls retain their own padding; release the extra gaps on
+            // narrow rails so focus words and unavailable readouts still fit.
+            spacing: bar.narrowRail ? 0 : bar.tokens.spaceSm
 
             // The emergency stop (ADR 0047) is never hidden while engaged:
             // it is the first thing on the host side of every rail, and it
@@ -304,6 +308,7 @@ PanelWindow {
             }
 
             SystemCluster {
+                objectName: "rail-system"
                 anchors.verticalCenter: parent.verticalCenter
                 tokens: bar.tokens
                 theme: bar.theme
@@ -344,6 +349,7 @@ PanelWindow {
             }
 
             ControlEntry {
+                objectName: "rail-controls"
                 anchors.verticalCenter: parent.verticalCenter
                 tokens: bar.tokens
                 theme: bar.theme
@@ -386,8 +392,10 @@ PanelWindow {
                 contextCluster.centeredClock
                 ? parent.width / 2
                 : Math.min(
-                    parent.width - rightGroup.width - bar.tokens.spaceLg,
-                    leftGroup.x + leftGroup.width + bar.tokens.spaceXl + 40
+                    rightGroup.x - bar.tokens.spaceXs - contextCluster.clockWidth / 2,
+                    leftGroup.x + leftGroup.width
+                        + (bar.narrowRail ? bar.tokens.spaceXs : bar.tokens.spaceXl)
+                        + contextCluster.clockWidth / 2
                   )
 
             maximumContextWidth:

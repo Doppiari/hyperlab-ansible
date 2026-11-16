@@ -6044,6 +6044,40 @@ All three breaks exited 1. Each saved copy was restored byte-identically,
 and the contract exited 0 after each restoration. The expanded contract
 failed on the missing state word before the badge correction.
 
+### Painted focus words, unresolved marker and narrow geometry
+
+The focus fixtures include a registered services Machine with a 31-character
+name, rendered with crashed, unlisted and stale inventory. The domain/state
+label must report `truncated === false`; its painted width and height must fit
+inside the badge. Only the name may elide to the right. The unregistered
+Looking Glass client keeps `Unknown` and adds a visible `unresolved` marker;
+every pending resolver request lacks that marker.
+
+Each of the ten states runs at 1440 and 800 logical pixels under both
+compositors. Real item bounds must remain inside the rail and pairwise
+separate for identity, workspaces, clock, focus, GPU, system and settings.
+The stale-source case also keeps the longer stale GPU and unavailable
+workspace readouts. The render option saves all forty captures and their
+runtime geometry records.
+
+Save each file, make one break, run `python tests/bar_core_focus_contract.py`,
+restore the saved copy and rerun the same check. QML paths are under
+`roles/host_desktop_common/files/quickshell/hyperlab/`.
+
+| Mutation | File | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- | --- |
+| `domain-recombined` | `ProvenanceBadge.qml` | Hide the name label and restore the combined `badge.words` label with bounded width and `ElideMiddle`. | `the painted domain/state words are truncated or escape the focus badge` | Exit 0, contract OK. |
+| `unresolved-marker-hidden` | `ProvenanceBadge.qml` | Make the unresolved marker invisible. | `Unknown has no distinct unresolved warning, or shows it for another state` | Exit 0, contract OK. |
+| `pending-marked-unresolved` | `ProvenanceBadge.qml` | Show the marker while provenance is resolving too. | `a pending request shows the unresolved warning` | Exit 0, contract OK. |
+| `approximate-clock-centre` | `HyperLabBar.qml` | Restore the approximate clock centre based on right-group width and a fixed 40-pixel left reserve. | `sway-800/long-unlisted: provenance-badge overlaps rail-clock on the 800-pixel rail` | Exit 0, contract OK. |
+| `narrow-gaps-retained` | `HyperLabBar.qml` | Keep the wide inter-control gaps on narrow rails. | `sway-800/stale: rail-clock overlaps rail-workspaces on the 800-pixel rail` | Exit 0, contract OK. |
+
+All five breaks exited 1 with the listed diagnostic, followed by exit 0 after
+each byte-identical restoration. Before correction, the expanded contract
+failed separately on the truncated painted label, absent unresolved marker
+and narrow overlap. These are software checks; display legibility and real
+compositor timing remain hardware acceptance.
+
 ## The wiring contract and a component's root bindings
 
 `tests/host_quickshell_qml_wiring_contract.py` counts only the Qt input

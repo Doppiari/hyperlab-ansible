@@ -151,7 +151,13 @@ in the neutral text tone, and the focus item beside the bar's readouts says
 **Unknown**: Unknown is never the HOST grey and never a domain colour. The
 focus item draws the same answer as a `MachineSphere` and words
 (`dev-01 · dev`, `Host`, `Unknown`); its words stay in the text tone, so a
-colour never appears without its domain word. The window title, clipboard
+colour never appears without its domain word. Only the Machine name may
+elide, at its right edge; the domain and any state suffix remain unelided
+inside the focus item, including with a 31-character name or stale inventory.
+An unresolved surface adds the visible word `unresolved` beside `Unknown`;
+loading, pending and stale-source answers do not carry that marker. It
+identifies a refused provenance answer without using a warning colour or
+changing the hollow core. The window title, clipboard
 and guest-agent data never enter this mapping: it reads only the resolver's
 answer for the focused process and the inventory row of the same Machine.
 A proven Machine with an unsupported inventory state keeps its domain core
