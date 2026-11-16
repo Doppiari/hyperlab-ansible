@@ -75,11 +75,12 @@ or work that is not on `main` does not raise it.
   ([ADR 0017](adr/0017-shell-machine-creation.md), accepted by the operator
   on 2026-11-05; [ADR 0053](adr/0053-withdraw-machine-intent.md), option A
   and guarded manual withdrawal accepted on 2026-11-05; the record names
-  the unpublished decision source). This acceptance adds no evidence for
-  handled failures or incomplete compensation; the separate Plan/Intent
-  transaction remediation and Nitro refusal tests remain open. Cleanup can
-  be incomplete, and process death or power loss can leave owned files
-  that keep the name taken and require manual recovery.
+  the unpublished decision source). Separately, the Plan/Intent transaction
+  remediation is software-verified by reviewed regressions for failures
+  after publication, incomplete compensation and invalid-spec refusal.
+  Nitro refusal tests remain open. Cleanup can be incomplete, and process
+  death or power loss can leave owned files that keep the name taken and
+  require manual recovery.
 - **Create view (5):** implemented in the shell and software-verified
   offscreen. No creation from the shell has been accepted on hardware.
 - **Provisioning (5):** the runner, the check of the whole plan before the
@@ -419,10 +420,12 @@ Details: [C10 — Machine Factory](#c10--machine-factory).
         ([ADR 0053](adr/0053-withdraw-machine-intent.md), option A and the
         manual path accepted by the operator on 2026-11-05; unpublished
         decision source in the record; existing software checks)
-  - [ ] separate Plan/Intent transaction remediation accepted with reviewed
+  - [x] separate Plan/Intent transaction remediation accepted with reviewed
         regression evidence for failure after publication, incomplete
-        compensation and invalid-spec refusal; ADR 0053's design acceptance
-        does not close this work or its manual-recovery limits
+        compensation (including a replacement spec with identical bytes on
+        another inode) and invalid-spec refusal
+        ([evidence in ADR 0053](adr/0053-withdraw-machine-intent.md#implementation-and-evidence);
+        software-verified); manual-recovery limits remain
   - [ ] ADR 0053 refusal tests observed on Nitro: an obstructed generated
         spec leaves no record, and a defined domain prevents withdrawal
   - [x] provisioning prepared for Nitro: the runner accepts exactly
