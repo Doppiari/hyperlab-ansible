@@ -39,7 +39,8 @@ entered the pipeline.
 17. [`0017-shell-machine-creation.md`](0017-shell-machine-creation.md) —
     accepted: the shell creates a Machine through the reviewed bridge and one
     durable operation; the password and the become prompt stay in its
-    terminal (operator's decision, 2026-11-05).
+    terminal (operator's decision, 2026-11-05). Host-session libvirt authority
+    is already root-equivalent; that prompt does not confine it.
 18. [`0018-disposable-discards-on-stop.md`](0018-disposable-discards-on-stop.md)
     — accepted: a disposable Machine's disk is a libvirt transient disk, so
     every stop discards its writes (operator's decision, 2026-11-05).

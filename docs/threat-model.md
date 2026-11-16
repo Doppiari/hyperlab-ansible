@@ -18,7 +18,10 @@ not provide.
 
 - **The host and its session** are the control plane. Whoever controls the
   host session controls every Machine; nothing on this page survives a
-  compromised host.
+  compromised host. Membership in the host's `libvirt` group grants
+  unrestricted system libvirt access and root-equivalent host authority.
+  The become password prompt is an explicit operation step, not a boundary
+  confining that authority or other processes in the host session.
 - **The operator** decides every crossing: a Machine's creation, privilege
   through the operation window, each clipboard send, each GPU handoff.
 - **Guests are not trusted**, the `dirty` and `lab` ones least. A guest's
@@ -31,7 +34,7 @@ not provide.
 | A guest reaching another network's guests | every ordered pair of domains is dropped at the host; `lab` forwards nothing | [`network-flows.md`](network-flows.md), `tests/network_flow_matrix_contract.py` |
 | A guest reaching the host's own services or another network's resolver | guest-to-host default deny: only replies, DHCP and DNS to its own gateway | same |
 | A guest pretending to be a more trusted Machine on screen | provenance and trust colours come from the host's resolver and the Machine registry, never from the guest | [`hyperlab-shell.md`](hyperlab-shell.md), focused-surface provenance |
-| A dirtier workload running on the GPU before a cleaner one in the same boot | the qemu hook enforces the ladder clean → dev → dirty → lab; services use a reviewed class | [ADR 0022](adr/0022-network-trust-and-gpu-policy.md), `tests/hook.bats` |
+| A dirtier workload running on the GPU before a cleaner one in the same boot | the qemu hook checks prepare XML and reviewed QEMU arguments before enforcing clean → dev → dirty → lab; services use a reviewed class | [ADR 0022](adr/0022-network-trust-and-gpu-policy.md), `tests/hook.bats` |
 | A changed or unsealed image becoming a Machine | sealed images are pinned by digest and receipt and verified at every use | `tests/sealed_base_use_contract.py` |
 | Trusting an SSH host key shown on the network | the first key is read through the QEMU Guest Agent and pinned | `tools/guest_host_key.py` |
 | A guest running commands through the guest agent | provisioning ends by restricting the agent and checking that `guest-exec` is specifically disabled | `tests/guest_access_close_contract.py` software-verifies the real Ansible conditions on fixtures; the live proof is still required |
@@ -55,6 +58,14 @@ Machine's later boots: restoring the restriction and re-pinning on managed
 start remain unbuilt ([ADR 0018](adr/0018-disposable-discards-on-stop.md)).
 
 ## What HyperLab does not protect against
+
+- **A hostile host owner or host session with libvirt authority.** The GPU
+  hook guards managed policy and accidental or unreviewed starts, including
+  passthrough injected through QEMU arguments. It does not sandbox a hostile
+  host owner or redesign root authorization. Its software fixtures prove
+  refusals and preservation of ladder state, not confinement of that trusted
+  authority ([GPU handoff policy](gpu-handoff-policy.md),
+  `tests/gpu_handoff_xml_contract.py`).
 
 - **An escape from QEMU.** Every QEMU process runs as the same user with
   no MAC confinement, so code that escapes one Machine's QEMU can open every
