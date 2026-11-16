@@ -39,5 +39,13 @@ fixtures require bounded retries, resume before any retry wait, exact
 process identity and propagation of entry and body failures. Mutations are
 recorded under resident desktop updates in `tests/MUTATIONS.md`.
 
+The delayed fixtures check each process's exact signal sequence, including
+no resume after the launcher's pinned kill. An aggregate lower bound on
+resume counts previously accepted an extra `SIGCONT` after termination.
+The signal sequences allow additional incomplete-stop retries caused by
+real scheduling, with one resume per failed stop.
+
 These are software checks. Installed Nitro and Predator refresh acceptance
-remains open.
+remains open. The real multithreaded shell's incomplete-stop rate is
+unmeasured; repeated host applies must establish whether it converges with
+the immediate sample before considering any bounded wait while paused.

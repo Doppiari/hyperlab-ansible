@@ -51,8 +51,9 @@ and showing current host trust and provenance. It then pins the main
 process with a PID descriptor, sends `SIGSTOP`, checks all its threads
 stopped once, and inspects its cgroup and descendants once. An incomplete
 stop causes immediate refusal and resume. There is no sleep or deadline
-polling during the pause, which normally lasts milliseconds. The shell
-cannot launch an application or action after this inspection. Only the
+polling during the pause. The real multithreaded shell's incomplete-stop
+rate is unmeasured. The shell cannot launch an application or action after
+this inspection. Only the
 exact read-only status observers in `ShellState.qml` and their own children
 may remain. The provenance observer is recognized in both its bridge form
 and its exact post-exec resolver form, validated against the checkout
@@ -106,7 +107,9 @@ subprocess. Real fixtures also force an incomplete first stop sample. Only
 that pause-entry refusal is retried, after resume and for at most five
 seconds; all other failures propagate. The busy-child fixture requires the
 paused inspection and its specific refusal, so an earlier stop refusal
-cannot stand in for child-survival evidence. Installed refresh still
+cannot stand in for child-survival evidence. Per-process signal sequences
+require resume after each incomplete stop, pinned kill without resume on
+launcher success, and resume on busy-child refusal. Installed refresh still
 refuses an incomplete stop immediately and requires a later apply.
 Its isolated Ansible fixture covers a later failure and retry, a failed
 refresh and retry, adapter-only and unit-only changes followed immediately

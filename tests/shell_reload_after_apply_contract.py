@@ -1194,16 +1194,15 @@ def delayed_stop_contract(module: Any, directory: Path) -> None:
     states = module.thread_states
     delayed: set[int] = set()
     pending = False
-    resumes = 0
+    signals: dict[int, list[int]] = {}
     current_pid = 0
 
     def send_signal(descriptor: int, sent: int) -> None:
-        nonlocal pending, resumes
+        nonlocal pending
+        signals.setdefault(current_pid, []).append(sent)
         if sent == signal.SIGSTOP and current_pid not in delayed:
             delayed.add(current_pid)
             pending = True
-        if sent == signal.SIGCONT:
-            resumes += 1
         send(descriptor, sent)
 
     def sample(pid: int) -> list[str]:
@@ -1217,8 +1216,16 @@ def delayed_stop_contract(module: Any, directory: Path) -> None:
     with patch.object(module.signal, "pidfd_send_signal", side_effect=send_signal), \
             patch.object(module, "thread_states", side_effect=sample):
         inert_replacement_contract(module, directory)
-    require(resumes >= 2, "delayed stopping did not exercise resume in both real fixtures")
-    require(len(delayed) == 2, "delayed stopping did not reach both real fixtures")
+    require(len(delayed) == 2 and len(signals) == 2, "delayed stopping did not reach both real fixtures")
+    # The launcher runs first. Real scheduling may add incomplete-stop retries.
+    launcher, busy = signals.values()
+    launcher_stops = launcher.count(signal.SIGSTOP)
+    busy_stops = busy.count(signal.SIGSTOP)
+    require(launcher_stops >= 2 and launcher == [signal.SIGSTOP, signal.SIGCONT] * (launcher_stops - 1)
+            + [signal.SIGSTOP, signal.SIGKILL],
+            "launcher signal sequence resumed after termination or missed retry cleanup")
+    require(busy_stops >= 2 and busy == [signal.SIGSTOP, signal.SIGCONT] * busy_stops,
+            "busy-child signal sequence did not resume every stop")
 
 
 def review_regressions(module: Any, directory: Path) -> None:

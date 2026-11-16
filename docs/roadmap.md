@@ -894,7 +894,8 @@ Measured with the complete security plane active.
       and immediate unchanged-apply idempotence; symlinked checkout paths retain
       literal observer matching while hashing the resolved resolver;
       inert-process fixtures cover asynchronous stopping with bounded retries
-      after resume and require the actual paused busy-child refusal
+      after resume, exact per-process signal sequences and the actual
+      paused busy-child refusal
       (`tests/shell_reload_after_apply_contract.py`, software-verified)
 - [ ] installed desktop refresh observed after host apply on Nitro and
       replayed on Predator; see [the shell update contract](hyperlab-shell.md#installed-updates-and-resident-code)

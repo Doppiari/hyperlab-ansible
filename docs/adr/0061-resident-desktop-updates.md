@@ -122,8 +122,10 @@ Invalid transports, failed commands and deadlines fail the apply.
 
 Open surfaces, selection and unsaved forms are lost; GTK closes. The shell
 keeps running during the bounded idle wait. The pause contains only the
-thread and cgroup inspections and the final signal, normally milliseconds;
+thread and cgroup inspections and the final signal;
 if stopping is incomplete, resume immediately and retry on a later apply.
+The incomplete-stop rate for the real multithreaded shell is unmeasured,
+and an immediate sample after `SIGSTOP` may legitimately see running threads.
 This replaces the former paused idle wait and stopped-thread polling.
 The successful replacement is deliberately abrupt, and its journal records
 a signal failure followed by the existing automatic restart. If the refresh

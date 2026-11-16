@@ -4596,6 +4596,20 @@ behavioral failure recorded here.
 | V59 | Replace the busy-child fixture's retry wrapper with its original `pause` callable | delayed | `busy-child fixture refused before its paused cgroup inspection` |
 | V60 | Omit the production cleanup's pinned `SIGCONT` | replacement | `paused shell resumed before termination or not resumed on refusal` |
 | V61 | Remove the real launcher's `process.terminate()` | delayed | `non-observer appeared after the final inspection` |
+| V62 | Send pinned `SIGCONT` immediately after the real launcher's `process.terminate()` (ignore `ProcessLookupError` if it has exited) | delayed | `launcher signal sequence resumed after termination or missed retry cleanup` |
+| V63 | Open a PID descriptor for the busy shell and send an extra `SIGCONT` after its paused-child refusal, before checking `samples` | delayed | `busy-child signal sequence did not resume every stop` |
+
+V62 stayed green with the former aggregate `resumes >= 2` assertion. The
+exact per-process sequences make it red: every incomplete stop must resume,
+the launcher's final stop must end in pinned kill with no resume, and the
+busy-child fixture's final stop must resume. Additional genuine incomplete
+stops may retry within the existing deadline. Removing the injected signal
+restored green.
+
+For V63, mutate a separate source copy and compile it with the original
+contract's `__file__` so its repository paths remain unchanged, then call
+its `delayed` stage. Restore the exact saved copy and rerun: the extra
+busy-shell resume was red, restoration green.
 
 ## Disposable boot access and SSH identity (ADR 0018)
 

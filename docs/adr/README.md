@@ -651,7 +651,8 @@ remain.
     [`recovery tasks`](../../roles/host_desktop_sway/tasks/main.yml),
     [`shell_reload_after_apply_contract.py`](../../tests/shell_reload_after_apply_contract.py)
   - Prerequisites: the operator's decision; installed Nitro apply/readback
-    and unchanged second pass, then Predator replay.
+    and unchanged second pass, measurement of incomplete-stop refusals and
+    thread counts across repeated shell changes, then Predator replay.
 
 - [ADR 0063](0063-v1-acceptance-campaign.md)
   - Decision: proposed.
