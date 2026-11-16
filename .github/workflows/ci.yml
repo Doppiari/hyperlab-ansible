@@ -142,7 +142,6 @@ jobs:
         run: |
           set -o pipefail
           ansible-playbook -i inventory.ini tests/render.yml \
-            --extra-vars '{"hardware_profiles":{"nitro-3060":{"vfio_ids":["10de:2520","10de:228e"]}}}' \
             2>&1 | tee render-invariants.log
 
       - name: Preserve render diagnostics on failure

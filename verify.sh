@@ -146,16 +146,14 @@ run_render() {
     fi
 
     if [ -t 1 ]; then
-        if ansible-playbook "${become_args[@]}" -i inventory.ini tests/render.yml "${render_select[@]}" \
-            --extra-vars '{"hardware_profiles":{"nitro-3060":{"vfio_ids":["10de:2520","10de:228e"]}}}'; then
+        if ansible-playbook "${become_args[@]}" -i inventory.ini tests/render.yml "${render_select[@]}"; then
             echo "   OK"
         else
             echo "   FAIL"
             fail=1
         fi
     else
-        run ansible-playbook "${become_args[@]}" -i inventory.ini tests/render.yml "${render_select[@]}" \
-            --extra-vars '{"hardware_profiles":{"nitro-3060":{"vfio_ids":["10de:2520","10de:228e"]}}}'
+        run ansible-playbook "${become_args[@]}" -i inventory.ini tests/render.yml "${render_select[@]}"
     fi
     if [ "${render_judge_missing}" -eq 1 ]; then
         echo "   NOT RUN - the privileged nft -c judge of tests/render.yml (no sudo credentials)"

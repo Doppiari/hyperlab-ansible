@@ -5785,3 +5785,41 @@ import to `render.py`. The focused component suite fails on
 `ImportError`; its restored source passes. The existing desktop cockpit
 contract also passes without changes. See the
 [problem note](../problems/cli-render-standalone-import.md).
+
+## Obsolete render hardware input
+
+`python tests/contract_mutations.py -k obsolete_render_input` discovers four
+independent regressions. Each inserts the old argument
+`--extra-vars '{"hardware_profiles":{"nitro-3060":{"vfio_ids":["10de:2520","10de:228e"]}}}'`
+immediately after the render command in a temporary repository copy. The
+static contract inspects `verify.sh`, the parsed CI `run` blocks and the
+review package. Only this obsolete input name is forbidden; the actual
+`host_profiles` data and render fixtures are unchanged.
+
+Before the guard existed, all four regressions failed because the mutated
+input produced no static errors. Adding the guard made the original
+entrypoints fail with all three document-specific obsolete-input diagnostics.
+Removing the four arguments made the static baseline and all four discovered
+regressions pass.
+
+For each replay below, save the clean entrypoint, insert only the old
+argument at the named site in a temporary copy, run
+`python tests/static_contract.py`, restore the saved bytes and run the same
+command again. The standalone script or extracted command block also passed
+`bash -n` in every mutated case; no mutated render command was executed.
+
+| Discovered regression | Site | Observed red diagnostic (exit 1) | After byte-identical restoration |
+| --- | --- | --- | --- |
+| `test_obsolete_render_input_in_local_terminal_branch` | `verify.sh`, the `if ansible-playbook` command | `verify.sh must not pass obsolete hardware_profiles render input` | Exit 0, `static contract: OK`. |
+| `test_obsolete_render_input_in_local_captured_branch` | `verify.sh`, the `run ansible-playbook` command | `verify.sh must not pass obsolete hardware_profiles render input` | Exit 0, `static contract: OK`. |
+| `test_obsolete_render_input_in_ci` | `.github/workflows/ci.yml`, `render_invariants.run` | `.github/workflows/ci.yml must not pass obsolete hardware_profiles render input` | Exit 0, `static contract: OK`. |
+| `test_obsolete_render_input_in_review_command` | `docs/independent-review-package.md`, fenced render command | `docs/independent-review-package.md must not pass obsolete hardware_profiles render input` | Exit 0, `static contract: OK`. |
+
+Each discovered regression requires exactly the listed diagnostic, so an
+unrelated failure cannot satisfy it. The existing render-selection contract
+initially failed because its exact argv oracle still required the removed
+argument. Removing that obsolete expectation restored its green baseline
+while retaining exact argv, credential, selection and failure assertions.
+The existing missing-privileged-tag mutation also needed its expected
+diagnostic updated to the new exact command line. The complete
+`python tests/contract_mutations.py` then passed all 67 cases.

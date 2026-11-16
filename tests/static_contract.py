@@ -445,6 +445,23 @@ def collect_errors(root: Path = ROOT) -> list[str]:
         "interactive verify must validate and hand off a private temporary become password file",
     )
     ci_text = (root / ".github/workflows/ci.yml").read_text()
+    ci = load_mapping(root / ".github/workflows/ci.yml", errors)
+    ci_run_blocks = "\n".join(
+        step["run"]
+        for job in ci["jobs"].values()
+        for step in job["steps"]
+        if isinstance(step.get("run"), str)
+    )
+    review_text = (root / "docs/independent-review-package.md").read_text()
+    for text, where in (
+        (verify_text, "verify.sh"),
+        (ci_run_blocks, ".github/workflows/ci.yml"),
+        (review_text, "docs/independent-review-package.md"),
+    ):
+        check(
+            "hardware_profiles" not in text,
+            f"{where} must not pass obsolete hardware_profiles render input",
+        )
     for text, where in ((verify_text, "verify.sh"), (ci_text, "CI")):
         check("tests/*_contract.py" in text, f"{where} must discover structural contracts")
         check("tests/*-refusals.yml" in text, f"{where} must discover refusal suites")

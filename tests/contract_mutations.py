@@ -55,6 +55,42 @@ class ContractMutationTests(unittest.TestCase):
     def test_baseline_is_green(self) -> None:
         self.assertEqual([], collect_errors(ROOT))
 
+    def assert_obsolete_render_input_rejected(self, relative: str, command: str) -> None:
+        def mutation(root: Path) -> None:
+            path = root / relative
+            source = path.read_text(encoding="utf-8")
+            self.assertEqual(source.count(command), 1)
+            obsolete = " --extra-vars '{\"hardware_profiles\":{\"nitro-3060\":{\"vfio_ids\":[\"10de:2520\",\"10de:228e\"]}}}'"
+            path.write_text(source.replace(command, command + obsolete, 1), encoding="utf-8")
+
+        self.assertEqual(
+            [f"{relative} must not pass obsolete hardware_profiles render input"],
+            self.with_repo(mutation),
+        )
+
+    def test_obsolete_render_input_in_local_terminal_branch(self) -> None:
+        self.assert_obsolete_render_input_rejected(
+            "verify.sh",
+            'if ansible-playbook "${become_args[@]}" -i inventory.ini tests/render.yml "${render_select[@]}"',
+        )
+
+    def test_obsolete_render_input_in_local_captured_branch(self) -> None:
+        self.assert_obsolete_render_input_rejected(
+            "verify.sh",
+            'run ansible-playbook "${become_args[@]}" -i inventory.ini tests/render.yml "${render_select[@]}"',
+        )
+
+    def test_obsolete_render_input_in_ci(self) -> None:
+        self.assert_obsolete_render_input_rejected(
+            CI, "ansible-playbook -i inventory.ini tests/render.yml",
+        )
+
+    def test_obsolete_render_input_in_review_command(self) -> None:
+        self.assert_obsolete_render_input_rejected(
+            "docs/independent-review-package.md",
+            "ansible-playbook -i inventory.ini tests/render.yml",
+        )
+
     def test_looking_glass_kvmfr_reload_must_stay_runtime_guarded(self) -> None:
         def mutation(root: Path) -> None:
             path = root / "roles/looking_glass/tasks/main.yml"
@@ -729,7 +765,8 @@ class VerifyRenderSelectionMutationTests(unittest.TestCase):
                 "        render_select=()\n",
             ),
             "partial success (pipe): render suite ran "
-            "['ansible-playbook -i inventory.ini tests/render.yml --extra-vars",
+            "['ansible-playbook -i inventory.ini tests/render.yml'], expected "
+            "['ansible-playbook -i inventory.ini tests/render.yml --skip-tags privileged']",
         )
 
     def test_full_runs_may_not_skip_the_judge(self) -> None:
