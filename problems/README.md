@@ -11,6 +11,9 @@ proof.
   the approximate clock centre collided with long focus and stale readouts;
   measured bounds, compact gaps and capacity including workspace overflow
   keep the 800-pixel fixtures apart.
+- [`bar-geometry-measured-in-fallback-fonts.md`](bar-geometry-measured-in-fallback-fonts.md):
+  CI drew the rail in DejaVu and reported an overlap the host fonts do not
+  have; the contract now refuses fallback fonts and CI installs the shell's.
 
 - [`qml-wiring-missed-inherited-item-state.md`](qml-wiring-missed-inherited-item-state.md):
   structural wiring rejected the sphere's inherited Item.state, although

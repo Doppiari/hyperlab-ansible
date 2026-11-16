@@ -28,7 +28,9 @@ neutral sphere and display the state word beside the Machine name and domain.
 
 Long Machine names cannot elide the domain or unsupported-state words. Both
 wide and 800-pixel rails keep the focus item, clock and required readouts
-inside the rail without overlap, including five occupied workspaces.
+inside the rail without overlap, including five occupied workspaces. The
+geometry is measured only when Qt holds both fonts Tokens.qml names; a
+fallback family has other advances, so the contract refuses it.
 
 `--renders DIR` keeps the wide and narrow bar captures.
 What this does not prove: the real Quickshell runtime, real compositor
@@ -90,6 +92,13 @@ SCENARIO = r"""
             const words = window.find(rail, "focus-words");
             const machineName = window.find(rail, "focus-name");
             const unresolved = window.find(rail, "focus-unresolved");
+            // The geometry is measured in the fonts the shell names. A
+            // fallback family has other advances, so its verdict says
+            // nothing about the product rail.
+            const families = Qt.fontFamilies();
+            check(families.indexOf(sharedTokens.fontSans) >= 0
+                  && families.indexOf(sharedTokens.fontMono) >= 0,
+                  "the shell fonts named by Tokens.fontSans and Tokens.fontMono are not installed; the rail geometry would be measured in fallback fonts");
             check(glyph !== null && badge !== null && sphere !== null && words !== null,
                   "the bar has no glyph core, focus item, sphere or words");
             if (window.firstFailure >= 0) {

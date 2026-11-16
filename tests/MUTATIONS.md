@@ -6136,6 +6136,26 @@ capacity correction, the expanded five-workspace test failed with the same
 diagnostic. The four captures for long-unlisted and long-stale-inventory at
 800 pixels pass the pairwise geometry check under Sway and Hyprland.
 
+The geometry is measured only in the fonts `Tokens.qml` names
+([problem](../problems/bar-geometry-measured-in-fallback-fonts.md)). Save
+`Tokens.qml`, make one break, run `python tests/bar_core_focus_contract.py`,
+restore the saved copy and rerun it.
+
+| Mutation | File | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- | --- |
+| `sans-font-substituted` | `Tokens.qml` | `fontSans` names `Inter`, which is not installed. | `sway: "the shell fonts named by Tokens.fontSans and Tokens.fontMono are not installed; the rail geometry would be measured in fallback fonts"` | Exit 0, contract OK. |
+| `mono-font-substituted` | `Tokens.qml` | `fontMono` names `JetBrains Mono`, the unpatched family, which is not installed. | the same font refusal | Exit 0, contract OK. |
+
+Both breaks exited 1 and each byte-identical restoration exited 0. The
+environment was also broken without editing a file: a local `FONTCONFIG_FILE`
+that rejects Adwaita Sans and JetBrainsMono Nerd Font. Before the refusal
+existed, that file reproduced the CI diagnostic
+`sway-800/stale: rail-clock overlaps rail-workspaces on the 800-pixel rail`.
+With Noto as the only fallback, or with only Adwaita Sans kept, it exited 0.
+With the refusal, all three fallback sets exit 1 with the font refusal. A
+file that loads Ubuntu's `fonts-adwaita-sans` 49.0 and the pinned Nerd Fonts
+v3.5.1 archive exits 0, with item bounds identical to the host's.
+
 ## The wiring contract and inherited Item.state
 
 `tests/host_quickshell_qml_wiring_contract.py` recognises `state` through

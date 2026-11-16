@@ -110,6 +110,7 @@ install step and the tools the contracts call.
 | `lspci` (`tests/foundation_check_mode_contract.py`) | `pciutils` | `pciutils` |
 | offscreen QML runtime contracts (Qt 6 `qmlscene`, QtQuick, Window, Shapes, WorkerScript) | `qt6-declarative` | `qmlscene-qt6` and four `qml6-module-*` packages |
 | real capability process contract (`qs`, including failed starts and cancellation) | `quickshell` | hash-pinned Quickshell source build against runner Qt; see the fixed toolchain in `.github/workflows/ci.yml` |
+| rail geometry of `tests/bar_core_focus_contract.py`, measured in the shell's own fonts | `adwaita-fonts`, `ttf-jetbrains-mono-nerd` | `fontconfig`, `fonts-adwaita-sans` and the hash-pinned Nerd Fonts v3.5.1 `JetBrainsMono.tar.xz` |
 | recovery GTK widget and allocation contracts (private Broadway display) | `gtk4`, `python-gobject` | `python3-gi`, `gir1.2-gtk-4.0`, `libgtk-4-bin` |
 | `openssl`, `git`, `modprobe` | `openssl`, `git`, `kmod` | runner defaults |
 
@@ -119,6 +120,7 @@ On Arch, in one step:
 sudo pacman -S --needed ansible ansible-lint ruff shellcheck bats \
   python python-yaml python-jinja nftables sudo lua poppler \
   gcc pkgconf libpipewire glib2 pciutils qt6-declarative quickshell gtk4 python-gobject \
+  adwaita-fonts ttf-jetbrains-mono-nerd \
   openssl git kmod
 ```
 
@@ -135,6 +137,13 @@ from a SHA-256 checked archive into a private toolchain prefix, then requires
 and desktop services are disabled. Quickshell uses private Qt APIs, so the
 build must use the same Qt libraries as the runtime. This toolchain step
 needs network access too. Missing `qs` is a failed contract, never a skip.
+
+The bar geometry depends on the advances of the fonts `Tokens.qml` names,
+Adwaita Sans and JetBrainsMono Nerd Font. Ubuntu packages only the first, so
+CI also installs the Nerd Fonts v3.5.1 `JetBrainsMono.tar.xz` release
+archive, checked against its published SHA-256, and requires `fc-match` to
+resolve both families. Without them the contract refuses to measure: a
+fallback font would give a verdict about a different rail.
 
 The battery is not guaranteed to run offline either. Level 0i calls plain
 `ansible-lint`, and `.ansible-lint` sets only its profile. Unless it runs

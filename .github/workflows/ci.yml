@@ -34,8 +34,22 @@ jobs:
             qml6-module-qtquick \
             qml6-module-qtquick-window \
             qml6-module-qtquick-shapes \
-            qml6-module-qtqml-workerscript
+            qml6-module-qtqml-workerscript \
+            fontconfig fonts-adwaita-sans
           test -x /usr/lib/qt6/bin/qmlscene
+          # The shell names Adwaita Sans and JetBrainsMono Nerd Font (Tokens.qml),
+          # and rendered geometry depends on their advances. Install the same
+          # families the host has; the Nerd Font is not packaged for Ubuntu.
+          curl --fail --location --retry 3 \
+            https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/JetBrainsMono.tar.xz \
+            --output "${RUNNER_TEMP}/JetBrainsMono.tar.xz"
+          echo "04d5e8f903693f9dd13e16f867e994834e681eb3c72c0d337a770dcda09010cf  ${RUNNER_TEMP}/JetBrainsMono.tar.xz" | sha256sum --check
+          mkdir -p "${HOME}/.local/share/fonts/JetBrainsMonoNerd"
+          tar -xJf "${RUNNER_TEMP}/JetBrainsMono.tar.xz" -C "${HOME}/.local/share/fonts/JetBrainsMonoNerd" \
+            --wildcards 'JetBrainsMonoNerdFont-*.ttf'
+          fc-cache --force
+          test "$(fc-match --format '%{family[0]}' 'Adwaita Sans')" = 'Adwaita Sans'
+          test "$(fc-match --format '%{family[0]}' 'JetBrainsMono Nerd Font')" = 'JetBrainsMono Nerd Font'
           # Ubuntu 26.04 has no Quickshell package. Build the process runtime
           # against this runner's Qt private ABI, without desktop services.
           curl --fail --location --retry 3 \
