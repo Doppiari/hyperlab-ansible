@@ -182,9 +182,11 @@ it. Below that the rail reduces in a defined order rather than colliding:
 Time, essential system access and any unavailable-data indication always
 survive. Below 820 logical pixels the extra gaps between right-hand controls
 collapse to their own padding and the left group uses the smallest spacing.
-The clock reserves its actual measured width between the side groups. The
-focus item stays visible on narrow rails; only its Machine name may elide,
-while its domain and state words remain unelided.
+The workspace capacity reserves the clock's actual measured width and its
+gaps before allocating chips, including the extra width of a counted overflow.
+The focus item stays visible on narrow rails; only its Machine name may elide,
+while its domain and state words remain unelided. The 800-pixel fixtures also
+exercise five occupied workspaces with long, unconfirmed Machine names.
 
 - **Workspace chips** show only what the compositor reported: active,
   occupied or urgent. An empty or unreadable snapshot says

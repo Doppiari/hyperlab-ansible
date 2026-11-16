@@ -28,7 +28,7 @@ neutral sphere and display the state word beside the Machine name and domain.
 
 Long Machine names cannot elide the domain or unsupported-state words. Both
 wide and 800-pixel rails keep the focus item, clock and required readouts
-inside the rail without overlap.
+inside the rail without overlap, including five occupied workspaces.
 
 `--renders DIR` keeps the wide and narrow bar captures.
 What this does not prove: the real Quickshell runtime, real compositor
@@ -79,6 +79,11 @@ MAPPING_READS = {
 SCENARIO = r"""
             const states = @@STATES@@;
             const extra = @@EXTRA@@;
+            const normalWorkspaces = sharedState.workspacePayload;
+            const crowdedWorkspaces = Object.assign({}, normalWorkspaces, {
+                occupied: [1, 2, 3, 4, 5]
+            });
+            const workspaces = window.find(rail, "rail-workspaces");
             const glyph = window.find(rail, "identity-glyph");
             const badge = window.find(rail, "provenance-badge");
             const sphere = window.find(rail, "focus-sphere");
@@ -162,6 +167,10 @@ SCENARIO = r"""
                     "domainWords": {text: words.text, truncated: words.truncated,
                                     paintedWidth: words.paintedWidth, width: words.width},
                     "nameTruncated": machineName ? machineName.truncated : false,
+                    "workspaces": {observed: workspaces.observedWorkspaces,
+                                   visible: workspaces.visibleWorkspaces,
+                                   maximumSlots: workspaces.maximumSlots,
+                                   overflow: workspaces.overflowCount},
                     "geometry": geometry(),
                     "width": rail.width, "height": rail.height
                 }));
@@ -176,6 +185,9 @@ SCENARIO = r"""
                     return;
                 }
                 const event = states[index];
+                sharedState.applyWorkspacePayload(JSON.stringify(
+                    event.name.indexOf("long-") === 0 ? crowdedWorkspaces : normalWorkspaces
+                ));
                 sharedState.applyMachinePayload(JSON.stringify(event.inventory));
                 focus(event);
                 answer(event);
@@ -604,6 +616,12 @@ def hue_nearest(colour: tuple[int, int, int], palette: dict) -> str:
 def check_render(compositor: str, state: dict, record: dict, image: bytes, palette: dict) -> None:
     where = f"{compositor}/{state['name']}"
     width = int(record["width"])
+    if state["name"].startswith("long-"):
+        workspaces = record["workspaces"]
+        require(workspaces["observed"] == [1, 2, 3, 4, 5]
+                and {2, 5} <= set(workspaces["visible"])
+                and len(workspaces["visible"]) + workspaces["overflow"] == 5,
+                f"{where}: the crowded workspace fixture lost occupied, active or urgent slots")
     bounds = []
     for item in record["geometry"]:
         require(item["visible"] and item["width"] > 0 and item["height"] > 0,
@@ -752,7 +770,7 @@ def main() -> int:
     print("Bar core focus contract: OK (Sway and Hyprland: host, dev, dirty, unmapped and "
           "stale focus; title-independent mapping; hollow Unknown; one answer for core and item; "
           "unelided domain/state words for 31-character names; unresolved marker; "
-          "1440/800-pixel geometry; fade and reduced motion)")
+          "1440/800-pixel geometry with five occupied workspaces; fade and reduced motion)")
     return 0
 
 

@@ -6101,6 +6101,12 @@ The stale-source case also keeps the longer stale GPU and unavailable
 workspace readouts. The render option saves all forty captures and their
 runtime geometry records.
 
+The long-name cases also use five occupied workspaces, with active workspace
+2 and urgent workspace 5 retained. The unlisted and stale-inventory cases at
+800 pixels now fold to three visible chips and a counted `+2`; every occupied
+workspace is either visible or counted. The clock, focus domain/state words
+and required readouts remain separate under both compositor fixtures.
+
 Save each file, make one break, run `python tests/bar_core_focus_contract.py`,
 restore the saved copy and rerun the same check. QML paths are under
 `roles/host_desktop_common/files/quickshell/hyperlab/`.
@@ -6119,27 +6125,46 @@ failed separately on the truncated painted label, absent unresolved marker
 and narrow overlap. These are software checks; display legibility and real
 compositor timing remain hardware acceptance.
 
-## The wiring contract and a component's root bindings
+An additional capacity mutation exercises the crowded-workspace cases:
 
-`tests/host_quickshell_qml_wiring_contract.py` counts only the Qt input
-`MachineSphere.state`, documented by ADR 0064, as declared while its
-component binds it on the root. Other root bindings grant no exception
-(`problems/wiring-contract-refused-item-state.md`). Replay one break at a
-time from a saved copy, run `python tests/host_quickshell_qml_wiring_contract.py`,
-restore the copy and run it again. Every break edits a file in
+| Mutation | File | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- | --- |
+| `fixed-workspace-capacity` | `HyperLabBar.qml` | Replace the measured `maximumSlots` binding with `bar.wideRail ? 9 : (bar.mediumRail ? 6 : 4)`. | `sway-800/long-unlisted: rail-clock overlaps rail-workspaces on the 800-pixel rail` | Exit 0, contract OK. |
+
+This break exited 1; its byte-identical restoration exited 0. Before the
+capacity correction, the expanded five-workspace test failed with the same
+diagnostic. The four captures for long-unlisted and long-stale-inventory at
+800 pixels pass the pairwise geometry check under Sway and Hyprland.
+
+## The wiring contract and inherited Item.state
+
+`tests/host_quickshell_qml_wiring_contract.py` recognises `state` through
+local inheritance chains ending at `Item`, `Rectangle`, `Text` or `Canvas`
+([ADR 0065](../docs/adr/0065-qml-inherited-item-state.md)). A component need
+not bind it on its root. `GpuBadge` inherits it through `ShellControl`;
+QtObject-based components such as `Icons` do not. Other vocabulary names,
+including `icons`, still need a declaration. Runtime contracts check the
+actual sphere state values separately.
+
+The table preserves the earlier component-specific rule's results as
+historical and records a replay under ADR 0065. The three accepted changes
+are valid inherited-property assignments, not missed wiring defects. Replay
+one change at a time from a saved copy, run
+`python tests/host_quickshell_qml_wiring_contract.py`, restore the copy and
+run it again. Every change edits a file in
 `roles/host_desktop_common/files/quickshell/hyperlab/`.
 
-| Mutation | Break | Observed red diagnostic | After restoration |
-| --- | --- | --- | --- |
-| `icons-to-sphere` | `ProvenanceBadge.qml` assigns `icons: badge.icons` to its `MachineSphere`. | `ProvenanceBadge.qml assigns ['icons'] to MachineSphere, which declares no such property` | Exit 0, contract OK. |
-| `sphere-root-unbound` | Delete `state: ""` from the root of `MachineSphere.qml`. | `ProvenanceBadge.qml assigns ['state'] to MachineSphere, which declares no such property` | Exit 0, contract OK. |
-| `state-to-gpu-badge` | `HyperLabBar.qml` assigns `state: "x"` to its `GpuBadge`. | `HyperLabBar.qml assigns ['state'] to GpuBadge, which declares no such property` | Exit 0, contract OK. |
-| `unreviewed-root-state` | Bind `state: ""` on `GpuBadge.qml`'s root and assign `state: "x"` to the badge in `HyperLabBar.qml` (two files). | `HyperLabBar.qml assigns ['state'] to GpuBadge, which declares no such property` | Exit 0, contract OK. |
+| Mutation | Change | Historical result before ADR 0065 | Current observed result | After restoration |
+| --- | --- | --- | --- | --- |
+| `icons-to-sphere` | `ProvenanceBadge.qml` assigns `icons: badge.icons` to its `MachineSphere`. | Exit 1, stray `icons` on MachineSphere. | Exit 1: `ProvenanceBadge.qml assigns ['icons'] to MachineSphere, which declares no such property`. | Exit 0, contract OK. |
+| `sphere-root-unbound` | Delete `state: ""` from the root of `MachineSphere.qml`. | Exit 1, undeclared `state` on MachineSphere. | Exit 0, `OK (56 components)`; Item.state is inherited without a root binding. | Exit 0, contract OK. |
+| `state-to-gpu-badge` | `HyperLabBar.qml` assigns `state: "x"` to its `GpuBadge`. | Exit 1, undeclared `state` on GpuBadge. | Exit 0, `OK (56 components)`; GpuBadge inherits Item.state. | Exit 0, contract OK. |
+| `unreviewed-root-state` | Bind `state: ""` on `GpuBadge.qml`'s root and assign `state: "x"` to the badge in `HyperLabBar.qml` (two files). | Exit 1 under the component-specific rule. | Exit 0, `OK (56 components)`; the root binding does not change inheritance. | Exit 0, contract OK. |
+| `state-to-qtobject` | `shell.qml` assigns `state: "x"` to its QtObject-based `Icons`. | Not run. | Exit 1: `shell.qml assigns ['state'] to Icons, which declares no such property`. | Exit 0, contract OK. |
 
-All four breaks exited 1 with the diagnostic listed; each byte-identical
-restoration exited 0. With the earlier rule that counted every root binding
-as declared, `unreviewed-root-state` stayed green (exit 0): the broad rule
-authorized the injected name. Narrowing the exception to the documented
-sphere input makes that break red while the existing three stay red.
-Before the original Item.state correction the unmodified tree failed with
-the `sphere-root-unbound` diagnostic.
+All five current results match ADR 0065; each byte-identical restoration
+exited 0. Historically, a broad rule that counted every root binding also
+accepted `unreviewed-root-state`; the later component-specific rule refused
+it. Neither historical rule describes today's inherited-property boundary.
+Before the original Item.state correction, the unmodified tree itself
+failed with an undeclared-state diagnostic on MachineSphere.

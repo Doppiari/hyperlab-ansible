@@ -6,41 +6,53 @@ Status: corrected in the contract, software-verified.
 
 ## Symptom
 
-The bar's focus item is the first surface that draws a `MachineSphere`. It
-passes the Machine's state as `state: ...`, the input ADR 0064 chose for the
+When the bar's focus item first drew a `MachineSphere`, it passed the
+Machine's state as `state: ...`, the input ADR 0064 chose for the
 component. `tests/host_quickshell_qml_wiring_contract.py` refused it:
 
 ```text
 ProvenanceBadge.qml assigns ['state'] to MachineSphere, which declares no such property
 ```
 
-The real shell and `tests/bar_core_focus_contract.py`, which instantiate the
-component under Qt, accepted the same binding.
+The real shell and `tests/bar_core_focus_contract.py`, which instantiated
+the component under Qt, accepted the same binding.
 
 ## Cause
 
-The contract builds its vocabulary from the properties HyperLab components
-require. `StateChip.qml` requires a property called `state`, so the word
+The contract built its vocabulary from the properties HyperLab components
+required. `StateChip.qml` required a property called `state`, so the word
 entered the vocabulary, and any assignment of `state` to a component that
 did not declare it with `property` became a wiring defect. `MachineSphere`
 does not declare it: it binds Qt's own `Item.state` on its root object
-(`state: ""`), as ADR 0064 decided, so that no QML `States` can change it.
-The contract's own description says it says nothing about Qt's properties;
-a shared word turned one of them into a HyperLab name.
+(`state: ""`), as ADR 0064 decided, and declares no QML `States`.
+The original contract description excluded Qt's properties; a shared word
+turned one of them into a HyperLab name.
 
 ## Correction
 
-The contract lists only `MachineSphere.state` as a Qt input, following
-ADR 0064, and counts it as declared only while the component binds it on
-its own root. No other root binding authorizes an injected property. The
-initial correction counted every root binding as declared; that was broader
-than the documented input and could hide a wiring error. The explicit,
-component-specific exception preserves the check that caught the C9 defect.
+The first correction listed only `MachineSphere.state` as a Qt input and
+counted it while the sphere bound it on its root. That component-specific
+rule superseded an overly broad rule counting every root binding as a
+declaration. These are historical steps, not the current inheritance rule.
+
+[ADR 0065](../docs/adr/0065-qml-inherited-item-state.md) now recognises `state`
+when the local inheritance chain ends at `Item`, `Rectangle`, `Text` or
+`Canvas`. A root binding is not required, and another Item-based component
+may receive the same property. QtObject-based components still cannot.
+The retained `MachineSphere.state` root-input entry does not restrict or
+replace this inherited-property recognition. Required injections and stray
+assignments of other vocabulary names keep their existing checks.
 
 ## Regression proof
 
-`tests/MUTATIONS.md` ("The wiring contract and a component's root
-bindings"): injecting `icons` into the sphere, deleting the sphere's root
-`state: ""` and assigning `state` to `GpuBadge` each turn the contract red.
-Binding `state` on `GpuBadge`'s root while injecting it from the bar also
-stays red: a root binding alone grants no exception.
+`tests/MUTATIONS.md` ("The wiring contract and inherited Item.state") keeps
+the earlier red results labelled historical. A current replay accepts all
+three valid Item changes: deleting the sphere's root `state: ""`, assigning
+`state` to `GpuBadge`, and also binding it on `GpuBadge`'s root. Each exits 0
+with `OK (56 components)`, as ADR 0065 intends.
+
+Injecting `icons` into the sphere still exits 1 with a stray-property defect.
+Assigning `state` to the QtObject-based `Icons` in `shell.qml` also exits 1.
+Every saved source is restored byte-identically and the contract then passes.
+The showcase contract separately checks the actual sphere and Icons
+inheritance chains; runtime contracts check the state values passed to spheres.

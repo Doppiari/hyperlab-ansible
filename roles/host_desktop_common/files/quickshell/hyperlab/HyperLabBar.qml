@@ -195,6 +195,8 @@ PanelWindow {
             }
 
             WorkspaceStrip {
+                id: workspaceStrip
+
                 objectName: "rail-workspaces"
                 anchors.verticalCenter: parent.verticalCenter
                 tokens: bar.tokens
@@ -205,7 +207,25 @@ PanelWindow {
                         bar.shellState.workspaceSourceState,
                         bar.shellState.workspaceObservedAt
                     )
-                maximumSlots: bar.wideRail ? 9 : (bar.mediumRail ? 6 : 4)
+                // Reserve the measured clock and its gaps before allocating
+                // chips. Overflow needs its own width when not all observed
+                // workspaces fit; it is additional to the visible slots.
+                maximumSlots: {
+                    const limit = bar.wideRail ? 9 : (bar.mediumRail ? 6 : 4);
+                    const clockGap = bar.narrowRail ? bar.tokens.spaceXs : bar.tokens.spaceXl;
+                    const available = Math.floor(
+                        rightGroup.x - (leftGroup.x + workspaceStrip.x)
+                        - contextCluster.clockWidth - clockGap - bar.tokens.spaceXs
+                    );
+                    const slots = Math.min(limit, Math.floor(available / bar.tokens.workspaceSlot));
+
+                    if (workspaceStrip.observedWorkspaces.length <= slots)
+                        return Math.max(1, slots);
+
+                    return Math.max(1, Math.min(limit, Math.floor(
+                        (available - bar.tokens.workspaceOverflow) / bar.tokens.workspaceSlot
+                    )));
+                }
 
                 onWorkspaceRequested: slot => {
                     bar.shellActions.invokeWorkspace(slot);

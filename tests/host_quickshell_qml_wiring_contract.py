@@ -13,12 +13,13 @@ a text search cannot:
   1. every required property of a HyperLab component is assigned wherever
      that component is instantiated;
   2. a property name that belongs to the HyperLab vocabulary is only ever
-     assigned to a component that actually declares it. The one exception is
-     a Qt property a reviewed decision makes a component's input, listed in
-     QT_INPUTS, and only while the component binds it on its root object.
+     assigned to a component that declares or inherits it. ADR 0065 recognises
+     Item.state through local chains ending at Item, Rectangle, Text or Canvas,
+     without requiring a root binding. QtObject roots do not inherit state.
 
-It deliberately says nothing about Qt's own properties: this is a contract
-about HyperLab's own wiring, not a QML type checker.
+Apart from this inherited state and the documented root inputs in QT_INPUTS,
+it says nothing about Qt's own properties: this checks HyperLab wiring,
+not all QML types. Runtime contracts separately check the supplied values.
 """
 
 from __future__ import annotations
@@ -35,10 +36,9 @@ VIEW_PROVIDED = {"modelData", "index"}
 # Assigned by Quickshell's Variants from its model.
 VARIANT_PROVIDED = {"modelData"}
 
-# Qt properties a reviewed decision makes a component's input. ADR 0064:
-# MachineSphere takes the Machine state through Item.state, which it binds on
-# its root so that no QML States can change it. A name here counts as
-# declared for that component only, and only while its root binds it.
+# Root bindings for documented Qt inputs supplement local declarations.
+# MachineSphere uses Item.state (ADR 0064); resolve() also recognises that
+# inherited property (ADR 0065), even without a root binding or this entry.
 QT_INPUTS: dict[str, set[str]] = {"MachineSphere": {"state"}}
 
 PROPERTY_DECLARATION = re.compile(
@@ -258,8 +258,8 @@ def main() -> int:
     require(bool(catalogue), "no HyperLab QML components found")
 
     # The wiring vocabulary is the set of properties HyperLab components
-    # actually require. Optional properties and Qt's own property names are
-    # deliberately out of scope: this contract is about injection, not types.
+    # actually require. Optional properties and Qt-only names outside this
+    # vocabulary are out of scope: this checks injection, not all QML types.
     vocabulary: set[str] = set()
     for entry in catalogue.values():
         vocabulary |= entry["required"]

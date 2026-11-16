@@ -9,7 +9,8 @@ proof.
   keeps domain/state words unelided and tests their painted bounds.
 - [`bar-clock-overlapped-narrow-readouts.md`](bar-clock-overlapped-narrow-readouts.md):
   the approximate clock centre collided with long focus and stale readouts;
-  measured bounds and compact gaps keep the 800-pixel fixtures apart.
+  measured bounds, compact gaps and capacity including workspace overflow
+  keep the 800-pixel fixtures apart.
 
 - [`qml-wiring-missed-inherited-item-state.md`](qml-wiring-missed-inherited-item-state.md):
   structural wiring rejected the sphere's inherited Item.state, although
@@ -498,7 +499,8 @@ proof.
   the neutral sphere despite retaining the proven Machine domain.
 - [`wiring-contract-refused-item-state.md`](wiring-contract-refused-item-state.md):
   the QML wiring contract read a shared word as a HyperLab property and
-  refused MachineSphere's Item.state; root bindings now count as declared.
+  refused MachineSphere's Item.state; ADR 0065 now recognises the inherited
+  property while refusing it on QtObject-based components.
 
 - [`machine-projection-guard-missed-rendered-tiles.md`](machine-projection-guard-missed-rendered-tiles.md):
   the Machine presentation guard checked an unused component instead of the

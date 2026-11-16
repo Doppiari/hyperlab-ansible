@@ -757,6 +757,7 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
       domain core and add their state word beside a neutral sphere;
       domain/state words stay unelided for long names, unresolved answers
       carry a word marker, and required items fit the 800-pixel fixtures
+      with five occupied workspaces and counted overflow
       (ADR 0064; `tests/bar_core_focus_contract.py`, software-verified under
       Sway and Hyprland fixtures)
 - [ ] the bar core accepted on Nitro under both compositors: focus host →
