@@ -109,23 +109,21 @@ if (( domain_entries == 0 )); then
     exit 1
 fi
 
-# A domain absent from both reviewed policy surfaces is not a GPU domain and
-# passes without touching GPU contamination state - but only if it really
-# carries no PCI passthrough. libvirt hands the hook the domain XML on stdin;
-# an unmapped domain with a PCI hostdev would otherwise take the device
-# without ever lowering the recorded ladder level.
-if [[ -z "${profile}" ]]; then
-    domain_xml="$(cat)"
-    if [[ -z "${domain_xml}" ]]; then
-        echo "gpu-handoff: no domain XML for unlisted ${domain}: refusing (fail closed)" >&2
-        exit 1
-    fi
-    if grep -Eq "<hostdev[^>]*type=['\"]pci['\"]|<interface[^>]*type=['\"]hostdev['\"]" <<< "${domain_xml}"; then
-        echo "gpu-handoff: REFUSING ${domain}: PCI passthrough without a reviewed GPU handoff policy" >&2
-        exit 1
-    fi
-    exit 0
+# Inspect every prepare before creating a lock or touching the ladder. The
+# helper and its transport policy are installed root-owned, independent of
+# this checkout. The domain XML stays on stdin; it is never shell code.
+XML_PREFLIGHT=/etc/gpu-handoff/xml-preflight.py
+if [[ ! -f "${XML_PREFLIGHT}" || ! -r "${XML_PREFLIGHT}" || -L "${XML_PREFLIGHT}" ]]; then
+    echo "gpu-handoff: XML preflight missing, redirected or unreadable: refusing" >&2
+    exit 1
 fi
+if ! /usr/bin/python3 -I "${XML_PREFLIGHT}" "${domain}" "${profile}" /etc/gpu-handoff/looking-glass.json; then
+    echo "gpu-handoff: XML preflight failed: refusing" >&2
+    exit 1
+fi
+
+# A valid unmapped non-passthrough domain never touches contamination state.
+[[ -n "${profile}" ]] || exit 0
 
 trust=""
 rotation_entries=0

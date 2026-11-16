@@ -445,6 +445,13 @@ Details: [C10 — Machine Factory](#c10--machine-factory).
       only the running one owns it, checked under the GPU lock at start
       ([ADR 0016](adr/0016-gpu-shared-definition-running-lease.md),
       software-verified)
+- [x] prepare XML is parsed before ladder state is touched; unmapped PCI
+      and QEMU extensions refuse, and mapped extensions accept only the
+      reviewed Looking Glass argv with host-configured path and size
+      (`tests/hook.bats`, `tests/gpu_handoff_xml_contract.py`,
+      `tests/arch_dev_vfio_hardware_gate_contract.py`; software-verified).
+      The trusted host session's libvirt authority is root-equivalent; the
+      hook and become prompt do not confine a hostile host owner.
 - [ ] a Machine declares `gpu_capable`; owning the GPU is a host-owned lease
       for one run, so a dev Machine can start without the GPU and restart
       with it for Blender or CUDA

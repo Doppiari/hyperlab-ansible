@@ -70,6 +70,9 @@ proof.
 - [`networks-feature-reload-with-unchanged-content.md`](networks-feature-reload-with-unchanged-content.md):
   a file notification clears the opt-in; a successful unchanged reload must
   reapply it even without a text-change signal.
+- [`gpu-commandline-bypassed-handoff.md`](gpu-commandline-bypassed-handoff.md):
+  textual hostdev detection missed passthrough in QEMU arguments; prepare now
+  parses XML and permits only the reviewed Looking Glass extension.
 - [`gpu-ladder-state-write-fail-open.md`](gpu-ladder-state-write-fail-open.md):
   the qemu hook ignored a failed rung write and let concurrent prepares
   overwrite a dirtier rung; it now commits under a lock by atomic rename.

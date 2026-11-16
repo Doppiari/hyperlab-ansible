@@ -5835,3 +5835,148 @@ import to `render.py`. The focused component suite fails on
 `ImportError`; its restored source passes. The existing desktop cockpit
 contract also passes without changes. See the
 [problem note](../problems/cli-render-standalone-import.md).
+
+
+## GPU prepare XML and reviewed QEMU arguments
+
+The checks run copied hook/helper artifacts in temporary directories, with
+only the fixed installed paths and the policy owner's fixture uid substituted.
+No live libvirt, GPU or trust state is used. All prepare cases, including the
+existing transaction races, supply representative XML. The reference-domain
+positive control is rendered by the real guest/VFIO planners and domain
+Jinja template in `tests/arch_dev_vfio_hardware_gate_contract.py`.
+
+Each of the following breaks was observed red (exit 1) and its restored
+predicted check green (exit 0). No mutation stayed green.
+
+| Case | Invariant broken | Observed red check |
+|---|---|---|
+| Q1 | Ignore an unmapped QEMU namespace extension | Bats renamed-namespace vfio-pci refusal |
+| Q2 | Accept trailing arguments after the reviewed four | XML contract extra argument accepted, state changed |
+| Q3 | Inspect only the literal `qemu` prefix | Bats renamed-namespace refusal |
+| Q4 | Match ordered hostdev text with no space around `=` | Bats structural PCI/hostdev interface refusal |
+| Q5 | Reject every command-line block | Real rendered Looking Glass XML refused |
+| Q6 | Ignore helper failure | Bats failed-helper refusal/state preservation |
+| Q7 | Treat malformed XML as success | Bats missing/malformed mapped XML refusal |
+| Q8 | Fall back to transport defaults on invalid policy | XML contract invalid/duplicate policy accepted |
+| Q9 | Ignore the opened policy inode's owner | XML contract wrong-owner policy accepted |
+| Q10 | Install the helper owned by an unprivileged user | Actual task parameter evaluation rejects ownership |
+| Q11 | Hard-code policy transport values | Actual policy render ignores changed host configuration |
+| Q12 | Ignore a second command-line block | XML contract duplicate block accepted |
+| Q13 | Allow a document type and entity substitution | XML contract document type accepted |
+| Q14 | Follow the transport policy symlink | XML contract redirected policy accepted |
+| Q15 | Ignore the domain XML's name | XML contract name mismatch accepted |
+| Q16 | Remove the XML input bound | XML contract oversized document accepted |
+| Q17 | Ignore the host-owned policy inside the helper | XML contract configured Looking Glass XML refused |
+| Q18 | Run the helper without Python isolation (`-I`) | XML contract shadow `json.py` imported, reviewed XML refused |
+
+The XML contract's argument-drift table also covers changed driver, path,
+size, share flag, device/backend ids and extra object properties. Its shape
+cases cover empty blocks, unknown attributes/children/text, environment
+nodes and orphan namespace elements. Refusals are checked both over existing
+trust bytes and before any state directory exists. The policy checks include
+missing, malformed, duplicate-key, unreadable, writable and redirected inputs;
+installation evaluates root ownership, modes and publication order. These
+are software proofs, not hardware acceptance or confinement of a hostile
+host owner.
+
+Replay from the repository root on an otherwise idle tree. Each source file
+is copied before it is changed and restored in `finally`, including its mode;
+no Git restoration is used. Each mutation runs only its predicted check,
+then the same check after restoration:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+root = Path.cwd()
+helper = Path('roles/gpu_handoff/files/xml-preflight.py')
+hook = Path('roles/gpu_handoff/files/qemu')
+tasks = Path('roles/gpu_handoff/tasks/main.yml')
+policy = Path('roles/gpu_handoff/templates/looking-glass.json.j2')
+contract = ['python', 'tests/gpu_handoff_xml_contract.py']
+mutations = [
+    ('Q1-ignore-unmapped-extension', helper,
+     [('require(not extensions,', 'require(True,')],
+     ['bats', '--filter', 'unmapped renamed', 'tests/hook.bats'], 'not ok 1'),
+    ('Q2-allow-extra-arguments', helper,
+     [('len(args) == 4', 'len(args) >= 4'),
+      ('[node.get("value") for node in args] == expected', '[node.get("value") for node in args][:4] == expected')],
+     contract, 'unreviewed QEMU command-line'),
+    ('Q3-literal-qemu-prefix', helper,
+     [('    if not mapped:\n', '    if b"<qemu:commandline" not in raw:\n        extensions = []\n    if not mapped:\n')],
+     ['bats', '--filter', 'unmapped renamed', 'tests/hook.bats'], 'not ok 1'),
+    ('Q4-ordered-hostdev-text', helper,
+     [('require(not any(node.tag == "hostdev" and node.get("type") == "pci"\n'
+       '                        or node.tag == "interface" and node.get("type") == "hostdev"\n'
+       '                        for node in root.iter()),',
+       '''require(re.search(rb"<hostdev[^>]*type=['\\\"]pci['\\\"]|<interface[^>]*type=['\\\"]hostdev['\\\"]", raw) is None,''')],
+     ['bats', '--filter', 'unmapped PCI and', 'tests/hook.bats'], 'not ok 1'),
+    ('Q5-reject-all-commandline', helper,
+     [('    blocks = root.findall', '    require(False, "unreviewed QEMU command-line")\n    blocks = root.findall')],
+     ['python', 'tests/arch_dev_vfio_hardware_gate_contract.py'], 'rendered Looking Glass XML refused'),
+    ('Q6-ignore-helper-failure', hook,
+     [('    echo "gpu-handoff: XML preflight failed: refusing" >&2\n    exit 1',
+       '    echo "gpu-handoff: XML preflight failed: refusing" >&2\n    :')],
+     ['bats', '--filter', 'missing or failed installed', 'tests/hook.bats'], 'not ok 1'),
+    ('Q7-ignore-malformed-xml', helper,
+     [('        raise Refusal("invalid domain XML: malformed document") from error', '        return')],
+     ['bats', '--filter', 'missing or malformed', 'tests/hook.bats'], 'not ok 1'),
+    ('Q8-ignore-invalid-policy', helper,
+     [('            raise Refusal(f"invalid Looking Glass policy: {error}") from error',
+       '            device, size = "/dev/kvmfr0", 67108864')],
+     contract, 'invalid Looking Glass policy'),
+    ('Q9-ignore-policy-owner', helper,
+     [(' and info.st_uid == POLICY_OWNER', '')], contract, 'unsafe Looking Glass policy'),
+    ('Q10-user-owned-install', tasks,
+     [('    dest: /etc/gpu-handoff/xml-preflight.py\n    owner: root',
+       '    dest: /etc/gpu-handoff/xml-preflight.py\n    owner: nobody')],
+     contract, 'AssertionError'),
+    ('Q11-hardcode-transport-limits', policy,
+     [(policy.read_text(), '{"device":"/dev/kvmfr0","size_bytes":67108864}\n')],
+     contract, 'transport policy is hard-coded'),
+    ('Q12-ignore-duplicate-block', helper,
+     [('len(blocks) == 1', 'len(blocks) >= 1'), (' and extensions == [block, *args]', '')],
+     contract, 'unreviewed QEMU command-line'),
+    ('Q13-allow-document-type', helper,
+     [('        raise Refusal("invalid domain XML: document types are not allowed")', '        return')],
+     contract, 'invalid domain XML'),
+    ('Q14-follow-policy-symlink', helper,
+     [('os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK', 'os.O_RDONLY | os.O_NONBLOCK')],
+     contract, 'Looking Glass policy'),
+    ('Q15-ignore-domain-name', helper,
+     [('require(len(names) == 1 and names[0].text == domain,', 'require(True,')],
+     contract, 'domain name mismatch'),
+    ('Q16-ignore-xml-size-bound', helper,
+     [('0 < len(raw) <= MAX_XML_BYTES', '0 < len(raw)'),
+      ('sys.stdin.buffer.read(MAX_XML_BYTES + 1)', 'sys.stdin.buffer.read()')],
+     contract, 'invalid domain XML'),
+    ('Q17-ignore-host-transport-policy', helper,
+     [('    expected = [', '    device, size = "/dev/kvmfr0", 67108864\n    expected = [')],
+     contract, 'configured Looking Glass XML refused'),
+    ('Q18-unisolated-helper', hook,
+     [('/usr/bin/python3 -I "${XML_PREFLIGHT}"', '/usr/bin/python3 "${XML_PREFLIGHT}"')],
+     contract, 'isolated helper refused reviewed XML'),
+]
+with tempfile.TemporaryDirectory(prefix="gpu-xml-mutations-") as temporary:
+    for name, path, edits, command, reason in mutations:
+        backup = Path(temporary) / (name + "-" + path.name)
+        shutil.copy2(path, backup)
+        mutated = path.read_text()
+        for old, new in edits:
+            assert mutated.count(old) == 1, (name, old)
+            mutated = mutated.replace(old, new, 1)
+        try:
+            path.write_text(mutated)
+            red = subprocess.run(command, text=True, capture_output=True, check=False, timeout=60)
+            assert red.returncode != 0 and reason in red.stdout + red.stderr, (name, red)
+        finally:
+            shutil.copy2(backup, path)
+        green = subprocess.run(command, text=True, capture_output=True, check=False, timeout=60)
+        assert green.returncode == 0, (name, green)
+        print(f"{name}: red; restored green")
+PY
+```

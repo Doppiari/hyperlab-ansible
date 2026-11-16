@@ -16,6 +16,8 @@ from types import ModuleType
 import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+from gpu_handoff_xml_contract import HookFixture, installation
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -54,6 +56,8 @@ def main() -> int:
     hardware = yaml.safe_load((ROOT / "group_vars/all/hardware.yml").read_text())
     networks = yaml.safe_load((ROOT / "group_vars/all/networks.yml").read_text())
     looking = yaml.safe_load((ROOT / "group_vars/all/looking-glass.yml").read_text())
+    transport_policy = installation()
+    transport = json.loads(transport_policy)
     report = {
         "host_profile": "nitro-3060",
         "vfio_ids": ["10de:2520", "10de:228e"],
@@ -82,7 +86,7 @@ def main() -> int:
             "--looking-glass-device",
             looking["hyperlab_looking_glass_device"],
             "--looking-glass-shm-mb",
-            "64",
+            str(transport["size_bytes"] // 1048576),
             "--spice-host",
             looking["hyperlab_looking_glass_spice_host"],
             "--spice-port",
@@ -107,6 +111,55 @@ def main() -> int:
             ],
         )
         summary = host_gate.validate_xml(xml, report)
+
+        # The reference template's real argv must pass the installed preflight
+        # protocol too; an offline host-gate signature alone cannot prove it.
+        hook_root = Path(temporary) / "hook"
+        hook_root.mkdir()
+        hook = HookFixture(hook_root, transport_policy)
+        result = hook.run(xml)
+        assert result.returncode == 0, f"rendered Looking Glass XML refused: {result.stderr}"
+        assert (hook.state / "trust").read_bytes() == b"2\n"
+        no_looking = env.get_template("domain.xml.j2").render(
+            guest_plan={**plan, "looking_glass": False},
+            guest_resolved_memory_mb=16384,
+            guest_vfio=vfio,
+            hyperlab_looking_glass_spice_socket_dir=looking[
+                "hyperlab_looking_glass_spice_socket_dir"
+            ],
+        )
+        result = hook.run(no_looking)
+        assert result.returncode == 0, f"mapped VFIO without Looking Glass refused: {result.stderr}"
+        assert (hook.state / "trust").read_bytes() == b"2\n"
+        # The standard reference domain is unmapped: it passes without state.
+        standard_result = run(
+            sys.executable,
+            str(ROOT / "tools/guest_plan.py"),
+            "--root",
+            str(ROOT),
+            "--spec",
+            str(ROOT / "vm-specs/arch-dev.yml"),
+            "--store",
+            "/var/lib/privatestack/hyperlab",
+            "--resource-profiles",
+            str(ROOT / "group_vars/all/vm-resource-profiles.yml"),
+        )
+        assert standard_result.returncode == 0, standard_result.stderr
+        standard_plan = json.loads(standard_result.stdout)
+        assert standard_plan["device_profile"] == "standard", standard_plan
+        standard = env.get_template("domain.xml.j2").render(
+            guest_plan=standard_plan, guest_resolved_memory_mb=4096, guest_vfio={}
+        )
+        hook.reset_state(False)
+        result = hook.run(standard, standard_plan["name"])
+        assert result.returncode == 0, f"standard unmapped domain refused: {result.stderr}"
+        assert not hook.state.exists()
+        injected = ET.fromstring(xml)
+        extension = injected.find(f"{{{host_gate.QEMU_NS}}}commandline")
+        assert extension is not None
+        ET.SubElement(extension, f"{{{host_gate.QEMU_NS}}}arg", {"value": "-device"})
+        ET.SubElement(extension, f"{{{host_gate.QEMU_NS}}}arg", {"value": "vfio-pci,host=01:00.0"})
+        hook.refuses(ET.tostring(injected, encoding="unicode"), "unreviewed QEMU command-line")
 
         legacy_root = ET.fromstring(xml)
         legacy_graphics = legacy_root.find("./devices/graphics[@type='spice']")
