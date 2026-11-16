@@ -122,8 +122,10 @@ Invalid transports, failed commands and deadlines fail the apply.
 
 Open surfaces, selection and unsaved forms are lost; GTK closes. The shell
 keeps running during the bounded idle wait. The pause contains only the
-thread and cgroup inspections and the final signal, normally milliseconds;
+thread and cgroup inspections and the final signal;
 if stopping is incomplete, resume immediately and retry on a later apply.
+The incomplete-stop rate for the real multithreaded shell is unmeasured,
+and an immediate sample after `SIGSTOP` may legitimately see running threads.
 This replaces the former paused idle wait and stopped-thread polling.
 The successful replacement is deliberately abrupt, and its journal records
 a signal failure followed by the existing automatic restart. If the refresh
@@ -154,3 +156,20 @@ resolver. Isolated Ansible copies cover adapter-only and unit-only deployment
 followed immediately by `changed=0`, later failures, refresh failures, stale
 residents, unrelated helpers and check mode. Software verification does not
 establish installed Nitro or Predator behavior. Acceptance remains open.
+
+The real-process fixtures must allow the documented incomplete-stop refusal:
+successful signal submission does not establish that every thread has already
+stopped. CI exposed this incorrect fixture assumption at `f38f1bf`.
+Only these inert fixtures retry that exact refusal from pause entry, for up
+to five seconds, with a short delay after cleanup resumes the process. Other
+entry failures and every failure inside the paused inspection propagate.
+Exhaustion fails the contract. This changes no installed refresh behavior
+and adds no waiting to its paused section.
+
+A deterministic incomplete first sample exercises both real fixtures. The
+launcher must still reach a confirmed pause and pinned kill before its
+queued launch can execute. The busy-child fixture must reach the paused
+cgroup inspection and report that specific refusal, then leave both shell
+and child alive with the shell resumed. Accepting any earlier refusal as
+proof of busy-child survival was also an incorrect fixture assumption;
+the contract now checks the inspection and refusal reason explicitly.

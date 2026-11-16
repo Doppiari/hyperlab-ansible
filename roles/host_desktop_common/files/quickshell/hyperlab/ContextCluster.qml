@@ -30,6 +30,8 @@ Item {
     // against the reserved centre.
     property bool centeredClock: true
 
+    readonly property real clockWidth: clockRow.width
+
     // Keep the compositor's raw focused-surface identity in ShellState and
     // Diagnostics, but do not expose Quickshell's implementation app-id as
     // product-facing session context.
@@ -45,6 +47,8 @@ Item {
 
     Row {
         id: clockRow
+
+        objectName: "rail-clock"
 
         x:
             cluster.centeredClock

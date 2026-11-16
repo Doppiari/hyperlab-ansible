@@ -31,6 +31,22 @@
     group: root
     mode: "0644"
 
+- name: Install the domain XML preflight
+  ansible.builtin.copy:
+    src: xml-preflight.py
+    dest: /etc/gpu-handoff/xml-preflight.py
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the reviewed Looking Glass argument limits
+  ansible.builtin.template:
+    src: looking-glass.json.j2
+    dest: /etc/gpu-handoff/looking-glass.json
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Make the libvirt hooks directory
   ansible.builtin.file:
     path: /etc/libvirt/hooks

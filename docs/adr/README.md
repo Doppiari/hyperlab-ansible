@@ -39,7 +39,8 @@ entered the pipeline.
 17. [`0017-shell-machine-creation.md`](0017-shell-machine-creation.md) —
     accepted: the shell creates a Machine through the reviewed bridge and one
     durable operation; the password and the become prompt stay in its
-    terminal (operator's decision, 2026-11-05).
+    terminal (operator's decision, 2026-11-05). Host-session libvirt authority
+    is already root-equivalent; that prompt does not confine it.
 18. [`0018-disposable-discards-on-stop.md`](0018-disposable-discards-on-stop.md)
     — accepted: a disposable Machine's disk is a libvirt transient disk, so
     every stop discards its writes (operator's decision, 2026-11-05).
@@ -153,7 +154,8 @@ entered the pipeline.
     the record last; a record is withdrawn only by its digest, under the
     registry lock, and never while a projection or a domain follows from it.
     Operator's decision, 2026-11-05; unpublished source in the record.
-    Transaction remediation and Nitro refusal evidence remain open.
+    Transaction remediation is software-verified; Nitro refusal tests and
+    manual-recovery limits remain open.
 
 54. [`0054-private-machine-diagnostics.md`](0054-private-machine-diagnostics.md) —
     proposed, software built: supervise one private diagnostics collection
@@ -641,6 +643,8 @@ remain.
   - Built: built — content-generation checkpoints, pinned shell pause and busy
     cgroup refusal, exact post-exec observer validation and resident recovery
     retirement, with clock-step, launch-race, retry and idempotence checks.
+    Inert-process fixtures cover asynchronous stopping and require the actual
+    paused busy-child refusal, with bounded retries only after resume.
   - Activation: default — after the copies in `host_desktop_common` and
     `host_desktop_sway` and after the Hyprland unit copy in
     `playbooks/v1-host.yml`. Only existing presentation processes are refreshed.
@@ -649,7 +653,8 @@ remain.
     [`recovery tasks`](../../roles/host_desktop_sway/tasks/main.yml),
     [`shell_reload_after_apply_contract.py`](../../tests/shell_reload_after_apply_contract.py)
   - Prerequisites: the operator's decision; installed Nitro apply/readback
-    and unchanged second pass, then Predator replay.
+    and unchanged second pass, measurement of incomplete-stop refusals and
+    thread counts across repeated shell changes, then Predator replay.
 
 - [ADR 0063](0063-v1-acceptance-campaign.md)
   - Decision: proposed.

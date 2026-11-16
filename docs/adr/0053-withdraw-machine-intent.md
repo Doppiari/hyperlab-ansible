@@ -8,8 +8,8 @@ and Nitro session step 11 at 20:01. The operator accepted the design read
 at `main` commit `1e42308a863180590fc9b2a209b41227978b8a4f`: option A and
 the guarded manual withdrawal path below. This records design acceptance
 without adding evidence for handled failures, incomplete compensation or
-physical refusal tests. The separate Plan/Intent transaction remediation
-remains open.
+physical refusal tests. The separate implementation evidence is recorded
+below.
 
 ## Context
 
@@ -106,18 +106,38 @@ decision.
 - Existing software: `machine create --project` and the guarded
   `machine withdraw ID --record-sha256 DIGEST` path are implemented in
   [`machine_registry.py`](../../tools/hyperlabctl/hyperlabctl/machine_registry.py)
-  and [`machine.py`](../../tools/hyperlabctl/hyperlabctl/commands/machine.py),
+  and [`machine.py`](../../tools/hyperlabctl/hyperlabctl/commands/machine.py).
+- Transaction remediation: software-verified, separately from the design
+  acceptance. Commits `4f9f39e` and `3928a58` compensate failures after real
+  record publication, including sync, read-back, digest and handled
+  cancellation failures, under the registry lock. The executing
+  [`staged-create contract`](../../tests/c10_machine_create_plan_contract.py)
+  runs the real bridge and CLI with an inert operation recorder: successful
+  compensation restores the snapshots and launches no operation; incomplete
+  compensation reports what stays, preserves replacement files and keeps
+  the spec when record withdrawal did not complete. The library path is
   exercised by
   [`c10_machine_registry_contract.py`](../../tests/c10_machine_registry_contract.py)
-  and
-  [`c10_machine_create_plan_contract.py`](../../tests/c10_machine_create_plan_contract.py).
+  and the bridge handoff by
+  [`host_machine_actions_bridge_contract.py`](../../tests/host_machine_actions_bridge_contract.py).
+- Refusal and regression evidence: `4eef639` makes malformed,
+  multiple-document and duplicate-key specs refuse withdrawal with record
+  and spec unchanged, exercised by the staged-create contract. `173a1d9`
+  makes that contract and
+  [`c10_machine_creation_plan_contract.py`](../../tests/c10_machine_creation_plan_contract.py)
+  assert the exact independently computed guest-key fingerprint.
+  `516f30e` adds the staged-create case that preserves another spec inode
+  with identical bytes after real publication. The reviewed
+  [mutation evidence](../../tests/MUTATIONS.md#the-creation-plan-agrees-with-the-factory-a-refused-creation-keeps-nothing)
+  records red and restored-green results for publication compensation and
+  cleanup order, and for malformed and duplicate-key refusal; the
+  [replacement-inode mutation](../../tests/MUTATIONS.md#rollback-keeps-a-replacement-spec-with-identical-bytes)
+  turns digest-only cleanup red specifically for removing the replacement.
 - Activation: on request — the shell's creation runs the staged step
   through the bridge, and withdrawal runs only when the operator calls it.
   Nothing removes the record and spec an interrupted provisioning leaves.
-- Still open: the separate Plan/Intent transaction remediation and its
-  reviewed regression evidence for failure after publication, incomplete
-  compensation and invalid-spec refusal. Acceptance of this design does
-  not establish that work is complete or that cleanup always succeeds.
+- Still open: Nitro refusal tests and hardware Create acceptance. The
+  software regressions do not establish that cleanup always succeeds.
   Stale owned files can keep a name taken and require manual recovery;
   the process-death and power-loss limits above remain.
 

@@ -672,6 +672,86 @@ Scope {
         };
     }
 
+    // ------------------------------------------------------ focused Machine
+    //
+    // Where am I typing? The bar answers from host-side facts only: the
+    // focused-surface provenance above, the same resolution that colours
+    // guest window borders, and the Machine inventory for the state its
+    // sphere draws. A window title, the clipboard or guest-agent data never
+    // enter. Anything that is not a proven host surface or one proven
+    // Machine is unknown, a surface still being resolved included, so the
+    // answer for a previous window never stays on the one that replaced it.
+    //
+    // host     a host-native surface has focus
+    // machine  a verified viewer of one managed Machine has focus
+    // unknown  focus cannot be placed: pending, unresolved, unavailable or
+    //          stale, or the inventory names that Machine in another domain
+    readonly property var focusedMachine: state.focusedMachineFor(
+        state.focusedProvenance,
+        state.sourceState(state.machinesSourceState, state.machinesObservedAt) === "ok"
+            ? state.machines
+            : null
+    )
+
+    function focusedMachineFor(provenance, inventory) {
+        const unknown = {
+            "kind": "unknown",
+            "identity": "",
+            "name": "",
+            "machineState": "",
+            "words": "Unknown",
+            "reason": String(provenance.reason)
+        };
+
+        if (provenance.state !== "resolved")
+            return unknown;
+
+        if (provenance.identity === "host" && provenance.source === "host-native")
+            return {
+                "kind": "host",
+                "identity": "host",
+                "name": "",
+                "machineState": "running",
+                "words": "Host",
+                "reason": String(provenance.reason)
+            };
+
+        if (state.guestProvenanceIdentities.indexOf(provenance.identity) < 0
+            || provenance.source !== "host-owned-vm-spec"
+            || typeof provenance.domain !== "string"
+            || provenance.domain.length === 0)
+            return unknown;
+
+        // The inventory confirms the state the sphere draws. It never
+        // supplies an identity: when it disagrees with the resolver about
+        // the domain, neither is believed.
+        let machineState = "";
+
+        for (let index = 0; inventory !== null && index < inventory.length; index++) {
+            const row = inventory[index];
+
+            if (String(row.name) !== provenance.domain)
+                continue;
+
+            if (row.provenance !== provenance.identity) {
+                unknown.reason = "The Machine inventory places " + provenance.domain
+                    + " in another domain";
+                return unknown;
+            }
+
+            machineState = String(row.state);
+        }
+
+        return {
+            "kind": "machine",
+            "identity": provenance.identity,
+            "name": provenance.domain,
+            "machineState": machineState,
+            "words": provenance.domain + " · " + provenance.identity,
+            "reason": String(provenance.reason)
+        };
+    }
+
     function provenanceResult(status, identity, source, domain, code, reason) {
         const labels = {
             "loading": "Waiting",

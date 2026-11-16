@@ -9,7 +9,24 @@ setup() {
     export GPU_HANDOFF_MANAGED_DIR="${TESTDIR}/domains.d"
     export GPU_HANDOFF_STATE_DIR="${TESTDIR}/state"
     mkdir -m 0755 "${GPU_HANDOFF_MANAGED_DIR}"
-    HOOK="${BATS_TEST_DIRNAME}/../roles/gpu_handoff/files/qemu"
+    SOURCE_HOOK="${BATS_TEST_DIRNAME}/../roles/gpu_handoff/files/qemu"
+    HOOK="${TESTDIR}/qemu"
+    export XML_HELPER="${TESTDIR}/xml-preflight.py"
+    export XML_POLICY="${TESTDIR}/looking-glass.json"
+    # Only installed paths and the fixture's uid differ from production.
+    python - "${SOURCE_HOOK}" "${HOOK}" "${XML_HELPER}" "${XML_POLICY}" <<'PYTHON'
+import os
+import sys
+from pathlib import Path
+source, hook, helper, policy = map(Path, sys.argv[1:])
+hook.write_text(source.read_text().replace('/etc/gpu-handoff/xml-preflight.py', str(helper))
+                .replace('/etc/gpu-handoff/looking-glass.json', str(policy)))
+helper_source = source.parent / 'xml-preflight.py'
+helper.write_text(helper_source.read_text().replace('POLICY_OWNER = 0', f'POLICY_OWNER = {os.getuid()}'))
+hook.chmod(source.stat().st_mode)
+PYTHON
+    printf '%s\n' '{"device":"/dev/kvmfr0","size_bytes":67108864}' > "${XML_POLICY}"
+    chmod 0644 "${XML_POLICY}"
     cat > "${GPU_HANDOFF_ROTATION}" <<EOF
 # network trust
 clean 3
@@ -24,8 +41,8 @@ arch-dev-vfio dev
 win11dirty-disposable dirty
 win11lab-test lab
 EOF
-    # libvirt passes the domain XML on stdin. An unlisted domain is judged
-    # by it: no PCI passthrough passes, PCI passthrough is refused.
+    # Every prepare receives representative libvirt XML, including races
+    # and utility-failure cases.
     PLAIN_XML="${TESTDIR}/plain.xml"
     cat > "${PLAIN_XML}" <<EOF
 <domain type='kvm'><name>svc-jellyfin</name><devices>
@@ -45,13 +62,19 @@ EOF
 <interface type="hostdev" managed="yes"><source/></interface>
 </devices></domain>
 EOF
+    local name
+    for name in win11clean-valley arch-dev-vfio win11dirty-disposable win11lab-test services-workload-01; do
+        sed "s/rogue-vfio/${name}/" "${PCI_XML}" > "${TESTDIR}/${name}.xml"
+    done
+    cp "${PLAIN_XML}" "${TESTDIR}/svc-jellyfin.xml"
+    sed 's/svc-jellyfin/clean/' "${PLAIN_XML}" > "${TESTDIR}/clean.xml"
     # Failure injection replaces one utility on PATH. chmod alone is no
     # injection: the battery also runs as root.
     FAKE_BIN="${TESTDIR}/bin"
     mkdir "${FAKE_BIN}"
     REAL_FLOCK="$(command -v flock)"
     REAL_MKTEMP="$(command -v mktemp)"
-    export REAL_FLOCK REAL_MKTEMP
+    export REAL_FLOCK REAL_MKTEMP HOOK
     BACKGROUND_PIDS=()
     EVENT_LOG=()
     declare -gA REPORT_FD=()
@@ -83,7 +106,7 @@ fake() {
 }
 
 run_hook_with_fakes() {
-    run env PATH="${FAKE_BIN}:${PATH}" "${HOOK}" "$@"
+    run env PATH="${FAKE_BIN}:${PATH}" "${HOOK}" "$@" < "${TESTDIR}/$1.xml"
 }
 
 temp_files() {
@@ -139,7 +162,7 @@ start_prepare() {
         local rc=0
         env PATH="${FAKE_BIN}:${PATH}" BARRIER_ROLE="${role}" \
             BARRIER_HOLD="${hold}" timeout 30 "${HOOK}" "${ROLE_DOMAIN[${role}]}" prepare \
-            > "${TESTDIR}/${role}.out" 2>&1 || rc=$?
+            < "${TESTDIR}/${ROLE_DOMAIN[${role}]}.xml" > "${TESTDIR}/${role}.out" 2>&1 || rc=$?
         printf 'exit %s\n' "${role}" > "${EVENTS}"
         read -r -t 20 _ < "${TESTDIR}/report-${role}" || rc="${rc}-unreleased"
         printf 'done %s %s\n' "${role}" "${rc}" > "${EVENTS}"
@@ -211,59 +234,60 @@ race() {
 }
 
 @test "the hook file itself carries the executable bit (the 100644 trap)" {
+    [ -x "${SOURCE_HOOK}" ]
     [ -x "${HOOK}" ]
 }
 
 @test "first reviewed GPU domain is allowed and records network trust" {
-    run "${HOOK}" win11clean-valley prepare
+    run "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
     [ "$status" -eq 0 ]
     [ "$(state)" = "3" ]
 }
 
 @test "the reviewed Linux VFIO candidate records dev trust" {
-    run "${HOOK}" arch-dev-vfio prepare
+    run "${HOOK}" arch-dev-vfio prepare < "${TESTDIR}/arch-dev-vfio.xml"
     [ "$status" -eq 0 ]
     [ "$(state)" = "2" ]
 }
 
 @test "downgrade is allowed across exact domains (clean -> dirty)" {
-    "${HOOK}" win11clean-valley prepare
-    run "${HOOK}" win11dirty-disposable prepare
+    "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
+    run "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
     [ "$status" -eq 0 ]
     [ "$(state)" = "1" ]
 }
 
 @test "lateral restart at the same trust is allowed" {
-    "${HOOK}" win11dirty-disposable prepare
-    run "${HOOK}" win11dirty-disposable prepare
+    "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
+    run "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
     [ "$status" -eq 0 ]
     [ "$(state)" = "1" ]
 }
 
 @test "upgrade is refused and leaves state untouched (dirty -> clean)" {
-    "${HOOK}" win11dirty-disposable prepare
-    run "${HOOK}" win11clean-valley prepare
+    "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
+    run "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
     [ "$status" -eq 1 ]
     [[ "$output" == *REFUSING* ]]
     [ "$(state)" = "1" ]
 }
 
 @test "lab can start first when explicitly reviewed" {
-    run "${HOOK}" win11lab-test prepare
+    run "${HOOK}" win11lab-test prepare < "${TESTDIR}/win11lab-test.xml"
     [ "$status" -eq 0 ]
     [ "$(state)" = "0" ]
 }
 
 @test "after lab every cleaner reviewed GPU domain is refused until reboot" {
-    "${HOOK}" win11lab-test prepare
-    run "${HOOK}" win11dirty-disposable prepare
+    "${HOOK}" win11lab-test prepare < "${TESTDIR}/win11lab-test.xml"
+    run "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
     [ "$status" -eq 1 ]
 }
 
 @test "a reboot (state dir gone) reopens the ladder" {
-    "${HOOK}" win11lab-test prepare
+    "${HOOK}" win11lab-test prepare < "${TESTDIR}/win11lab-test.xml"
     rm -rf "${GPU_HANDOFF_STATE_DIR}"
-    run "${HOOK}" win11clean-valley prepare
+    run "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
     [ "$status" -eq 0 ]
     [ "$(state)" = "3" ]
 }
@@ -271,43 +295,43 @@ race() {
 @test "corrupt state refuses reviewed GPU domains" {
     mkdir -p "${GPU_HANDOFF_STATE_DIR}"
     echo garbage > "${GPU_HANDOFF_STATE_DIR}/trust"
-    run "${HOOK}" win11clean-valley prepare
+    run "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
     [ "$status" -eq 1 ]
 }
 
 @test "corrupt rotation refuses a reviewed GPU domain" {
     echo "clean banana" > "${GPU_HANDOFF_ROTATION}"
-    run "${HOOK}" win11clean-valley prepare
+    run "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
     [ "$status" -eq 1 ]
 }
 
 @test "missing rotation refuses before membership decisions" {
     rm -f "${GPU_HANDOFF_ROTATION}"
-    run "${HOOK}" win11clean-valley prepare
+    run "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
     [ "$status" -eq 1 ]
 }
 
 @test "empty rotation is a broken config" {
     : > "${GPU_HANDOFF_ROTATION}"
-    run "${HOOK}" win11clean-valley prepare
+    run "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
     [ "$status" -eq 1 ]
 }
 
 @test "missing domain allowlist fails closed even for a service VM" {
     rm -f "${GPU_HANDOFF_DOMAINS}"
-    run "${HOOK}" svc-jellyfin prepare
+    run "${HOOK}" svc-jellyfin prepare < "${TESTDIR}/svc-jellyfin.xml"
     [ "$status" -eq 1 ]
 }
 
 @test "an unknown profile in the exact allowlist is refused" {
     echo "win11clean-valley unknown" > "${GPU_HANDOFF_DOMAINS}"
-    run "${HOOK}" win11clean-valley prepare
+    run "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
     [ "$status" -eq 1 ]
     [[ "$output" == *"unknown profile"* ]]
 }
 
 @test "an unlisted service domain passes while GPU trust is held" {
-    "${HOOK}" win11clean-valley prepare
+    "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
     run "${HOOK}" svc-jellyfin prepare < "${PLAIN_XML}"
     [ "$status" -eq 0 ]
     [ "$(state)" = "3" ]
@@ -320,7 +344,7 @@ race() {
 }
 
 @test "network profile names alone are not GPU domain names" {
-    run "${HOOK}" clean prepare < "${PLAIN_XML}"
+    run "${HOOK}" clean prepare < "${TESTDIR}/clean.xml"
     [ "$status" -eq 0 ]
     [ ! -e "${GPU_HANDOFF_STATE_DIR}/trust" ]
 }
@@ -333,7 +357,7 @@ race() {
 }
 
 @test "an unlisted domain cannot take PCI passthrough while trust is held" {
-    "${HOOK}" win11dirty-disposable prepare
+    "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
     run "${HOOK}" rogue-vfio prepare < "${PCI_XML}"
     [ "$status" -eq 1 ]
     [ "$(state)" = "1" ]
@@ -351,7 +375,7 @@ race() {
 }
 
 @test "non-prepare phases pass instantly even for an upgrade" {
-    "${HOOK}" win11dirty-disposable prepare
+    "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
     run "${HOOK}" win11clean-valley started
     [ "$status" -eq 0 ]
     [ "$(state)" = "1" ]
@@ -362,7 +386,7 @@ race() {
         > "${GPU_HANDOFF_MANAGED_DIR}/services-workload-01.conf"
     chmod 0644 "${GPU_HANDOFF_MANAGED_DIR}/services-workload-01.conf"
 
-    run "${HOOK}" services-workload-01 prepare
+    run "${HOOK}" services-workload-01 prepare < "${TESTDIR}/services-workload-01.xml"
     [ "$status" -eq 0 ]
     [ "$(state)" = "2" ]
 }
@@ -372,8 +396,8 @@ race() {
         > "${GPU_HANDOFF_MANAGED_DIR}/services-workload-01.conf"
     chmod 0644 "${GPU_HANDOFF_MANAGED_DIR}/services-workload-01.conf"
 
-    "${HOOK}" services-workload-01 prepare
-    run "${HOOK}" win11clean-valley prepare
+    "${HOOK}" services-workload-01 prepare < "${TESTDIR}/services-workload-01.xml"
+    run "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
     [ "$status" -eq 1 ]
     [[ "$output" == *REFUSING* ]]
     [ "$(state)" = "2" ]
@@ -384,8 +408,8 @@ race() {
         > "${GPU_HANDOFF_MANAGED_DIR}/services-workload-01.conf"
     chmod 0644 "${GPU_HANDOFF_MANAGED_DIR}/services-workload-01.conf"
 
-    "${HOOK}" win11dirty-disposable prepare
-    run "${HOOK}" services-workload-01 prepare
+    "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
+    run "${HOOK}" services-workload-01 prepare < "${TESTDIR}/services-workload-01.xml"
     [ "$status" -eq 1 ]
     [[ "$output" == *REFUSING* ]]
     [ "$(state)" = "1" ]
@@ -396,7 +420,7 @@ race() {
         > "${GPU_HANDOFF_MANAGED_DIR}/arch-dev-vfio.conf"
     chmod 0644 "${GPU_HANDOFF_MANAGED_DIR}/arch-dev-vfio.conf"
 
-    run "${HOOK}" arch-dev-vfio prepare
+    run "${HOOK}" arch-dev-vfio prepare < "${TESTDIR}/arch-dev-vfio.xml"
     [ "$status" -eq 1 ]
     [[ "$output" == *"duplicate domain"* ]]
 }
@@ -406,7 +430,7 @@ race() {
     ln -s "${TESTDIR}/redirected" \
         "${GPU_HANDOFF_MANAGED_DIR}/services-workload-01.conf"
 
-    run "${HOOK}" services-workload-01 prepare
+    run "${HOOK}" services-workload-01 prepare < "${TESTDIR}/services-workload-01.xml"
     [ "$status" -eq 1 ]
     [[ "$output" == *"unsafe managed policy"* ]]
 }
@@ -416,7 +440,7 @@ race() {
         > "${GPU_HANDOFF_MANAGED_DIR}/services-workload-01.conf"
     chmod 0644 "${GPU_HANDOFF_MANAGED_DIR}/services-workload-01.conf"
 
-    run "${HOOK}" services-workload-01 prepare
+    run "${HOOK}" services-workload-01 prepare < "${TESTDIR}/services-workload-01.xml"
     [ "$status" -eq 1 ]
     [[ "$output" == *"expected services-workload-01"* ]]
 }
@@ -424,7 +448,7 @@ race() {
 @test "missing managed policy directory fails closed" {
     rm -rf "${GPU_HANDOFF_MANAGED_DIR}"
 
-    run "${HOOK}" svc-jellyfin prepare
+    run "${HOOK}" svc-jellyfin prepare < "${TESTDIR}/svc-jellyfin.xml"
     [ "$status" -eq 1 ]
     [[ "$output" == *"missing or redirected"* ]]
 }
@@ -432,7 +456,7 @@ race() {
 # --- the state transaction: lock, read, compare, atomic commit ---------------
 
 @test "the lock is created private and the published rung stays world-readable" {
-    run "${HOOK}" win11dirty-disposable prepare
+    run "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
     [ "$status" -eq 0 ]
     [ "$(stat -c %a "${GPU_HANDOFF_STATE_DIR}/lock")" = "600" ]
     [ "$(stat -c %a "${GPU_HANDOFF_STATE_DIR}/trust")" = "644" ]
@@ -458,7 +482,7 @@ race() {
 @test "a redirected lock is refused and its target is not created" {
     mkdir -p "${GPU_HANDOFF_STATE_DIR}"
     ln -s "${TESTDIR}/victim" "${GPU_HANDOFF_STATE_DIR}/lock"
-    run "${HOOK}" win11clean-valley prepare
+    run "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
     [ "$status" -eq 1 ]
     [[ "$output" == *"lock"*"redirected"* ]]
     [ ! -e "${TESTDIR}/victim" ]
@@ -467,7 +491,7 @@ race() {
 
 @test "a lock that is not a regular file is refused" {
     mkdir -p "${GPU_HANDOFF_STATE_DIR}/lock"
-    run "${HOOK}" win11clean-valley prepare
+    run "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
     [ "$status" -eq 1 ]
     [ ! -e "${GPU_HANDOFF_STATE_DIR}/trust" ]
 }
@@ -475,7 +499,7 @@ race() {
 @test "a redirected state directory is refused and nothing is written there" {
     mkdir "${TESTDIR}/elsewhere"
     ln -s "${TESTDIR}/elsewhere" "${GPU_HANDOFF_STATE_DIR}"
-    run "${HOOK}" win11clean-valley prepare
+    run "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
     [ "$status" -eq 1 ]
     [[ "$output" == *"redirected"* ]]
     [ -z "$(ls -A "${TESTDIR}/elsewhere")" ]
@@ -485,7 +509,7 @@ race() {
     mkdir -p "${GPU_HANDOFF_STATE_DIR}"
     printf '3\n' > "${TESTDIR}/elsewhere"
     ln -s "${TESTDIR}/elsewhere" "${GPU_HANDOFF_STATE_DIR}/trust"
-    run "${HOOK}" win11dirty-disposable prepare
+    run "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
     [ "$status" -eq 1 ]
     [[ "$output" == *"redirected"* ]]
     [ -L "${GPU_HANDOFF_STATE_DIR}/trust" ]
@@ -495,7 +519,7 @@ race() {
 
 @test "a trust path that is not a regular file is refused" {
     mkdir -p "${GPU_HANDOFF_STATE_DIR}/trust"
-    run "${HOOK}" win11dirty-disposable prepare
+    run "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
     [ "$status" -eq 1 ]
     [ -d "${GPU_HANDOFF_STATE_DIR}/trust" ]
     [ -z "$(ls -A "${GPU_HANDOFF_STATE_DIR}/trust")" ]
@@ -527,7 +551,7 @@ race() {
     seed_state 3
     # shellcheck disable=SC2016 # expanded by the inner shell
     run bash -c 'trap "" XFSZ; ulimit -f 0; exec "$@"' _ \
-        "${HOOK}" win11dirty-disposable prepare
+        "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
     [ "$status" -eq 1 ]
     [[ "$output" == *"cannot write"* ]]
     cmp "${TESTDIR}/trust.before" "${GPU_HANDOFF_STATE_DIR}/trust"
@@ -537,7 +561,7 @@ race() {
 @test "a failed first rung write records no state that could authorize a start" {
     # shellcheck disable=SC2016 # expanded by the inner shell
     run bash -c 'trap "" XFSZ; ulimit -f 0; exec "$@"' _ \
-        "${HOOK}" win11dirty-disposable prepare
+        "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
     [ "$status" -eq 1 ]
     [ ! -e "${GPU_HANDOFF_STATE_DIR}/trust" ]
     [ "$(temp_files)" -eq 0 ]
@@ -563,7 +587,7 @@ race() {
     [ "$(temp_files)" -eq 0 ]
 
     rm "${FAKE_BIN}/mv"
-    run timeout 30 "${HOOK}" win11dirty-disposable prepare
+    run timeout 30 "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
     [ "$status" -eq 0 ]
     [ "$(state)" = "1" ]
 }
@@ -578,7 +602,7 @@ race() {
     [ "$(temp_files)" -eq 0 ]
 
     rm "${FAKE_BIN}/flock"
-    run timeout 30 "${HOOK}" win11dirty-disposable prepare
+    run timeout 30 "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
     [ "$status" -eq 0 ]
     [ "$(state)" = "1" ]
 }
@@ -610,7 +634,7 @@ parent_of() {
     printf '%s\n' "${ppid}"
 }
 runs_hook() {
-    tr '\0' '\n' < "/proc/$1/cmdline" | grep -q 'gpu_handoff/files/qemu$'
+    tr '\0' '\n' < "/proc/$1/cmdline" | grep -Fxq -- "${HOOK}"
 }
 runs_hook "${hook_pid}" || exit 1
 while runs_hook "$(parent_of "${hook_pid}")"; do
@@ -627,7 +651,7 @@ FAKE
     [ "$(temp_files)" -eq 0 ]
 
     rm "${FAKE_BIN}/mktemp"
-    run timeout 30 "${HOOK}" win11dirty-disposable prepare
+    run timeout 30 "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
     [ "$status" -eq 0 ]
     [ "$(state)" = "1" ]
 }
@@ -641,7 +665,7 @@ FAKE
     cmp "${TESTDIR}/trust.before" "${GPU_HANDOFF_STATE_DIR}/trust"
 
     rm "${FAKE_BIN}/mv"
-    run timeout 30 "${HOOK}" win11dirty-disposable prepare
+    run timeout 30 "${HOOK}" win11dirty-disposable prepare < "${TESTDIR}/win11dirty-disposable.xml"
     [ "$status" -eq 0 ]
     [ "$(state)" = "1" ]
 }
@@ -654,7 +678,7 @@ FAKE
     [ "$(state)" = "1" ]
     [ "${WAITING_SEEN}" = "lock contended dirty" ]
     [ "$(temp_files)" -eq 0 ]
-    run "${HOOK}" win11clean-valley prepare
+    run "${HOOK}" win11clean-valley prepare < "${TESTDIR}/win11clean-valley.xml"
     [ "$status" -eq 1 ]
     [[ "$output" == *REFUSING* ]]
     [ "$(state)" = "1" ]
@@ -689,7 +713,7 @@ FAKE
     [ "$(state)" = "1" ]
     [ "${WAITING_SEEN}" = "lock contended dirty" ]
     [ "$(temp_files)" -eq 0 ]
-    run "${HOOK}" arch-dev-vfio prepare
+    run "${HOOK}" arch-dev-vfio prepare < "${TESTDIR}/arch-dev-vfio.xml"
     [ "$status" -eq 1 ]
     [[ "$output" == *REFUSING* ]]
     [ "$(state)" = "1" ]
@@ -702,7 +726,88 @@ FAKE
     [ "$(state)" = "1" ]
     [ "${WAITING_SEEN}" = "lock contended dev" ]
     [ "$(temp_files)" -eq 0 ]
-    run "${HOOK}" arch-dev-vfio prepare
+    run "${HOOK}" arch-dev-vfio prepare < "${TESTDIR}/arch-dev-vfio.xml"
     [ "$status" -eq 1 ]
     [ "$(state)" = "1" ]
+}
+
+# --- XML preflight: it must refuse before even creating the state directory --
+
+@test "an unmapped renamed QEMU namespace cannot inject vfio-pci" {
+    local rung
+    for rung in absent 2; do
+        if [[ "${rung}" != absent ]]; then seed_state "${rung}"; fi
+        run "${HOOK}" rogue-vfio prepare <<'XML'
+<domain xmlns:extra='http://libvirt.org/schemas/domain/qemu/1.0' type="kvm">
+<name>rogue-vfio</name><devices/>
+<extra:commandline><extra:arg value='-device'/>
+<extra:arg value="vfio-pci,host=01:00.0"/></extra:commandline></domain>
+XML
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"QEMU command-line without a reviewed GPU handoff policy"* ]]
+        if [[ "${rung}" == absent ]]; then
+            [ ! -e "${GPU_HANDOFF_STATE_DIR}" ]
+        else
+            cmp "${TESTDIR}/trust.before" "${GPU_HANDOFF_STATE_DIR}/trust"
+        fi
+    done
+}
+
+@test "unmapped PCI and hostdev interfaces are parsed across whitespace and quote order" {
+    local device rung
+    for device in "<hostdev managed='yes' type = 'pci' mode='subsystem'/>" \
+                  '<interface managed="yes" type = "hostdev"/>'; do
+        for rung in absent 2; do
+            rm -rf "${GPU_HANDOFF_STATE_DIR}"
+            if [[ "${rung}" != absent ]]; then seed_state "${rung}"; fi
+            run "${HOOK}" rogue-vfio prepare <<XML
+<domain type='kvm'><name>rogue-vfio</name><devices>${device}</devices></domain>
+XML
+            [ "$status" -eq 1 ]
+            [[ "$output" == *"PCI passthrough without a reviewed GPU handoff policy"* ]]
+            if [[ "${rung}" == absent ]]; then
+                [ ! -e "${GPU_HANDOFF_STATE_DIR}" ]
+            else
+                cmp "${TESTDIR}/trust.before" "${GPU_HANDOFF_STATE_DIR}/trust"
+            fi
+        done
+    done
+}
+
+@test "missing or malformed XML refuses mapped prepares before ladder mutation" {
+    local xml rung
+    for xml in '' '<domain>' '<domain/><domain/>'; do
+        for rung in absent 3; do
+            rm -rf "${GPU_HANDOFF_STATE_DIR}"
+            if [[ "${rung}" != absent ]]; then seed_state "${rung}"; fi
+            run "${HOOK}" arch-dev-vfio prepare <<< "${xml}"
+            [ "$status" -eq 1 ]
+            [[ "$output" == *"invalid domain XML"* ]]
+            if [[ "${rung}" == absent ]]; then
+                [ ! -e "${GPU_HANDOFF_STATE_DIR}" ]
+            else
+                cmp "${TESTDIR}/trust.before" "${GPU_HANDOFF_STATE_DIR}/trust"
+            fi
+        done
+    done
+}
+
+@test "a missing or failed installed XML helper refuses before ladder mutation" {
+    local rung
+    for rung in absent 3; do
+        if [[ "${rung}" != absent ]]; then seed_state "${rung}"; fi
+        rm -f "${XML_HELPER}"
+        run "${HOOK}" arch-dev-vfio prepare < "${TESTDIR}/arch-dev-vfio.xml"
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"XML preflight"* ]]
+        printf 'raise SystemExit(9)\n' > "${XML_HELPER}"
+        run "${HOOK}" arch-dev-vfio prepare < "${TESTDIR}/arch-dev-vfio.xml"
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"XML preflight"* ]]
+        if [[ "${rung}" == absent ]]; then
+            [ ! -e "${GPU_HANDOFF_STATE_DIR}" ]
+        else
+            cmp "${TESTDIR}/trust.before" "${GPU_HANDOFF_STATE_DIR}/trust"
+        fi
+    done
 }

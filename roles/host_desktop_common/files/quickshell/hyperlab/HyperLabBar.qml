@@ -6,7 +6,11 @@
 //
 //   left    where am I          identity, compositor workspaces
 //   centre  when, and on what   the clock, the focused host surface
-//   right   what is the host doing   provenance, GPU, system readouts
+//   right   what is the host doing   focus, GPU, system readouts
+//
+// One more question is answered on both sides at once: where am I typing?
+// The core of the product glyph and the focus item follow the Machine that
+// owns the focused window (ADR 0064), from ShellState.focusedMachine.
 //
 // The side regions are bounded, so the clock keeps the display centre while
 // there is room for it and the rail reduces in a defined order rather than
@@ -45,6 +49,81 @@ PanelWindow {
     readonly property bool mediumRail: bar.width >= 1000
     readonly property bool narrowRail: bar.width < 820
 
+    // The bar core (ADR 0064): the palette colour of the host or of the
+    // Machine that has focus; hollow, in the neutral outline tone, while
+    // focus cannot be placed. A new colour fades in from the rail, never
+    // through another hue, and only when the proven colour differs from the
+    // last one drawn. Every re-validation of the same window, on each focus
+    // event and on the adapter's 30-second heartbeat, still reads Unknown
+    // until the resolver answers again: only a fresh answer restores an
+    // identity. Reduced motion makes the fade instant.
+    //
+    // The core and the focus item read this one answer, so they never
+    // disagree: an incomplete domain palette or an unknown identity makes
+    // a host or Machine answer Unknown for both.
+    readonly property var focusedMachine: {
+        const answer = bar.shellState.focusedMachine;
+
+        if (answer.kind !== "host" && answer.kind !== "machine")
+            return answer;
+
+        if (bar.theme.provenanceAvailable
+            && bar.theme.knownProvenance(String(answer.identity)))
+            return answer;
+
+        return {
+            "kind": "unknown",
+            "identity": "",
+            "name": "",
+            "machineState": "",
+            "words": "Unknown",
+            "reason": "The palette cannot display the focused identity"
+        };
+    }
+
+    readonly property bool coreKnown:
+        bar.focusedMachine.kind === "host" || bar.focusedMachine.kind === "machine"
+
+    readonly property string coreIdentity:
+        bar.coreKnown ? String(bar.focusedMachine.identity) : ""
+
+    readonly property color coreTone:
+        bar.coreKnown
+        ? bar.theme.provenanceColor(bar.coreIdentity)
+        : bar.theme.textPrimary
+
+    property color coreFill: bar.theme.textPrimary
+    property real coreLevel: 1
+
+    function followCore() {
+        if (!bar.coreKnown || Qt.colorEqual(bar.coreTone, bar.coreFill))
+            return;
+
+        bar.coreFill = bar.coreTone;
+        coreFade.stop();
+
+        if (bar.tokens.reducedMotion) {
+            bar.coreLevel = 1;
+            return;
+        }
+
+        bar.coreLevel = 0;
+        coreFade.start();
+    }
+
+    onCoreToneChanged: bar.followCore()
+    Component.onCompleted: bar.followCore()
+
+    NumberAnimation {
+        id: coreFade
+
+        target: bar
+        property: "coreLevel"
+        to: 1
+        duration: bar.tokens.motionExpand
+        easing.type: Easing.OutCubic
+    }
+
     anchors {
         top: true
         left: true
@@ -79,12 +158,18 @@ PanelWindow {
             anchors.leftMargin: bar.tokens.gapOuter - bar.tokens.spaceSm
             anchors.verticalCenter: parent.verticalCenter
             anchors.verticalCenterOffset: -1
-            spacing: bar.tokens.spaceMd
+            spacing: bar.narrowRail ? bar.tokens.spaceXs : bar.tokens.spaceMd
 
             IdentityMark {
+                objectName: "rail-identity"
                 anchors.verticalCenter: parent.verticalCenter
                 tokens: bar.tokens
                 theme: bar.theme
+                core:
+                    bar.coreKnown
+                    ? bar.theme.alpha(bar.coreFill, bar.coreLevel)
+                    : bar.theme.textPrimary
+                coreHollow: !bar.coreKnown
                 productName: bar.shellState.productName
                 productByline: bar.shellState.productByline
                 wordmarkVisible: bar.mediumRail
@@ -110,6 +195,9 @@ PanelWindow {
             }
 
             WorkspaceStrip {
+                id: workspaceStrip
+
+                objectName: "rail-workspaces"
                 anchors.verticalCenter: parent.verticalCenter
                 tokens: bar.tokens
                 theme: bar.theme
@@ -119,7 +207,25 @@ PanelWindow {
                         bar.shellState.workspaceSourceState,
                         bar.shellState.workspaceObservedAt
                     )
-                maximumSlots: bar.wideRail ? 9 : (bar.mediumRail ? 6 : 4)
+                // Reserve the measured clock and its gaps before allocating
+                // chips. Overflow needs its own width when not all observed
+                // workspaces fit; it is additional to the visible slots.
+                maximumSlots: {
+                    const limit = bar.wideRail ? 9 : (bar.mediumRail ? 6 : 4);
+                    const clockGap = bar.narrowRail ? bar.tokens.spaceXs : bar.tokens.spaceXl;
+                    const available = Math.floor(
+                        rightGroup.x - (leftGroup.x + workspaceStrip.x)
+                        - contextCluster.clockWidth - clockGap - bar.tokens.spaceXs
+                    );
+                    const slots = Math.min(limit, Math.floor(available / bar.tokens.workspaceSlot));
+
+                    if (workspaceStrip.observedWorkspaces.length <= slots)
+                        return Math.max(1, slots);
+
+                    return Math.max(1, Math.min(limit, Math.floor(
+                        (available - bar.tokens.workspaceOverflow) / bar.tokens.workspaceSlot
+                    )));
+                }
 
                 onWorkspaceRequested: slot => {
                     bar.shellActions.invokeWorkspace(slot);
@@ -135,7 +241,9 @@ PanelWindow {
             anchors.rightMargin: bar.tokens.gapOuter - bar.tokens.spaceSm
             anchors.verticalCenter: parent.verticalCenter
             anchors.verticalCenterOffset: -1
-            spacing: bar.tokens.spaceSm
+            // Controls retain their own padding; release the extra gaps on
+            // narrow rails so focus words and unavailable readouts still fit.
+            spacing: bar.narrowRail ? 0 : bar.tokens.spaceSm
 
             // The emergency stop (ADR 0047) is never hidden while engaged:
             // it is the first thing on the host side of every rail, and it
@@ -171,18 +279,16 @@ PanelWindow {
                 onActivated: bar.shellSurfaces.openWorkspace("machines")
             }
 
+            // Where am I typing, in shape and words. Always shown: it is the
+            // answer the core gives in colour.
             ProvenanceBadge {
                 objectName: "provenance-badge"
                 anchors.verticalCenter: parent.verticalCenter
-                visible: bar.wideRail || badgeShown
                 tokens: bar.tokens
                 theme: bar.theme
                 icons: bar.icons
                 provenance: bar.shellState.focusedProvenance
-
-                readonly property bool badgeShown:
-                    bar.shellState.focusedProvenance.available === true
-                    || bar.shellState.focusedProvenance.state === "unresolved"
+                machine: bar.focusedMachine
 
                 onDetailsRequested: {
                     bar.shellSurfaces.openWorkspacePage(
@@ -222,6 +328,7 @@ PanelWindow {
             }
 
             SystemCluster {
+                objectName: "rail-system"
                 anchors.verticalCenter: parent.verticalCenter
                 tokens: bar.tokens
                 theme: bar.theme
@@ -262,6 +369,7 @@ PanelWindow {
             }
 
             ControlEntry {
+                objectName: "rail-controls"
                 anchors.verticalCenter: parent.verticalCenter
                 tokens: bar.tokens
                 theme: bar.theme
@@ -304,8 +412,10 @@ PanelWindow {
                 contextCluster.centeredClock
                 ? parent.width / 2
                 : Math.min(
-                    parent.width - rightGroup.width - bar.tokens.spaceLg,
-                    leftGroup.x + leftGroup.width + bar.tokens.spaceXl + 40
+                    rightGroup.x - bar.tokens.spaceXs - contextCluster.clockWidth / 2,
+                    leftGroup.x + leftGroup.width
+                        + (bar.narrowRail ? bar.tokens.spaceXs : bar.tokens.spaceXl)
+                        + contextCluster.clockWidth / 2
                   )
 
             maximumContextWidth:

@@ -75,11 +75,12 @@ or work that is not on `main` does not raise it.
   ([ADR 0017](adr/0017-shell-machine-creation.md), accepted by the operator
   on 2026-11-05; [ADR 0053](adr/0053-withdraw-machine-intent.md), option A
   and guarded manual withdrawal accepted on 2026-11-05; the record names
-  the unpublished decision source). This acceptance adds no evidence for
-  handled failures or incomplete compensation; the separate Plan/Intent
-  transaction remediation and Nitro refusal tests remain open. Cleanup can
-  be incomplete, and process death or power loss can leave owned files
-  that keep the name taken and require manual recovery.
+  the unpublished decision source). Separately, the Plan/Intent transaction
+  remediation is software-verified by reviewed regressions for failures
+  after publication, incomplete compensation and invalid-spec refusal.
+  Nitro refusal tests remain open. Cleanup can be incomplete, and process
+  death or power loss can leave owned files that keep the name taken and
+  require manual recovery.
 - **Create view (5):** implemented in the shell and software-verified
   offscreen. No creation from the shell has been accepted on hardware.
 - **Provisioning (5):** the runner, the check of the whole plan before the
@@ -419,10 +420,12 @@ Details: [C10 — Machine Factory](#c10--machine-factory).
         ([ADR 0053](adr/0053-withdraw-machine-intent.md), option A and the
         manual path accepted by the operator on 2026-11-05; unpublished
         decision source in the record; existing software checks)
-  - [ ] separate Plan/Intent transaction remediation accepted with reviewed
+  - [x] separate Plan/Intent transaction remediation accepted with reviewed
         regression evidence for failure after publication, incomplete
-        compensation and invalid-spec refusal; ADR 0053's design acceptance
-        does not close this work or its manual-recovery limits
+        compensation (including a replacement spec with identical bytes on
+        another inode) and invalid-spec refusal
+        ([evidence in ADR 0053](adr/0053-withdraw-machine-intent.md#implementation-and-evidence);
+        software-verified); manual-recovery limits remain
   - [ ] ADR 0053 refusal tests observed on Nitro: an obstructed generated
         spec leaves no record, and a defined domain prevents withdrawal
   - [x] provisioning prepared for Nitro: the runner accepts exactly
@@ -445,6 +448,13 @@ Details: [C10 — Machine Factory](#c10--machine-factory).
       only the running one owns it, checked under the GPU lock at start
       ([ADR 0016](adr/0016-gpu-shared-definition-running-lease.md),
       software-verified)
+- [x] prepare XML is parsed before ladder state is touched; unmapped PCI
+      and QEMU extensions refuse, and mapped extensions accept only the
+      reviewed Looking Glass argv with host-configured path and size
+      (`tests/hook.bats`, `tests/gpu_handoff_xml_contract.py`,
+      `tests/arch_dev_vfio_hardware_gate_contract.py`; software-verified).
+      The trusted host session's libvirt authority is root-equivalent; the
+      hook and become prompt do not confine a hostile host owner.
 - [ ] a Machine declares `gpu_capable`; owning the GPU is a host-owned lease
       for one run, so a dev Machine can start without the GPU and restart
       with it for Blender or CUDA
@@ -732,11 +742,29 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
 - [x] spheres are Machines: one `MachineSphere.qml` draws every state of
       the table for every domain from the palette alone, with a neutral
       external outline, reduced motion and an accessible name; adopted by
-      the Machines showcase ([ADR 0064](adr/0064-spheres-are-machines.md), accepted;
+      the Machines showcase and the bar's focus item
+      ([ADR 0064](adr/0064-spheres-are-machines.md), accepted;
       `tests/machine_sphere_contract.py`, software-verified)
 - [ ] sphere contact sheet accepted by the operator: each domain told apart
       at 16 px, each state told apart without colour, spheres like the
       reference renders
+- [x] the host bar's core follows focus: the domain colour of the Machine
+      that owns the focused window, grey for the host, hollow with the word
+      Unknown when focus cannot be placed; the focus item draws the same
+      answer as a sphere with the Machine's name and domain; mapping from
+      host provenance only, never a title; an incomplete domain palette
+      makes both signals Unknown; unsupported inventory states keep the
+      domain core and add their state word beside a neutral sphere;
+      domain/state words stay unelided for long names, unresolved answers
+      carry a word marker, and required items fit the 800-pixel fixtures
+      with five occupied workspaces and counted overflow
+      (ADR 0064; `tests/bar_core_focus_contract.py`, software-verified under
+      Sway and Hyprland fixtures)
+- [ ] the bar core accepted on Nitro under both compositors: focus host →
+      Machine A → Machine B → host with two domains, and an unplaceable
+      window reads Unknown
+- [ ] the bar core while a guest is fullscreen
+      ([open record](../problems/bar-core-hidden-under-fullscreen-guest.md))
 
 - [x] terminal domain dots in `vm list`, `machine list`, `net list` and
       `trust`: semantic palette, RGB/indexed colour, confirmed product
@@ -892,7 +920,10 @@ Measured with the complete security plane active.
 - [x] software gate for installed-versus-resident desktop code: state-based
       refresh with clock-step and launch-race checks, retry, check-mode silence
       and immediate unchanged-apply idempotence; symlinked checkout paths retain
-      literal observer matching while hashing the resolved resolver
+      literal observer matching while hashing the resolved resolver;
+      inert-process fixtures cover asynchronous stopping with bounded retries
+      after resume, exact per-process signal sequences and the actual
+      paused busy-child refusal
       (`tests/shell_reload_after_apply_contract.py`, software-verified)
 - [ ] installed desktop refresh observed after host apply on Nitro and
       replayed on Predator; see [the shell update contract](hyperlab-shell.md#installed-updates-and-resident-code)

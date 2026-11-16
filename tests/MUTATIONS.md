@@ -4561,6 +4561,56 @@ strict checkout refusal before the fix.
 | V52 | Remove `include(resolver, str(resolver))` from `source_generation` | symlinked checkout | `symlinked checkout resolver omitted from installed generation` |
 | V53 | Remove the `resolver.resolve(strict=True) != resolver` refusal | symlinked checkout | `redirected checkout tools directory accepted` |
 
+### Asynchronous stopping in inert-process fixtures
+
+`delayed_stop_contract(module, directory)` forces the first post-SIGSTOP
+sample for each real fixture to report a running thread. Before the fixture
+fix it reproduced CI's `Shell did not stop every thread; reapply` error.
+Installed `paused_shell` still samples once and immediately resumes on
+refusal. Only inert fixtures retry that exact entry failure, after cleanup
+and within five seconds. They must still complete the real launch-prevention
+and paused busy-child checks. Other entry errors and all body errors
+propagate, including a body error with the same message as incomplete entry.
+`inert_pause_retry_contract()` checks retry scope, identity, deadline and
+resume before waiting without real delays.
+
+For replay, load the contract using `runpy.run_path()`. The `delayed` stage
+calls `delayed_stop_contract(load_refresh(), Path(temporary))` with a fresh
+`TemporaryDirectory`; `retry` calls `inert_pause_retry_contract()`; and
+`replacement` calls `replacement_contract(load_refresh(), Path(temporary))`.
+The ordinary real-process checks now also have their own
+`inert_replacement_contract(module, directory)` stage. Save the file before
+each mutation, restore the exact saved bytes and rerun the same focused
+stage. Every case below was observed red for the stated behavioral reason
+and then green after restoration. No mutation survived. An initial V56 edit
+caused a syntax error; the corrected mutation was rerun to obtain the
+behavioral failure recorded here.
+
+| ID | Break | Focused stage | Observed red result |
+| --- | --- | --- | --- |
+| V54 | Replace the launcher's `retry_inert_pause(...)` with direct `module.paused_shell(...)` | delayed | `Shell did not stop every thread; reapply` |
+| V55 | Remove the exact-message filter from the retry helper's entry exception handler | retry | `retry swallowed or changed a non-retryable failure` |
+| V56 | Move `yield process` inside the helper's retry `try`, after `enter_context`, so body errors reach the retry handler | retry | `retry swallowed or changed a non-retryable failure` |
+| V57 | Replace the retry deadline condition with `False` | retry | `retry swallowed or changed a non-retryable failure` |
+| V58 | Add `time.sleep(0.01)` immediately after successful `enter_context` | retry | `incomplete stop was not retried to a successful pause` |
+| V59 | Replace the busy-child fixture's retry wrapper with its original `pause` callable | delayed | `busy-child fixture refused before its paused cgroup inspection` |
+| V60 | Omit the production cleanup's pinned `SIGCONT` | replacement | `paused shell resumed before termination or not resumed on refusal` |
+| V61 | Remove the real launcher's `process.terminate()` | delayed | `non-observer appeared after the final inspection` |
+| V62 | Send pinned `SIGCONT` immediately after the real launcher's `process.terminate()` (ignore `ProcessLookupError` if it has exited) | delayed | `launcher signal sequence resumed after termination or missed retry cleanup` |
+| V63 | Open a PID descriptor for the busy shell and send an extra `SIGCONT` after its paused-child refusal, before checking `samples` | delayed | `busy-child signal sequence did not resume every stop` |
+
+V62 stayed green with the former aggregate `resumes >= 2` assertion. The
+exact per-process sequences make it red: every incomplete stop must resume,
+the launcher's final stop must end in pinned kill with no resume, and the
+busy-child fixture's final stop must resume. Additional genuine incomplete
+stops may retry within the existing deadline. Removing the injected signal
+restored green.
+
+For V63, mutate a separate source copy and compile it with the original
+contract's `__file__` so its repository paths remain unchanged, then call
+its `delayed` stage. Restore the exact saved copy and rerun: the extra
+busy-shell resume was red, restoration green.
+
 ## Disposable boot access and SSH identity (ADR 0018)
 
 All twenty-three mutations below were observed red (exit 1), restored from
@@ -5785,6 +5835,338 @@ import to `render.py`. The focused component suite fails on
 `ImportError`; its restored source passes. The existing desktop cockpit
 contract also passes without changes. See the
 [problem note](../problems/cli-render-standalone-import.md).
+
+## GPU prepare XML and reviewed QEMU arguments
+
+The checks run copied hook/helper artifacts in temporary directories, with
+only the fixed installed paths and the policy owner's fixture uid substituted.
+No live libvirt, GPU or trust state is used. All prepare cases, including the
+existing transaction races, supply representative XML. The reference-domain
+positive control is rendered by the real guest/VFIO planners and domain
+Jinja template in `tests/arch_dev_vfio_hardware_gate_contract.py`.
+
+Each of the following breaks was observed red (exit 1) and its restored
+predicted check green (exit 0). No mutation stayed green.
+
+| Case | Invariant broken | Observed red check |
+|---|---|---|
+| Q1 | Ignore an unmapped QEMU namespace extension | Bats renamed-namespace vfio-pci refusal |
+| Q2 | Accept trailing arguments after the reviewed four | XML contract extra argument accepted, state changed |
+| Q3 | Inspect only the literal `qemu` prefix | Bats renamed-namespace refusal |
+| Q4 | Match ordered hostdev text with no space around `=` | Bats structural PCI/hostdev interface refusal |
+| Q5 | Reject every command-line block | Real rendered Looking Glass XML refused |
+| Q6 | Ignore helper failure | Bats failed-helper refusal/state preservation |
+| Q7 | Treat malformed XML as success | Bats missing/malformed mapped XML refusal |
+| Q8 | Fall back to transport defaults on invalid policy | XML contract invalid/duplicate policy accepted |
+| Q9 | Ignore the opened policy inode's owner | XML contract wrong-owner policy accepted |
+| Q10 | Install the helper owned by an unprivileged user | Actual task parameter evaluation rejects ownership |
+| Q11 | Hard-code policy transport values | Actual policy render ignores changed host configuration |
+| Q12 | Ignore a second command-line block | XML contract duplicate block accepted |
+| Q13 | Allow a document type and entity substitution | XML contract document type accepted |
+| Q14 | Follow the transport policy symlink | XML contract redirected policy accepted |
+| Q15 | Ignore the domain XML's name | XML contract name mismatch accepted |
+| Q16 | Remove the XML input bound | XML contract oversized document accepted |
+| Q17 | Ignore the host-owned policy inside the helper | XML contract configured Looking Glass XML refused |
+| Q18 | Run the helper without Python isolation (`-I`) | XML contract shadow `json.py` imported, reviewed XML refused |
+
+The XML contract's argument-drift table also covers changed driver, path,
+size, share flag, device/backend ids and extra object properties. Its shape
+cases cover empty blocks, unknown attributes/children/text, environment
+nodes and orphan namespace elements. Refusals are checked both over existing
+trust bytes and before any state directory exists. The policy checks include
+missing, malformed, duplicate-key, unreadable, writable and redirected inputs;
+installation evaluates root ownership, modes and publication order. These
+are software proofs, not hardware acceptance or confinement of a hostile
+host owner.
+
+Replay from the repository root on an otherwise idle tree. Each source file
+is copied before it is changed and restored in `finally`, including its mode;
+no Git restoration is used. Each mutation runs only its predicted check,
+then the same check after restoration:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+root = Path.cwd()
+helper = Path('roles/gpu_handoff/files/xml-preflight.py')
+hook = Path('roles/gpu_handoff/files/qemu')
+tasks = Path('roles/gpu_handoff/tasks/main.yml')
+policy = Path('roles/gpu_handoff/templates/looking-glass.json.j2')
+contract = ['python', 'tests/gpu_handoff_xml_contract.py']
+mutations = [
+    ('Q1-ignore-unmapped-extension', helper,
+     [('require(not extensions,', 'require(True,')],
+     ['bats', '--filter', 'unmapped renamed', 'tests/hook.bats'], 'not ok 1'),
+    ('Q2-allow-extra-arguments', helper,
+     [('len(args) == 4', 'len(args) >= 4'),
+      ('[node.get("value") for node in args] == expected', '[node.get("value") for node in args][:4] == expected')],
+     contract, 'unreviewed QEMU command-line'),
+    ('Q3-literal-qemu-prefix', helper,
+     [('    if not mapped:\n', '    if b"<qemu:commandline" not in raw:\n        extensions = []\n    if not mapped:\n')],
+     ['bats', '--filter', 'unmapped renamed', 'tests/hook.bats'], 'not ok 1'),
+    ('Q4-ordered-hostdev-text', helper,
+     [('require(not any(node.tag == "hostdev" and node.get("type") == "pci"\n'
+       '                        or node.tag == "interface" and node.get("type") == "hostdev"\n'
+       '                        for node in root.iter()),',
+       '''require(re.search(rb"<hostdev[^>]*type=['\\\"]pci['\\\"]|<interface[^>]*type=['\\\"]hostdev['\\\"]", raw) is None,''')],
+     ['bats', '--filter', 'unmapped PCI and', 'tests/hook.bats'], 'not ok 1'),
+    ('Q5-reject-all-commandline', helper,
+     [('    blocks = root.findall', '    require(False, "unreviewed QEMU command-line")\n    blocks = root.findall')],
+     ['python', 'tests/arch_dev_vfio_hardware_gate_contract.py'], 'rendered Looking Glass XML refused'),
+    ('Q6-ignore-helper-failure', hook,
+     [('    echo "gpu-handoff: XML preflight failed: refusing" >&2\n    exit 1',
+       '    echo "gpu-handoff: XML preflight failed: refusing" >&2\n    :')],
+     ['bats', '--filter', 'missing or failed installed', 'tests/hook.bats'], 'not ok 1'),
+    ('Q7-ignore-malformed-xml', helper,
+     [('        raise Refusal("invalid domain XML: malformed document") from error', '        return')],
+     ['bats', '--filter', 'missing or malformed', 'tests/hook.bats'], 'not ok 1'),
+    ('Q8-ignore-invalid-policy', helper,
+     [('            raise Refusal(f"invalid Looking Glass policy: {error}") from error',
+       '            device, size = "/dev/kvmfr0", 67108864')],
+     contract, 'invalid Looking Glass policy'),
+    ('Q9-ignore-policy-owner', helper,
+     [(' and info.st_uid == POLICY_OWNER', '')], contract, 'unsafe Looking Glass policy'),
+    ('Q10-user-owned-install', tasks,
+     [('    dest: /etc/gpu-handoff/xml-preflight.py\n    owner: root',
+       '    dest: /etc/gpu-handoff/xml-preflight.py\n    owner: nobody')],
+     contract, 'AssertionError'),
+    ('Q11-hardcode-transport-limits', policy,
+     [(policy.read_text(), '{"device":"/dev/kvmfr0","size_bytes":67108864}\n')],
+     contract, 'transport policy is hard-coded'),
+    ('Q12-ignore-duplicate-block', helper,
+     [('len(blocks) == 1', 'len(blocks) >= 1'), (' and extensions == [block, *args]', '')],
+     contract, 'unreviewed QEMU command-line'),
+    ('Q13-allow-document-type', helper,
+     [('        raise Refusal("invalid domain XML: document types are not allowed")', '        return')],
+     contract, 'invalid domain XML'),
+    ('Q14-follow-policy-symlink', helper,
+     [('os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK', 'os.O_RDONLY | os.O_NONBLOCK')],
+     contract, 'Looking Glass policy'),
+    ('Q15-ignore-domain-name', helper,
+     [('require(len(names) == 1 and names[0].text == domain,', 'require(True,')],
+     contract, 'domain name mismatch'),
+    ('Q16-ignore-xml-size-bound', helper,
+     [('0 < len(raw) <= MAX_XML_BYTES', '0 < len(raw)'),
+      ('sys.stdin.buffer.read(MAX_XML_BYTES + 1)', 'sys.stdin.buffer.read()')],
+     contract, 'invalid domain XML'),
+    ('Q17-ignore-host-transport-policy', helper,
+     [('    expected = [', '    device, size = "/dev/kvmfr0", 67108864\n    expected = [')],
+     contract, 'configured Looking Glass XML refused'),
+    ('Q18-unisolated-helper', hook,
+     [('/usr/bin/python3 -I "${XML_PREFLIGHT}"', '/usr/bin/python3 "${XML_PREFLIGHT}"')],
+     contract, 'isolated helper refused reviewed XML'),
+]
+with tempfile.TemporaryDirectory(prefix="gpu-xml-mutations-") as temporary:
+    for name, path, edits, command, reason in mutations:
+        backup = Path(temporary) / (name + "-" + path.name)
+        shutil.copy2(path, backup)
+        mutated = path.read_text()
+        for old, new in edits:
+            assert mutated.count(old) == 1, (name, old)
+            mutated = mutated.replace(old, new, 1)
+        try:
+            path.write_text(mutated)
+            red = subprocess.run(command, text=True, capture_output=True, check=False, timeout=60)
+            assert red.returncode != 0 and reason in red.stdout + red.stderr, (name, red)
+        finally:
+            shutil.copy2(backup, path)
+        green = subprocess.run(command, text=True, capture_output=True, check=False, timeout=60)
+        assert green.returncode == 0, (name, green)
+        print(f"{name}: red; restored green")
+PY
+```
+
+## Palette output variant names
+
+The Quickshell writer deliberately includes the current variant in its top-level
+JSON `name`. Colour masking and banner normalization left that value intact,
+so committed fragments failed structural parity. `verify_output.py` now replaces
+only the generated top-level `name` line for that file's own variant. The
+comparison marker is unquoted, so an incorrect JSON string value of `"V"`
+cannot impersonate the normalized name. Coverage reporting, colour masking and
+stray-colour rejection retain their existing behaviour.
+
+`python tests/palette_verify_output_contract.py` copies the committed fragments
+to a temporary directory and invokes the real verifier. Unchanged output must
+print `OUTPUT: OK`; a wrong name or an extra key in one variant must fail with
+`different structure`. Other string fields, nested names and other formats
+remain subject to parity, and an out-of-palette colour still fails. The contract
+is discovered by the existing `tests/*_contract.py` verification loop.
+
+Save `tools/palette/verify_output.py` before each following break, make only the
+listed edit, run the selected test, then copy back the saved source and rerun
+that same test. Each command has the form:
+
+```bash
+python tests/palette_verify_output_contract.py PaletteVerifyOutputContract.TEST
+```
+
+| Mutation | Break in `tools/palette/verify_output.py` | TEST | Observed red / restored green |
+| --- | --- | --- | --- |
+| `remove-normalization` | Delete the Quickshell filename-guarded name-normalization block. | `test_committed_output_passes` | Exit 1, unchanged output reports Quickshell `different structure`; exit 0 after restoration. |
+| `all-variant-names` | Replace the own-variant replacement with a loop over `variants`, replacing each `name` rather than only `variant`. | `test_wrong_variant_name_fails` | Exit 1, another variant's name was accepted; exit 0 after restoration. |
+| `quoted-marker` | Change the replacement line's unquoted `V` to `"V"`. | `test_wrong_variant_name_fails` | Exit 1, the literal name `V` was accepted; exit 0 after restoration. |
+| `all-formats` | Replace `if filename == "hyperlab-palette-quickshell.json":` with `if True:`. | `test_other_formats_are_not_normalized` | Exit 1, differing names in Rasi were accepted; exit 0 after restoration. |
+| `nested-names` | Replace the normalization with `shape = shape.replace(f'"name": "{variant}"', '"name": V')`. | `test_nested_names_are_not_normalized` | Exit 1, differing nested names were accepted; exit 0 after restoration. |
+| `discard-structure` | Replace `shapes.append(shape)` with `shapes.append("" if filename == "hyperlab-palette-quickshell.json" else shape)`. | `test_extra_key_in_one_variant_fails` | Exit 1, an extra JSON key was accepted; exit 0 after restoration. |
+| `ignore-stray-colours` | Replace `if stray:` with `if False:`. | `test_stray_colour_still_fails` | Exit 1, an out-of-palette colour was accepted; exit 0 after restoration. |
+
+Every listed mutation was observed red and the same check green after
+byte-identical restoration. No mutation stayed green. Before the implementation,
+the complete seven-test contract failed only on unchanged committed output;
+after restoration all seven tests passed.
+
+## The bar core follows focus
+
+[ADR 0064](../docs/adr/0064-spheres-are-machines.md) makes the core of the
+product glyph in the host bar a trust indicator. `tests/bar_core_focus_contract.py`
+runs Sway and Hyprland focus fixtures through the real compositor adapter,
+the real `ShellState` in the runtime harness, the real provenance resolver
+and the real bar, then reads the captured pixels of the core and the focus
+sphere, the words and the accessible name. Every fixture window carries a
+title that names another Machine.
+
+Each break changes one file. Replay one at a time from a saved copy, run
+`python tests/bar_core_focus_contract.py`, restore the copy and run it again.
+`resolver-reads-title` edits `tools/surface_provenance.py`; every other break
+edits a file in `roles/host_desktop_common/files/quickshell/hyperlab/`.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| `title-mapping` | `ShellState.focusedMachineFor()` first maps any inventory name found in `state.focusPayload.title` to that Machine. | `the focus mapping reads state.focusPayload` | Exit 0, contract OK. |
+| `title-kept` | `applyFocusPayload()` keeps the adapter's `title` in `focusPayload`. | `sway: "the focused window title entered shell state"` | Exit 0, contract OK. |
+| `resolver-reads-title` | `resolve()` refuses any surface with a non-empty `title`. | `sway/host: the resolver answer follows the title 'dev-01'` | Exit 0, contract OK. |
+| `unknown-host-grey` | `HyperLabBar.qml` draws an unplaced focus as a filled core in `provenanceColor("host")` (`coreHollow: false`). | `sway: "a surface still being resolved kept the previous answer"` | Exit 0, contract OK. |
+| `unknown-hollow-grey` | The hollow Unknown outline takes `provenanceColor("host")` instead of `textPrimary`. | `sway/unmapped: Unknown is drawn in the host colour: (138, 147, 157)` | Exit 0, contract OK. |
+| `unknown-keeps-domain` | The hollow Unknown outline keeps the last proven `coreFill`. | `sway/unmapped: Unknown is drawn in the dirty colour: (253, 156, 68)` | Exit 0, contract OK. |
+| `words-without-domain` | `focusedMachine.words` becomes the Machine name alone. | `sway: "an unconfirmed Machine state was drawn, or its domain was lost"` | Exit 0, contract OK. |
+| `coloured-words` | `ProvenanceBadge.qml` draws a Machine's words in its domain colour. | `sway/dev: the focus words carry a colour; the sphere and the core do` | Exit 0, contract OK. |
+| `fade-ignores-reduced-motion` | Delete the `bar.tokens.reducedMotion` branch of `followCore()`. | none: exit 0 (see below) | Exit 0, contract OK. |
+| `fade-fixed-duration` | Delete that branch and set the fade's `duration` to `180` instead of `motionExpand`. | `sway: "reduced motion still faded the core"` | Exit 0, contract OK. |
+| `no-fade` | `followCore()` sets `coreLevel` to 1 instead of starting the fade. | `sway: "a new core colour did not fade in"` | Exit 0, contract OK. |
+| `contradiction-ignored` | The inventory row that names the Machine in another domain is ignored (`if (false)`). | `sway: "the inventory named another domain and the bar still chose one"` | Exit 0, contract OK. |
+| `unresolved-is-host` | `focusedMachineFor()` answers host for an `unresolved` provenance. | `sway/unmapped: the bar placed focus on host` | Exit 0, contract OK. |
+| `palette-unchecked` | Remove `theme.provenanceAvailable` from the bar's presentation answer. | `sway: "an incomplete palette left the core and the focus item disagreeing"` | Exit 0, contract OK. |
+| `item-reads-shell-answer` | Pass `shellState.focusedMachine` directly to the focus item, bypassing the bar's palette check. | `sway: "an incomplete palette left the core and the focus item disagreeing"` | Exit 0, contract OK. |
+
+Fourteen breaks exited 1 with the diagnostic listed; each restored copy was
+byte-identical to the original, and the contract exited 0 after the
+restorations. `fade-ignores-reduced-motion` stays green and is equivalent,
+not missed: `motionExpand` is already 0 under reduced motion, and a
+zero-duration animation lands at once, so the explicit branch is a second
+guard. `fade-fixed-duration` removes both guards and is refused.
+`unknown-host-grey` is refused by the first focus event, before the pixel
+checks, because the core is not hollow while the new surface resolves.
+The palette cases remove each `dom_*` key under both host and Machine focus,
+check the core, words and accessible name before and after a resolver answer,
+and restore the palette without another focus event. The pre-correction bar
+failed with the incomplete-palette diagnostic above. Both palette mutations
+exited 1, and each byte-identical restoration exited 0.
+
+The inventory-state fixtures also reuse the registered dev viewer with
+`crashed` and `unknown`. The core keeps the proven dev colour while the
+sphere is an empty neutral outline with a visible state word. Inventory-only
+updates and recovery to running need no new focus or resolver answer.
+Replay each break below in `ProvenanceBadge.qml`, run the same contract,
+restore the saved copy and rerun it.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| `unsupported-state-word-removed` | Remove the `stateWords` suffix from the visible `words` binding. | `sway: "an unsupported Machine state has no visible state word"` | Exit 0, contract OK. |
+| `crashed-normalized-to-running` | Pass `running` to the sphere when `machineState` is `crashed`. | `sway: "an unsupported Machine state was normalized or drawn as supported"` | Exit 0, contract OK. |
+| `unconfirmed-state-word-removed` | Replace the `state not confirmed` fallback in `stateWords` with an empty string. | `sway: "an unconfirmed Machine state was drawn, or its domain was lost"` | Exit 0, contract OK. |
+
+All three breaks exited 1. Each saved copy was restored byte-identically,
+and the contract exited 0 after each restoration. The expanded contract
+failed on the missing state word before the badge correction.
+
+### Painted focus words, unresolved marker and narrow geometry
+
+The focus fixtures include a registered services Machine with a 31-character
+name, rendered with crashed, unlisted and stale inventory. The domain/state
+label must report `truncated === false`; its painted width and height must fit
+inside the badge. Only the name may elide to the right. The unregistered
+Looking Glass client keeps `Unknown` and adds a visible `unresolved` marker;
+every pending resolver request lacks that marker.
+
+Each of the ten states runs at 1440 and 800 logical pixels under both
+compositors. Real item bounds must remain inside the rail and pairwise
+separate for identity, workspaces, clock, focus, GPU, system and settings.
+The stale-source case also keeps the longer stale GPU and unavailable
+workspace readouts. The render option saves all forty captures and their
+runtime geometry records.
+
+The long-name cases also use five occupied workspaces, with active workspace
+2 and urgent workspace 5 retained. The unlisted and stale-inventory cases at
+800 pixels now fold to three visible chips and a counted `+2`; every occupied
+workspace is either visible or counted. The clock, focus domain/state words
+and required readouts remain separate under both compositor fixtures.
+
+Save each file, make one break, run `python tests/bar_core_focus_contract.py`,
+restore the saved copy and rerun the same check. QML paths are under
+`roles/host_desktop_common/files/quickshell/hyperlab/`.
+
+| Mutation | File | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- | --- |
+| `domain-recombined` | `ProvenanceBadge.qml` | Hide the name label and restore the combined `badge.words` label with bounded width and `ElideMiddle`. | `the painted domain/state words are truncated or escape the focus badge` | Exit 0, contract OK. |
+| `unresolved-marker-hidden` | `ProvenanceBadge.qml` | Make the unresolved marker invisible. | `Unknown has no distinct unresolved warning, or shows it for another state` | Exit 0, contract OK. |
+| `pending-marked-unresolved` | `ProvenanceBadge.qml` | Show the marker while provenance is resolving too. | `a pending request shows the unresolved warning` | Exit 0, contract OK. |
+| `approximate-clock-centre` | `HyperLabBar.qml` | Restore the approximate clock centre based on right-group width and a fixed 40-pixel left reserve. | `sway-800/long-unlisted: provenance-badge overlaps rail-clock on the 800-pixel rail` | Exit 0, contract OK. |
+| `narrow-gaps-retained` | `HyperLabBar.qml` | Keep the wide inter-control gaps on narrow rails. | `sway-800/stale: rail-clock overlaps rail-workspaces on the 800-pixel rail` | Exit 0, contract OK. |
+
+All five breaks exited 1 with the listed diagnostic, followed by exit 0 after
+each byte-identical restoration. Before correction, the expanded contract
+failed separately on the truncated painted label, absent unresolved marker
+and narrow overlap. These are software checks; display legibility and real
+compositor timing remain hardware acceptance.
+
+An additional capacity mutation exercises the crowded-workspace cases:
+
+| Mutation | File | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- | --- |
+| `fixed-workspace-capacity` | `HyperLabBar.qml` | Replace the measured `maximumSlots` binding with `bar.wideRail ? 9 : (bar.mediumRail ? 6 : 4)`. | `sway-800/long-unlisted: rail-clock overlaps rail-workspaces on the 800-pixel rail` | Exit 0, contract OK. |
+
+This break exited 1; its byte-identical restoration exited 0. Before the
+capacity correction, the expanded five-workspace test failed with the same
+diagnostic. The four captures for long-unlisted and long-stale-inventory at
+800 pixels pass the pairwise geometry check under Sway and Hyprland.
+
+## The wiring contract and inherited Item.state
+
+`tests/host_quickshell_qml_wiring_contract.py` recognises `state` through
+local inheritance chains ending at `Item`, `Rectangle`, `Text` or `Canvas`
+([ADR 0065](../docs/adr/0065-qml-inherited-item-state.md)). A component need
+not bind it on its root. `GpuBadge` inherits it through `ShellControl`;
+QtObject-based components such as `Icons` do not. Other vocabulary names,
+including `icons`, still need a declaration. Runtime contracts check the
+actual sphere state values separately.
+
+The table preserves the earlier component-specific rule's results as
+historical and records a replay under ADR 0065. The three accepted changes
+are valid inherited-property assignments, not missed wiring defects. Replay
+one change at a time from a saved copy, run
+`python tests/host_quickshell_qml_wiring_contract.py`, restore the copy and
+run it again. Every change edits a file in
+`roles/host_desktop_common/files/quickshell/hyperlab/`.
+
+| Mutation | Change | Historical result before ADR 0065 | Current observed result | After restoration |
+| --- | --- | --- | --- | --- |
+| `icons-to-sphere` | `ProvenanceBadge.qml` assigns `icons: badge.icons` to its `MachineSphere`. | Exit 1, stray `icons` on MachineSphere. | Exit 1: `ProvenanceBadge.qml assigns ['icons'] to MachineSphere, which declares no such property`. | Exit 0, contract OK. |
+| `sphere-root-unbound` | Delete `state: ""` from the root of `MachineSphere.qml`. | Exit 1, undeclared `state` on MachineSphere. | Exit 0, `OK (56 components)`; Item.state is inherited without a root binding. | Exit 0, contract OK. |
+| `state-to-gpu-badge` | `HyperLabBar.qml` assigns `state: "x"` to its `GpuBadge`. | Exit 1, undeclared `state` on GpuBadge. | Exit 0, `OK (56 components)`; GpuBadge inherits Item.state. | Exit 0, contract OK. |
+| `unreviewed-root-state` | Bind `state: ""` on `GpuBadge.qml`'s root and assign `state: "x"` to the badge in `HyperLabBar.qml` (two files). | Exit 1 under the component-specific rule. | Exit 0, `OK (56 components)`; the root binding does not change inheritance. | Exit 0, contract OK. |
+| `state-to-qtobject` | `shell.qml` assigns `state: "x"` to its QtObject-based `Icons`. | Not run. | Exit 1: `shell.qml assigns ['state'] to Icons, which declares no such property`. | Exit 0, contract OK. |
+
+All five current results match ADR 0065; each byte-identical restoration
+exited 0. Historically, a broad rule that counted every root binding also
+accepted `unreviewed-root-state`; the later component-specific rule refused
+it. Neither historical rule describes today's inherited-property boundary.
+Before the original Item.state correction, the unmodified tree itself
+failed with an undeclared-state diagnostic on MachineSphere.
 
 ## Obsolete render hardware input
 

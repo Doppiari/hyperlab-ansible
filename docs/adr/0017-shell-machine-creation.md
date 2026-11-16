@@ -75,7 +75,10 @@ Creation is split along the existing boundary.
   checkout, with no link anywhere on the way. Then it runs the steps in
   order inside the operation's private terminal.
 - **Privilege.** Each `-K` playbook asks for the become password in that
-  terminal, exactly as by hand. Nothing caches it.
+  terminal, exactly as by hand. Nothing caches it. This prompt is an
+  explicit operation step, not a boundary around host-session authority:
+  membership in the host's `libvirt` group already grants unrestricted
+  system libvirt access and root-equivalent host authority.
 - **Password.** For a Template whose profile needs one, the provisioner asks
   for it twice without echo in the same terminal, turns it into a SHA-512
   crypt hash with `openssl passwd -6 -stdin`, writes the hash to a 0600 file
@@ -105,7 +108,12 @@ Creation is split along the existing boundary.
 
 - The shell gains a Create view without any new authority: everything it
   submits is re-validated by the factory, and everything privileged runs in
-  the operation terminal under the operator's own become prompt.
+  the operation terminal under the operator's own become prompt. The host
+  session and its libvirt authority remain trusted; the prompt does not
+  confine another process in that session. The GPU hook guards managed
+  policy and accidental or unreviewed starts, including QEMU argument
+  extensions; it does not sandbox a hostile host owner
+  ([GPU handoff policy](../gpu-handoff-policy.md)).
 - A creation asks for the become password once per privileged playbook:
   twice, for `vm-create.yml` and `vm-guest-inventory.yml`. The profile
   passes of a workstation reach the guest over SSH and need no become
