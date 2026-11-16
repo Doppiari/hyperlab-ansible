@@ -5980,6 +5980,47 @@ with tempfile.TemporaryDirectory(prefix="gpu-xml-mutations-") as temporary:
         print(f"{name}: red; restored green")
 PY
 ```
+
+## Palette output variant names
+
+The Quickshell writer deliberately includes the current variant in its top-level
+JSON `name`. Colour masking and banner normalization left that value intact,
+so committed fragments failed structural parity. `verify_output.py` now replaces
+only the generated top-level `name` line for that file's own variant. The
+comparison marker is unquoted, so an incorrect JSON string value of `"V"`
+cannot impersonate the normalized name. Coverage reporting, colour masking and
+stray-colour rejection retain their existing behaviour.
+
+`python tests/palette_verify_output_contract.py` copies the committed fragments
+to a temporary directory and invokes the real verifier. Unchanged output must
+print `OUTPUT: OK`; a wrong name or an extra key in one variant must fail with
+`different structure`. Other string fields, nested names and other formats
+remain subject to parity, and an out-of-palette colour still fails. The contract
+is discovered by the existing `tests/*_contract.py` verification loop.
+
+Save `tools/palette/verify_output.py` before each following break, make only the
+listed edit, run the selected test, then copy back the saved source and rerun
+that same test. Each command has the form:
+
+```bash
+python tests/palette_verify_output_contract.py PaletteVerifyOutputContract.TEST
+```
+
+| Mutation | Break in `tools/palette/verify_output.py` | TEST | Observed red / restored green |
+| --- | --- | --- | --- |
+| `remove-normalization` | Delete the Quickshell filename-guarded name-normalization block. | `test_committed_output_passes` | Exit 1, unchanged output reports Quickshell `different structure`; exit 0 after restoration. |
+| `all-variant-names` | Replace the own-variant replacement with a loop over `variants`, replacing each `name` rather than only `variant`. | `test_wrong_variant_name_fails` | Exit 1, another variant's name was accepted; exit 0 after restoration. |
+| `quoted-marker` | Change the replacement line's unquoted `V` to `"V"`. | `test_wrong_variant_name_fails` | Exit 1, the literal name `V` was accepted; exit 0 after restoration. |
+| `all-formats` | Replace `if filename == "hyperlab-palette-quickshell.json":` with `if True:`. | `test_other_formats_are_not_normalized` | Exit 1, differing names in Rasi were accepted; exit 0 after restoration. |
+| `nested-names` | Replace the normalization with `shape = shape.replace(f'"name": "{variant}"', '"name": V')`. | `test_nested_names_are_not_normalized` | Exit 1, differing nested names were accepted; exit 0 after restoration. |
+| `discard-structure` | Replace `shapes.append(shape)` with `shapes.append("" if filename == "hyperlab-palette-quickshell.json" else shape)`. | `test_extra_key_in_one_variant_fails` | Exit 1, an extra JSON key was accepted; exit 0 after restoration. |
+| `ignore-stray-colours` | Replace `if stray:` with `if False:`. | `test_stray_colour_still_fails` | Exit 1, an out-of-palette colour was accepted; exit 0 after restoration. |
+
+Every listed mutation was observed red and the same check green after
+byte-identical restoration. No mutation stayed green. Before the implementation,
+the complete seven-test contract failed only on unchanged committed output;
+after restoration all seven tests passed.
+
 ## The bar core follows focus
 
 [ADR 0064](../docs/adr/0064-spheres-are-machines.md) makes the core of the
