@@ -368,6 +368,15 @@ REVIEWED_BOOLEANS = frozenset(
 )
 NOT_BOOLEAN = ("true", "false", 0, 1)
 
+# The GitHub owner each campaign version expects, written by hand. The
+# historical v2 campaign ran before the repositories moved to the Doppiari
+# organisation; v3 qualifies the transferred repositories.
+REPOSITORY_OWNER = {2: "importriri", 3: "Doppiari"}
+REPOSITORY_NAME = {
+    "hyperlab_ansible": "hyperlab-ansible",
+    "arch_bootstrap": "arch-bootstrap",
+}
+
 
 def run(*args: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -650,6 +659,77 @@ def init_fake_repo(
     ).stdout.strip()
 
 
+def manifest_remote(version: int, repository: str) -> str:
+    manifest = yaml.safe_load(MANIFESTS[version].read_text(encoding="utf-8"))
+    remote = manifest["repositories"][repository]["remote"]
+    assert isinstance(remote, str), f"v{version} {repository} remote is not text"
+    return remote
+
+
+def https_origin(remote: str) -> str:
+    return f"https://github.com/{remote}.git"
+
+
+def ssh_origin(remote: str) -> str:
+    return f"git@github.com:{remote}.git"
+
+
+def repository_proof(
+    version: int,
+    root: Path,
+    origins: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    shas = {
+        name: init_fake_repo(root / name, "main", origins[name], f"{name} pass")
+        for name in REPOSITORY_NAME
+    }
+    release_plan = plan(
+        ansible_sha=shas["hyperlab_ansible"],
+        bootstrap_sha=shas["arch_bootstrap"],
+        version=version,
+    )
+    plan_path = root / "plan.json"
+    write_plan(plan_path, release_plan)
+    return run(
+        sys.executable,
+        str(TOOL),
+        "--manifest",
+        str(MANIFESTS[version]),
+        "repository-proof",
+        "--plan",
+        str(plan_path),
+        "--ansible-repo",
+        str(root / "hyperlab_ansible"),
+        "--bootstrap-repo",
+        str(root / "arch_bootstrap"),
+    )
+
+
+def test_repository_proof_accepts_only_the_versioned_owner(version: int = 2) -> None:
+    owner = REPOSITORY_OWNER[version]
+    other = REPOSITORY_OWNER[5 - version]
+    for repository, name in REPOSITORY_NAME.items():
+        assert manifest_remote(version, repository) == f"{owner}/{name}", (
+            f"v{version} {repository} remote is not {owner}/{name}"
+        )
+    expected = {
+        repository: https_origin(f"{owner}/{name}")
+        for repository, name in REPOSITORY_NAME.items()
+    }
+    with tempfile.TemporaryDirectory() as td:
+        accepted = repository_proof(version, Path(td), expected)
+        assert accepted.returncode == 0, accepted.stderr
+    for repository, name in REPOSITORY_NAME.items():
+        for form in (https_origin, ssh_origin):
+            origins = {**expected, repository: form(f"{other}/{name}")}
+            with tempfile.TemporaryDirectory() as td:
+                refused = repository_proof(version, Path(td), origins)
+            assert refused.returncode == 2, (
+                f"v{version} accepted {repository} origin {origins[repository]}"
+            )
+            assert f"{repository} origin differs from {owner}/{name}" in refused.stderr
+
+
 def test_plan_is_deterministic_and_orders_nitro_before_predator(version: int = 2) -> None:
     first = plan(version=version)
     assert first == plan(version=version)
@@ -787,13 +867,13 @@ def test_repository_proof_binds_clean_exact_checkouts_and_hashes_logs(version: i
         ansible_sha = init_fake_repo(
             ansible,
             "main",
-            "https://github.com/importriri/hyperlab-ansible.git",
+            https_origin(manifest_remote(version, "hyperlab_ansible")),
             "ansible verification pass",
         )
         bootstrap_sha = init_fake_repo(
             bootstrap,
             "main",
-            "git@github.com:importriri/arch-bootstrap.git",
+            ssh_origin(manifest_remote(version, "arch_bootstrap")),
             "bootstrap verification pass",
         )
         release_plan = plan(

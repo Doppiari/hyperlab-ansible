@@ -6226,3 +6226,39 @@ while retaining exact argv, credential, selection and failure assertions.
 The existing missing-privileged-tag mutation also needed its expected
 diagnostic updated to the new exact command line. The complete
 `python tests/contract_mutations.py` then passed all 67 cases.
+
+## Repository origins under the Doppiari organisation
+
+The repositories moved from the user `importriri` to the organisation
+`Doppiari`. The v3 campaign manifest names `Doppiari/hyperlab-ansible` and
+`Doppiari/arch-bootstrap` as reviewed origins; the historical v2 manifest
+keeps the previous owner `importriri`. GitHub's redirect from the old address is not
+accepted as an origin. `tests/release_acceptance_contract.py` holds the
+expected owner per version in a handwritten `REPOSITORY_OWNER` oracle,
+derives every fixture origin from the manifest `remote` in both the
+`https://github.com/<owner>/<repo>.git` and `git@github.com:<owner>/<repo>.git`
+forms, and runs a real `repository-proof` that must accept the versioned
+owner and refuse the other owner for each repository and each form.
+
+Save the named input to a backup outside the tracked tree before each break,
+make only that edit, run the focused check, copy the backup back, compare
+bytes and rerun the same check:
+
+```bash
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_repository_proof_accepts_only_the_versioned_owner(3)'
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_repository_proof_binds_clean_exact_checkouts_and_hashes_logs(3)'
+```
+
+| ID | Input and exact break | Focused check | Red observed |
+| --- | --- | --- | --- |
+| D1 | `release/acceptance.v3.yml`: set only the owner of `repositories.hyperlab_ansible.remote` back to `importriri`. | `test_repository_proof_accepts_only_the_versioned_owner(3)` | `v3 hyperlab_ansible remote is not Doppiari/hyperlab-ansible`. |
+| D2 | Same file: set only the owner of `repositories.arch_bootstrap.remote` back to `importriri`. | same as D1 | `v3 arch_bootstrap remote is not Doppiari/arch-bootstrap`. |
+| D3 | `tools/release_acceptance.py`: replace `contract["remote"] in remote.removesuffix(".git"),` in the origin require with `True,`. | same as D1 | `v3 accepted hyperlab_ansible origin`, followed by the previous owner's HTTPS origin. |
+| D4 | `tests/release_acceptance_contract.py`: in the clean-checkout proof, replace the derived `https_origin(manifest_remote(version, "hyperlab_ansible"))` with a string literal holding the previous owner's HTTPS origin of `hyperlab-ansible`. | `test_repository_proof_binds_clean_exact_checkouts_and_hashes_logs(3)` | `hyperlab_ansible origin differs from Doppiari/hyperlab-ansible`. |
+
+D1–D4 were each observed red (exit 1) and green (exit 0) after
+byte-identical restoration. No mutation stayed green. Before the manifest
+change the new owner check failed on the unchanged v3 manifest with the D1
+diagnostic, and the v2 runs passed throughout. The origin check is a
+case-sensitive substring of the origin URL, so a lower-case
+`doppiari/...` origin is refused; this section does not change that rule.

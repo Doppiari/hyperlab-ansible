@@ -59,6 +59,14 @@ clean worktrees and successful verification in both repositories. Arrange
 render credentials through the existing verification workflow before the
 physical campaign; an incomplete render check is not a software pass.
 
+The v3 manifest reviews the origins `Doppiari/hyperlab-ansible` and
+`Doppiari/arch-bootstrap`, where the repositories live since their transfer
+to the Doppiari organisation. A checkout cloned before the transfer still
+names the previous owner in its origin and is refused: GitHub's redirect is
+not accepted as proof. Point such a checkout at the organisation first, with
+`git remote set-url origin https://github.com/Doppiari/hyperlab-ansible.git`
+in this repository and the matching `arch-bootstrap` address in the sibling.
+
 ```bash
 python tools/release_acceptance.py --manifest release/acceptance.v3.yml repository-proof \
   --plan "$RELEASE_DIR/nitro-plan.json" --ansible-repo "$PWD" \

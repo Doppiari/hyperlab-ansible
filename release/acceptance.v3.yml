@@ -11,10 +11,10 @@ profiles:
     label: Acer Predator Helios 300 / RTX 3070 Mobile
 repositories:
   hyperlab_ansible:
-    remote: importriri/hyperlab-ansible
+    remote: Doppiari/hyperlab-ansible
     required_branch: main
   arch_bootstrap:
-    remote: importriri/arch-bootstrap
+    remote: Doppiari/arch-bootstrap
     required_branch: main
 gates:
   - id: repository-software
