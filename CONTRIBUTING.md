@@ -45,7 +45,7 @@ what the playbooks own; the ADR index is
 3. Clone and enter the repository, then install the two Ansible collections:
 
    ```bash
-   git clone https://github.com/importriri/hyperlab-ansible.git
+   git clone https://github.com/Doppiari/hyperlab-ansible.git
    cd hyperlab-ansible
    ansible-galaxy collection install -r collections/requirements.yml
    ```

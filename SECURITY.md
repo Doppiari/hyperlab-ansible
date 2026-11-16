@@ -4,7 +4,7 @@
 
 Report a vulnerability privately through GitHub's private vulnerability
 reporting:
-<https://github.com/importriri/hyperlab-ansible/security/advisories/new>.
+<https://github.com/Doppiari/hyperlab-ansible/security/advisories/new>.
 Do not open a public issue for it.
 
 Please include what you found, the commit you tested, how to reproduce it,

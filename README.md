@@ -2,7 +2,7 @@
 
 The product was called HyperLab before 2026-11.
 
-[![ci](https://github.com/importriri/hyperlab-ansible/actions/workflows/ci.yml/badge.svg)](https://github.com/importriri/hyperlab-ansible/actions/workflows/ci.yml)
+[![ci](https://github.com/Doppiari/hyperlab-ansible/actions/workflows/ci.yml/badge.svg)](https://github.com/Doppiari/hyperlab-ansible/actions/workflows/ci.yml)
 
 Stage 2 of Sfere. `arch-bootstrap` installs the encrypted Arch host; this
 repository turns that host into the KVM/VFIO laptop lab and owns explicit image,
@@ -17,7 +17,7 @@ for VFIO workloads, and services live in VMs rather than on the hypervisor.
 Use a clean `arch-bootstrap` install, then run stage 2 from its repository root:
 
 ```bash
-git clone https://github.com/importriri/hyperlab-ansible.git
+git clone https://github.com/Doppiari/hyperlab-ansible.git
 cd hyperlab-ansible
 ansible-galaxy collection install -r collections/requirements.yml
 ./verify.sh

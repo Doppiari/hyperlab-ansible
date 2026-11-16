@@ -1,10 +1,10 @@
 # Changelog
 
 This changelog covers the three repositories that make up HyperLab:
-[`arch-bootstrap`](https://github.com/importriri/arch-bootstrap) installs the
+[`arch-bootstrap`](https://github.com/Doppiari/arch-bootstrap) installs the
 encrypted Arch Linux host, this repository (`hyperlab-ansible`) turns it into
 the virtualization workstation and owns image and Machine operations, and
-[`arch-hypervisor-lab`](https://github.com/importriri/arch-hypervisor-lab)
+[`arch-hypervisor-lab`](https://github.com/Doppiari/arch-hypervisor-lab)
 holds the setup guide and the sanitized hardware evidence.
 
 No version of HyperLab has been released. None of the three repositories
