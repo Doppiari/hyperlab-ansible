@@ -5836,6 +5836,7 @@ import to `render.py`. The focused component suite fails on
 contract also passes without changes. See the
 [problem note](../problems/cli-render-standalone-import.md).
 
+
 ## GPU prepare XML and reviewed QEMU arguments
 
 The checks run copied hook/helper artifacts in temporary directories, with
