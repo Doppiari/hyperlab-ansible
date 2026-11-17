@@ -30,20 +30,21 @@ def check_routes() -> None:
     expected = {
         # ShellIpc: one external IPC route per destination (workspace
         # machines, controls, diagnostics, workbench, devices). HyperLabBar:
-        # Diagnostics and Control Center from the mark, and Machines from
-        # the emergency stop chip (ADR 0047).
-        "openWorkspace": {"HyperLabBar.qml": 3, "ShellIpc.qml": 5,
+        # Sfere, Diagnostics and Control Center from the mark (ADR 0067),
+        # and Machines from the emergency stop chip (ADR 0047).
+        "openWorkspace": {"HyperLabBar.qml": 4, "ShellIpc.qml": 5,
                           "ShellSurfaces.qml": 1},
         "openWorkspacePage": {"HyperLabBar.qml": 2, "LauncherSurface.qml": 1,
                               "SystemPanel.qml": 1, "ShellSurfaces.qml": 3},
-        "switchWorkspace": {"WorkspaceSurface.qml": 1},
+        "switchWorkspace": {"WorkspaceSurface.qml": 3},
         "selectMachine": {"MachineStage.qml": 2, "LauncherSurface.qml": 1,
-                          "CreateMachineView.qml": 1},
+                          "CreateMachineView.qml": 1, "WorkspaceSurface.qml": 1},
         "workspaceRaiseRequested": {"ShellSurfaces.qml": 1},
         "openSubpage": {"ControlCenterView.qml": 1, "DiagnosticsView.qml": 1},
         "toggleWorkspace": {"HyperLabBar.qml": 1},
         "forceActiveFocus": {"ConfirmationSurface.qml": 2,
-                             "LauncherSurface.qml": 1, "MachineStage.qml": 1},
+                             "LauncherSurface.qml": 1, "MachineStage.qml": 1,
+                             "SfereView.qml": 1},
         "requestActivate": {},
     }
     for method, owners in expected.items():
@@ -118,8 +119,21 @@ SCENARIO = r'''
             sharedSurfaces.clearMachineSelection();
             check(raises() === baseline, "clearing selection refocused");
 
+            // A sphere is internal navigation into the same window.
+            sharedSurfaces.switchWorkspace("sfere");
+            const map = find(workspaceSurface, "sfere-view");
+            const mapSlot = findWhere(map, item => item.entry && item.entry.kind === "machine"
+                && typeof item.activated === "function");
+            check(mapSlot !== null, "selectable map sphere missing");
+            if (mapSlot) mapSlot.activated();
+            check(sharedSurfaces.workspaceView === "machines"
+                  && sharedSurfaces.selectedMachineId === (mapSlot ? mapSlot.entry.id : ""),
+                  "map sphere did not open its existing pane");
+            check(raises() === baseline, "map selection refocused");
+            sharedSurfaces.clearMachineSelection();
+
             // Native workspace tabs, including repeated clicks on active tabs.
-            for (const label of ["Control Center", "Diagnostics", "Machines"]) {
+            for (const label of ["Sfere", "Control Center", "Diagnostics", "Machines"]) {
                 const tab = control(workspaceSurface, label);
                 check(tab !== null, "workspace tab missing");
                 if (tab) { tab.activated(); tab.activated(); }

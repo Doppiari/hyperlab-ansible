@@ -44,6 +44,8 @@ ShellRoot {
     ShellState {
         id: sharedState
 
+        networksMapVisible: sharedSurfaces.workspaceOpen
+            && sharedSurfaces.workspaceView === "sfere"
         networksPageVisible: sharedSurfaces.workspaceOpen
             && sharedSurfaces.workspaceView === "controls"
             && sharedSurfaces.subpage === "networks"

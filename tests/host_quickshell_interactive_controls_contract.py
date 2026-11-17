@@ -288,7 +288,7 @@ def main() -> int:
         'title: "Wallpaper"',
         'text: identity.productName',
         "badge.claim.claimed",
-        "toggleLauncher(",
+        'openWorkspace("sfere")',
         "toggleSystemPanel(",
         # Feedback for a shell-requested host action is correlated with that
         # action, so an unrelated result can never settle it.

@@ -6,8 +6,8 @@
 // 18-unit rail mark to the wallpaper relief, so the product is recognisable
 // at every size without a second logo.
 //
-// The mark is the product entry point. An ordinary click opens the command
-// surface; the alternate buttons are documented shortcuts to Diagnostics and
+// The mark is the product entry point. An ordinary click opens the Sfere
+// map; the alternate buttons are documented shortcuts to Diagnostics and
 // the Control Center, never the only way to reach them. Presentation only:
 // it emits intent and never runs anything.
 
@@ -40,7 +40,7 @@ Item {
 
     Accessible.role: Accessible.Button
     Accessible.name: identity.productName
-    Accessible.description: "Open the " + identity.productName + " command surface"
+    Accessible.description: "Open the " + identity.productName + " map"
     Accessible.onPressAction: identity.launcherRequested()
 
     Rectangle {

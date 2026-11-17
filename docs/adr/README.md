@@ -216,6 +216,10 @@ entered the pipeline.
     — proposed: palette-owned domain dots on terminal list rows, with
     unchanged pipe bytes and existing product provenance.
 
+67. [`0067-sfere-map.md`](0067-sfere-map.md) — proposed: a static map of the
+    host and every Machine, sharing network and GPU observations, with angular
+    sectors, state orbits and accessible sector counts.
+
 The pre-VM baseline that led to these decisions remains available as
 [`../historical-audit-m0.md`](../historical-audit-m0.md); it is archival evidence,
 not current implementation documentation.
@@ -715,3 +719,15 @@ remain.
     [`cli_domain_spheres_contract.py`](../../tests/cli_domain_spheres_contract.py)
   - Prerequisites: operator review of the proposed terminal presentation choices
     and the four-command terminal/pipe check on Nitro.
+
+- [ADR 0067](0067-sfere-map.md)
+  - Decision: proposed.
+  - Built: built — static Sfere map, first workspace destination, glyph entry,
+    shared opt-in network reader, current GPU ownership, retained boot limits,
+    accessible counts and existing Machine/Create navigation.
+  - Activation: default — the common desktop role installs the view; network
+    links retain the existing Networks opt-in.
+  - Source: [`SfereView.qml`](../../roles/host_desktop_common/files/quickshell/hyperlab/SfereView.qml),
+    [`sfere_view_contract.py`](../../tests/sfere_view_contract.py)
+  - Prerequisites: acceptance of the proposed composition choices; installed
+    Nitro checks on both compositors, then Predator replay.

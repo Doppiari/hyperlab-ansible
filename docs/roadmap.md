@@ -579,6 +579,14 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
 - [ ] Machines showcase accepted on Nitro: domain groups and spheres,
       running light, selection and keyboard navigation
 
+- [x] native Sfere map: neutral host centre, state orbits and angular domain
+      sectors, declared network links through the shared opt-in reader, current
+      GPU token and boot restrictions, sector counts above 24 and accessible
+      navigation into the existing Machine pane (software-verified;
+      [ADR 0067](adr/0067-sfere-map.md), `tests/sfere_view_contract.py`)
+- [ ] Sfere map accepted on Nitro under both compositors, including external
+      domains, network/GPU facts and context navigation; then Predator replay
+
 ### 8a. Test infrastructure
 
 - [x] a nested lab host for host-level tests, made without privilege and

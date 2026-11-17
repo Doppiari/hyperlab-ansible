@@ -221,8 +221,9 @@ Scope {
     property bool networksViewEnabled: false
     // Injected once by the root, independent of presentation instances.
     property bool networksPageVisible: false
+    property bool networksMapVisible: false
     readonly property bool networksReadable:
-        state.networksViewEnabled && state.networksPageVisible
+        state.networksViewEnabled && (state.networksPageVisible || state.networksMapVisible)
 
     readonly property int networksTimeoutMs: 15000
     property int networksGeneration: 0

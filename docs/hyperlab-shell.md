@@ -141,7 +141,8 @@ Three rules shape everything else:
 Sfere
   Desktop                  wallpaper + rail, per output
   Top rail                 identity · workspaces | context · clock | host state
-  Workspace                one ordinary window, five destinations
+  Workspace                one ordinary window, six destinations
+    Sfere                  host and Machines, network paths and GPU ownership
     Machines               inventory, and the selected machine
     Control Center         Session · Audio and network · Input and appearance
     Diagnostics            Overview · Isolation and GPU · Inventory · Session
@@ -154,7 +155,7 @@ Sfere
   Lock                     hyprlock / swaylock, in the product language
 ```
 
-The five destinations are **native application destinations**, not renamed
+The six destinations are **native application destinations**, not renamed
 compositor workspace numbers, and they share one compositor-managed window.
 It is opened deliberately, it takes keyboard focus like any other
 application, the compositor places and stacks it normally, and closing it
@@ -214,6 +215,62 @@ exercise five occupied workspaces with long, unconfirmed Machine names.
   current owner, a retained boot claim, or an unreadable source — and stays
   silent when ownership is known and nothing holds it, because a free GPU at
   idle is not news.
+
+## Sfere map
+
+**Sfere** is the first workspace tab. Clicking the product glyph in the rail,
+pressing Enter on it or using its accessible press action opens this map.
+The command palette keeps its existing keyboard and IPC routes. The host is
+geometry B at the centre in the HOST grey: focus never tints this core.
+
+Every registry Machine and every other observed libvirt domain appears as a
+MachineSphere. Domains form angular sectors in palette order, external last.
+Running Machines use the inner ellipse; other observed states use the outer.
+Distance carries no network or trust rank. The same two radii serve every
+sector. The map has no drift; only an observed transition can move the shared
+sphere's state arc, and reduced motion holds that arc still. A small window
+scrolls the scene instead of shrinking or overlapping its controls.
+
+Links use the same network-inventory read as Networks and hyperlabctl net
+list. Only a registry Machine attached to a declared NAT network reported
+active gets a line to the host as router. Lab's isolated network draws none.
+An inactive, missing or unknown forwarding mode draws none. A line is not
+proof of firewall rules, access to host services or reachability; no link
+between Machines is inferred. The existing Networks opt-in remains in force:
+with it disabled the map explains why links are absent. A stale or failed
+answer also withholds links. External observations expose no attachments to
+this shell and therefore have no network lines.
+
+The GPU token follows current gpuOwnership, on its owner or on the host when
+a known answer names no owner. Unknown and stale answers draw no token and
+say ownership unknown. The separate boot claim marks sectors above its level
+as requiring a reboot, retaining a last-seen restriction after a failed read.
+Services stays outside that ladder. Inventory GPU configuration never decides
+where the token is drawn.
+
+Hover or focus shows the Machine name, domain and observed state in a fixed
+readout that stays visible while the scene scrolls. A new hover or focus
+selects its own readout; leaving falls back to keyboard focus, then hover.
+Arrows move
+in sector order; Enter or click opens the existing Machine context pane.
+External spheres open the read-only inventory, without an operational pane.
+Beyond 24 Machines the largest sectors collapse into a sphere with a count;
+the GPU owner remains individual. Mixed states use a neutral outline and the
+words mixed states, rather than claiming a shared running state. Count
+activation opens Machines. A count has a link only when all its members share
+the same declared active NAT network. An invisible accessible list still
+names every underlying Machine with its state and marks. A readable empty
+system shows the host and one Create a Machine action into the existing
+Create flow; unavailable inventory never reads as empty.
+
+[ADR 0067](adr/0067-sfere-map.md) records these proposed composition choices.
+Run `python tests/sfere_view_contract.py --renders DIR` to keep the four
+1920x1080 fixture captures: host alone, five domains, twelve including an
+external domain, and thirty Machines. The contract executes actual QML with
+inert transports, checks the CLI-derived network and GPU ladder fixtures,
+small-window clearance, reduced motion, accessible content, source failures
+and pointer/keyboard routing. Software-verified; installed Quickshell and
+Nitro/Predator acceptance remain open.
 
 ## Machines
 
@@ -561,12 +618,13 @@ physical acceptance.
 `ShellState` owns the one read-only request through
 `privatestack-hyperlab network-inventory`, whose fixed command is exactly
 `hyperlabctl --json net list`. It reads on opening and on the existing
-30-second slow cadence only while that enabled page is visible. Only one
+30-second slow cadence only while that enabled page or the Sfere map is
+visible. Both consumers share the same reader and opt-in. Only one
 bridge process may be in flight. Opening or reopening shows **Reading declared
 networks** until the first reply or completion deadline, regardless of shell
 uptime. A 15-second completion deadline marks an unanswered or failed start
-unavailable and signals the bridge process to stop. Hiding or disabling also
-signals that bridge to stop. Cancellation does not terminate the CLI or its
+unavailable and signals the bridge process to stop. Hiding both consumers or
+disabling also signals that bridge to stop. Cancellation does not terminate the CLI or its
 descendants as a process group; a child read can outlive the bridge. Each
 flight keeps its request generation through cancellation; hiding, disabling
 and reopening cannot publish a previous flight's answer or overlap a retiring

@@ -1,13 +1,13 @@
 // HyperLab product workspace (V447-C9.3).
 //
-// Machines, the Control Center and Diagnostics are one compositor-managed
+// Sfere, Machines, the Control Center and Diagnostics share one compositor-managed
 // window, not a permanently mapped layer surface pretending to be an
 // application. It is opened deliberately, it takes keyboard focus like any
 // other window, it closes back to the quiet desktop, and the compositor
 // places, tiles and stacks it with everything else the operator is running.
 //
-// One destination navigation frame is shared by all three views, so the
-// product reads as one application rather than three panels. The single
+// One destination navigation frame is shared by every view, so the
+// product reads as one application. The single
 // confirmation dialog lives here too: it belongs to the workspace, so
 // leaving the workspace invalidates it.
 
@@ -28,6 +28,7 @@ FloatingWindow {
     readonly property string view: workspace.shellSurfaces.workspaceView
 
     readonly property var destinations: [
+        { "id": "sfere", "label": workspace.shellState.productName, "glyph": workspace.icons.isolation },
         { "id": "machines", "label": "Machines", "glyph": workspace.icons.machines },
         { "id": "controls", "label": "Control Center", "glyph": workspace.icons.controlCenter },
         { "id": "diagnostics", "label": "Diagnostics", "glyph": workspace.icons.diagnostics },
@@ -40,6 +41,8 @@ FloatingWindow {
 
     title: {
         switch (workspace.view) {
+        case "sfere":
+            return workspace.shellState.productName;
         case "controls":
             return workspace.shellState.productName + " · Control Center";
         case "diagnostics":
@@ -384,7 +387,30 @@ FloatingWindow {
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
 
+                SfereView {
+                    anchors.fill: parent
+                    visible: workspace.view === "sfere"
+                    tokens: workspace.tokens
+                    theme: workspace.theme
+                    shellState: workspace.shellState
+
+                    onMachineRequested: identifier => {
+                        machineStage.creating = false;
+                        if (identifier.length > 0)
+                            workspace.shellSurfaces.selectMachine(
+                                identifier, workspace.shellState.machinesGeneration, false);
+                        else
+                            workspace.shellSurfaces.switchWorkspace("machines");
+                    }
+
+                    onCreateRequested: {
+                        workspace.shellSurfaces.switchWorkspace("machines");
+                        machineStage.creating = true;
+                    }
+                }
+
                 MachineStage {
+                    id: machineStage
                     anchors.fill: parent
                     visible: workspace.view === "machines"
 

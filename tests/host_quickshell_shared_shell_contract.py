@@ -143,6 +143,7 @@ def main() -> int:
             "WorkspaceSurface.qml",
             "WorkspaceFrame.qml",
             "MachineStage.qml",
+            "SfereView.qml",
             "MachineTile.qml",
             "MachineListRow.qml",
             "MachineContextPane.qml",
@@ -181,6 +182,7 @@ def main() -> int:
         ],
         "workspace_surface_kind": "floating-window",
         "workspace_destinations": [
+            "sfere",
             "machines",
             "controls",
             "diagnostics",

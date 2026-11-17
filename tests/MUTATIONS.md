@@ -6262,3 +6262,61 @@ change the new owner check failed on the unchanged v3 manifest with the D1
 diagnostic, and the v2 runs passed throughout. The origin check is a
 case-sensitive substring of the origin URL, so a lower-case
 `doppiari/...` origin is refused; this section does not change that rule.
+
+## Sfere map sources, geometry and navigation
+
+The map check is `python tests/sfere_view_contract.py`; map-focus uses
+`python tests/host_quickshell_focus_navigation_contract.py`. QML filenames below are
+under `roles/host_desktop_common/files/quickshell/hyperlab/`. Before each
+break, save that file to a separate copy. Make only the named change, run
+the check, copy the saved bytes back, compare them and rerun the check.
+Never restore from the index over unrelated edits.
+
+The initial contract failed because Sfere was not the first workspace
+destination. The small-window fixtures also failed on orbit clearance and
+a readout that scrolled out of view before those corrections.
+
+| Mutation | File and break | Observed red diagnostic | Restored |
+| --- | --- | --- | --- |
+| `undeclared-fixture-pair` | `tests/fixtures/sfere-view.json`: Append `["host", "lab-test", "lab"]` to five-domains links. | fixture contains a pair the network source does not declare | Exit 0, OK. |
+| `isolated-link` | `SfereView.qml`: Remove `rows[index].forward === "nat" &&` from the paths predicate. | five-domains checks: "a link is drawn for a pair the network source does not declare" | Exit 0, OK. |
+| `domain-radius` | `SfereView.qml`: Multiply the slot orbit by `(slot.entry.sector === "dev" ? 1.2 : 1)`. | five-domains checks: "orbit radius depends on the domain" | Exit 0, OK. |
+| `state-orbit` | `SfereView.qml`: Return `entry.sector === "clean"` from inner instead of checking running. | five-domains checks: "orbit radius depends on the domain" | Exit 0, OK. |
+| `centre-tint` | `SfereView.qml`: Bind the host core to `provenanceColor("dev")`. | host-alone checks: "the centre is tinted" | Exit 0, OK. |
+| `colour-literal` | `SfereView.qml`: Add `property color inventedTone: "red"` on the root. | colour literal in SfereView.qml | Exit 0, OK. |
+| `gpu-token` | `SfereView.qml`: Replace `slot.entry.id === view.gpuOwner` with `slot.entry.id === "clean-desk"`. | five-domains checks: "GPU token differs from the ownership source" | Exit 0, OK. |
+| `ladder-marks` | `SfereView.qml`: Prepend `false &&` to the needsReboot return expression. | five-domains checks: "ladder mark differs from hyperlabctl trust" | Exit 0, OK. |
+| `static-motion` | `SfereView.qml`: Add `NumberAnimation { duration: 10 }` on the root. | the static map gained an animation or a data transport | Exit 0, OK. |
+| `collapse-limit` | `SfereView.qml`: Set legibleSpheres to 999 instead of 24. | thirty checks: "collapse lost Machines or drew more than 24 spheres" | Exit 0, OK. |
+| `accessible-members` | `SfereView.qml`: Filter lab out of members before building listLines. | five-domains checks: "the screen reader list lost an underlying Machine" | Exit 0, OK. |
+| `glyph-route` | `HyperLabBar.qml`: Open machines instead of sfere in onLauncherRequested. | five-domains checks: "the glyph did not open Sfere" | Exit 0, OK. |
+| `create-route` | `WorkspaceSurface.qml`: Set machineStage.creating to false in onCreateRequested. | host-alone checks: "Create did not open the existing Create flow" | Exit 0, OK. |
+| `map-source-route` | `shell.qml`: Prepend `false &&` to networksMapVisible. | host-alone checks: "opening Sfere did not reuse the enabled Networks reader" | Exit 0, OK. |
+| `orbit-clearance` | `SfereView.qml`: Replace the radial-clearance term in neededOuter with zero. | twenty-four checks: "spheres overlap" | Exit 0, OK. |
+| `focus-centre-tint` | `SfereView.qml`: Bind the host core to the focusedMachine identity when its kind is machine. | five-domains checks: "Machine focus tinted the centre" | Exit 0, OK. |
+| `scrolling-readout` | `SfereView.qml`: Subtract scroll.contentX from the fixed legend x binding. | twenty-four checks: "scrolling hid the focused Machine readout" | Exit 0, OK. |
+| `pane-route` | `WorkspaceSurface.qml`: set machineStage.creating to true in onMachineRequested. | five-domains checks: "Enter did not open the existing Machine pane" | Exit 0, OK. |
+| `plot-height` | `SfereView.qml`: use view.height instead of scroll.height as the minimum sceneHeight. | host-alone checks: "full-size fixture clipped the scene behind the readout" | Exit 0, OK. |
+| `map-focus` | `WorkspaceSurface.qml`: pass true instead of false to the map's selectMachine request. | grid-focus: "map selection refocused" | Exit 0, OK. |
+| `hover-priority` | `SfereView.qml`: restore unconditional hover-first fallback and make both hover/focus handlers call noteReadout. | five-domains checks: "keyboard focus retained another sphere's hover readout" | Exit 0, OK. |
+| `identical-poll` | In a temporary copy of the complete QML tree, bypass adoptLayout's JSON-key guard with `false && key === view.layoutKey`; run the same contract with runtime.QML pointing at that copy. | GREEN, exit 0: the actual delegate identities remained stable for identical observations. | Exit 0, OK. |
+| `forced-reset` | In an isolated QML copy, handle machinesObservedAtChanged by setting slotRepeater.model to an empty array, then restoring view.slots with Qt.callLater. | five-domains checks: "identical poll rebuilt the spheres" | Exit 0, OK. |
+| `count-key` | `SfereView.qml`: give groups the machine:group- prefix instead of group:. | key-collision checks: "count sphere key collided with a Machine name" | Exit 0, OK. |
+
+Twenty-three breaks exited 1; the additional identical-poll guard bypass stayed
+green. Every one of the twenty-four byte-identical restorations exited 0.
+The collapse-limit replay guards its secondary count activation so the
+missing count cannot mask the primary sphere-count failure. Source checks
+refuse colour literals and animations; runtime checks inspect actual drawn
+links, radii, host colours, tokens, list entries and navigation. Fixture links
+are independently judged against the real net list formatter over repository
+network configuration, including the isolated lab network.
+
+The guard-bypass mutation did not break the asserted behaviour: the Qt
+runtime retained the delegate objects for identical observations even without
+that early return in these fixtures. This is an observed green result, not a
+claim that the check detected the removed guard or that Qt always preserves
+identity for every model update. The production guard remains. Forcing an actual delegate reset on every
+inventory timestamp update does fail the identity check. Both temporary
+copies were restored and the live source hash stayed unchanged. These
+observations are software verification only.

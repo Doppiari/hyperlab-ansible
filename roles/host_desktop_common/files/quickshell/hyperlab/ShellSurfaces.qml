@@ -24,6 +24,7 @@ QtObject {
     // Product destinations. These are native application destinations, not
     // compositor workspace numbers.
     readonly property var destinations: [
+        "sfere",
         "machines",
         "controls",
         "diagnostics",
@@ -32,6 +33,7 @@ QtObject {
     ]
 
     readonly property var subpages: ({
+        "sfere": ["map"],
         "machines": ["inventory"],
         "controls": ["session", "audio", "appearance"],
         "diagnostics": ["overview", "isolation", "inventory", "session"],

@@ -1,0 +1,501 @@
+{
+  "cases": [
+    {
+      "id": "host-alone",
+      "machines": [],
+      "gpu_owner": "",
+      "links": []
+    },
+    {
+      "id": "five-domains",
+      "machines": [
+        {
+          "name": "clean-desk",
+          "domain": "clean",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "dev-desk",
+          "domain": "dev",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "service-desk",
+          "domain": "services",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "dirty-desk",
+          "domain": "dirty",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "lab-test",
+          "domain": "lab",
+          "state": "shut off",
+          "disposable": true
+        }
+      ],
+      "gpu_owner": "dev-desk",
+      "links": [
+        [
+          "host",
+          "clean-desk",
+          "clean"
+        ],
+        [
+          "host",
+          "dev-desk",
+          "dev"
+        ],
+        [
+          "host",
+          "service-desk",
+          "services"
+        ],
+        [
+          "host",
+          "dirty-desk",
+          "dirty"
+        ]
+      ]
+    },
+    {
+      "id": "twelve-external",
+      "machines": [
+        {
+          "name": "clean-00",
+          "domain": "clean",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "dev-01",
+          "domain": "dev",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "services-02",
+          "domain": "services",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "dirty-03",
+          "domain": "dirty",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "lab-04",
+          "domain": "lab",
+          "state": "running",
+          "disposable": true
+        },
+        {
+          "name": "clean-05",
+          "domain": "clean",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "dev-06",
+          "domain": "dev",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "services-07",
+          "domain": "services",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "dirty-08",
+          "domain": "dirty",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "lab-09",
+          "domain": "lab",
+          "state": "shut off",
+          "disposable": true
+        },
+        {
+          "name": "dev-10",
+          "domain": "dev",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "hl-lab-host",
+          "domain": "external",
+          "state": "running",
+          "disposable": false
+        }
+      ],
+      "gpu_owner": "dev-01",
+      "links": [
+        [
+          "host",
+          "clean-00",
+          "clean"
+        ],
+        [
+          "host",
+          "dev-01",
+          "dev"
+        ],
+        [
+          "host",
+          "services-02",
+          "services"
+        ],
+        [
+          "host",
+          "dirty-03",
+          "dirty"
+        ],
+        [
+          "host",
+          "clean-05",
+          "clean"
+        ],
+        [
+          "host",
+          "dev-06",
+          "dev"
+        ],
+        [
+          "host",
+          "services-07",
+          "services"
+        ],
+        [
+          "host",
+          "dirty-08",
+          "dirty"
+        ],
+        [
+          "host",
+          "dev-10",
+          "dev"
+        ]
+      ]
+    },
+    {
+      "id": "thirty",
+      "machines": [
+        {
+          "name": "clean-00",
+          "domain": "clean",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "dev-01",
+          "domain": "dev",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "services-02",
+          "domain": "services",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "dirty-03",
+          "domain": "dirty",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "lab-04",
+          "domain": "lab",
+          "state": "running",
+          "disposable": true
+        },
+        {
+          "name": "clean-05",
+          "domain": "clean",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "dev-06",
+          "domain": "dev",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "services-07",
+          "domain": "services",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "dirty-08",
+          "domain": "dirty",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "lab-09",
+          "domain": "lab",
+          "state": "shut off",
+          "disposable": true
+        },
+        {
+          "name": "clean-10",
+          "domain": "clean",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "dev-11",
+          "domain": "dev",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "services-12",
+          "domain": "services",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "dirty-13",
+          "domain": "dirty",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "lab-14",
+          "domain": "lab",
+          "state": "running",
+          "disposable": true
+        },
+        {
+          "name": "clean-15",
+          "domain": "clean",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "dev-16",
+          "domain": "dev",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "services-17",
+          "domain": "services",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "dirty-18",
+          "domain": "dirty",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "lab-19",
+          "domain": "lab",
+          "state": "shut off",
+          "disposable": true
+        },
+        {
+          "name": "clean-20",
+          "domain": "clean",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "dev-21",
+          "domain": "dev",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "services-22",
+          "domain": "services",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "dirty-23",
+          "domain": "dirty",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "lab-24",
+          "domain": "lab",
+          "state": "running",
+          "disposable": true
+        },
+        {
+          "name": "clean-25",
+          "domain": "clean",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "dev-26",
+          "domain": "dev",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "services-27",
+          "domain": "services",
+          "state": "shut off",
+          "disposable": false
+        },
+        {
+          "name": "dirty-28",
+          "domain": "dirty",
+          "state": "running",
+          "disposable": false
+        },
+        {
+          "name": "lab-29",
+          "domain": "lab",
+          "state": "shut off",
+          "disposable": true
+        }
+      ],
+      "gpu_owner": "dev-01",
+      "links": [
+        [
+          "host",
+          "clean-00",
+          "clean"
+        ],
+        [
+          "host",
+          "dev-01",
+          "dev"
+        ],
+        [
+          "host",
+          "services-02",
+          "services"
+        ],
+        [
+          "host",
+          "dirty-03",
+          "dirty"
+        ],
+        [
+          "host",
+          "clean-05",
+          "clean"
+        ],
+        [
+          "host",
+          "dev-06",
+          "dev"
+        ],
+        [
+          "host",
+          "services-07",
+          "services"
+        ],
+        [
+          "host",
+          "dirty-08",
+          "dirty"
+        ],
+        [
+          "host",
+          "clean-10",
+          "clean"
+        ],
+        [
+          "host",
+          "dev-11",
+          "dev"
+        ],
+        [
+          "host",
+          "services-12",
+          "services"
+        ],
+        [
+          "host",
+          "dirty-13",
+          "dirty"
+        ],
+        [
+          "host",
+          "clean-15",
+          "clean"
+        ],
+        [
+          "host",
+          "dev-16",
+          "dev"
+        ],
+        [
+          "host",
+          "services-17",
+          "services"
+        ],
+        [
+          "host",
+          "dirty-18",
+          "dirty"
+        ],
+        [
+          "host",
+          "clean-20",
+          "clean"
+        ],
+        [
+          "host",
+          "dev-21",
+          "dev"
+        ],
+        [
+          "host",
+          "services-22",
+          "services"
+        ],
+        [
+          "host",
+          "dirty-23",
+          "dirty"
+        ],
+        [
+          "host",
+          "clean-25",
+          "clean"
+        ],
+        [
+          "host",
+          "dev-26",
+          "dev"
+        ],
+        [
+          "host",
+          "services-27",
+          "services"
+        ],
+        [
+          "host",
+          "dirty-28",
+          "dirty"
+        ]
+      ]
+    }
+  ]
+}

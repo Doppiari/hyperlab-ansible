@@ -157,7 +157,7 @@ host_desktop_common_shell_stage:
   # behind reviewed bridges; presentation components cannot execute backend
   # commands directly.
   # V447-C9.3 HyperLab Platform shell. One long-running Quickshell process
-  # owns the rail, the quiet idle desktop and the summoned surfaces; the three
+  # owns the rail, the quiet idle desktop and the summoned surfaces; the
   # product destinations share one ordinary compositor-managed window. State,
   # actions and appearance stay behind reviewed bridges, and presentation
   # components cannot execute backend commands directly.
@@ -205,6 +205,7 @@ host_desktop_common_shell_stage:
     - WorkspaceSurface.qml
     - WorkspaceFrame.qml
     - MachineStage.qml
+    - SfereView.qml
     - MachineTile.qml
     - MachineListRow.qml
     - MachineContextPane.qml
@@ -243,6 +244,7 @@ host_desktop_common_shell_stage:
   # other application and closes back to the quiet desktop.
   workspace_surface_kind: floating-window
   workspace_destinations:
+    - sfere
     - machines
     - controls
     - diagnostics

@@ -74,7 +74,7 @@ def main() -> int:
     )
     require(
         shell_stage["workspace_destinations"]
-        == ["machines", "controls", "diagnostics", "workbench", "devices"],
+        == ["sfere", "machines", "controls", "diagnostics", "workbench", "devices"],
         "product destination set changed",
     )
 

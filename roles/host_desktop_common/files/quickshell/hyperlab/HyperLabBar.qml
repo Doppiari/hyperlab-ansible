@@ -176,7 +176,7 @@ PanelWindow {
                 subtitleVisible: false
 
                 onLauncherRequested: {
-                    bar.shellSurfaces.toggleLauncher(bar.outputName);
+                    bar.shellSurfaces.openWorkspace("sfere");
                 }
 
                 onDiagnosticsRequested: {

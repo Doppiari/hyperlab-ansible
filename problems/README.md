@@ -514,4 +514,20 @@ proof.
   real refresh fixtures assumed synchronous SIGSTOP delivery and could accept
   an early stop refusal without inspecting the busy child.
 
+- [`sfere-orbit-clearance.md`](sfere-orbit-clearance.md):
+  tangential spacing left adjacent tilted orbits too close in a small window;
+  radial clearance now protects every sphere envelope.
+
+- [`sfere-pane-hidden-by-create.md`](sfere-pane-hidden-by-create.md):
+  selecting a map sphere left the Create form covering the target pane;
+  workspace navigation now settles both selection and the stage subview.
+
+- [`sfere-readout-hover-and-focus.md`](sfere-readout-hover-and-focus.md):
+  unconditional hover priority hid the keyboard-focused Machine; the latest
+  hover or focus event now selects the readout.
+
+- [`sfere-count-key-collision.md`](sfere-count-key-collision.md):
+  a sector count could shadow a Machine named group-clean; disjoint view keys
+  now preserve object and readout identity without changing backend names.
+
 Author: [importriri](https://github.com/importriri).
