@@ -1173,8 +1173,10 @@ Where Qt renders through RHI the sphere runs `shaders/sphere.frag.qsb` in a
 antialiased edge, since GLSL 100 es has no derivatives), `colour` and
 `light`. The engraving's turn is not called `rotation`: a `ShaderEffect`
 property of that name would be `Item.rotation` and turn the whole item.
-Every tint derives from `colour`; the only other constants are white light,
-the luminance weights of the dark core and the iridescence phase.
+Every tint derives from `colour`; the only other colour constants are white
+light, a grey glass floor (`GLASS_FLOOR`, so a dark colour still reads as
+glass), the luminance weights of the dark core (`LUMINANCE`) and the
+iridescence phase; the contract refuses any other constant `vec3`.
 
 `tools/build-shaders.sh` compiles every shader and records
 `shaders/SHADERS.sha256` ([ADR 0068](adr/0068-compiled-shell-shaders.md));
@@ -1183,8 +1185,16 @@ shader:
 
 ```bash
 tools/build-shaders.sh            # needs qsb from qt6-shadertools
-tools/build-shaders.sh --check    # what verify.sh level 0j runs
+tools/build-shaders.sh --check    # the manifest part of verify.sh level 0j
 ```
+
+`--check` rebuilds with whatever `qsb` it finds (`HYPERLAB_QSB`, then
+`PATH`, then `HYPERLAB_QT_BINDIR`, by default `/usr/lib/qt6/bin`) and
+requires the committed bytes. With a `qsb` other than the recorded one it
+says which made them (`byte-identical with qsb X (recorded with qsb Y)`), or
+refuses and asks for `tools/build-shaders.sh` to be run with that `qsb` and
+the result committed. Only without any `qsb` does it skip the rebuild, and
+it says so.
 
 The sphere draws its still form, `SphereStill.qml`, under the software
 backend, when the effect reports an error (a missing or broken `.qsb`), for
@@ -1204,8 +1214,12 @@ animation, the reviewed uniform block, `time` read once behind the lit
 gate), a software sheet of the six characters lit and dark at 48, 96 and 192
 pixels, and, where Xvfb is installed, the same sheet through OpenGL on Mesa
 llvmpipe with the shader, the fallbacks and the lit gate. `--sheet` and
-`--rhi-sheet` write the sheets. The shader's look on the Nitro's GPU is a
-hardware check.
+`--rhi-sheet` write the sheets. `verify.sh` level 0j runs the whole
+contract and prints its verdicts, so the log says whether the rebuild and
+the RHI render ran or why they were skipped. The nested lab host installs
+`qsb` but not Xvfb, so there the RHI part reports its skip
+([`rhi-render-offscreen-was-software.md`](../problems/rhi-render-offscreen-was-software.md)).
+The shader's look on the Nitro's GPU is a hardware check.
 
 ### Bar core
 

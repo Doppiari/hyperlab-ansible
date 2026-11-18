@@ -38,3 +38,16 @@ moving core, and a missing or corrupt `.qsb` falls back to the still form.
 The mutation `no-shader-error-fallback` in `tests/MUTATIONS.md` turns that
 RHI part red. Forcing the software backend in the RHI fixture reports the
 skip, never a shader result.
+
+## In the nested lab
+
+The nested lab host has no Xvfb (the
+[GTK display repair](gtk-contracts-required-an-unmanaged-display-server.md)
+moved its other display checks to Broadway for that reason), so there the
+contract cannot reach OpenGL and prints `RHI render skipped: Xvfb is not
+installed`. Its first gate run hid that line: level 0e shows only `OK` for
+a passing contract. `verify.sh` level 0j now runs the whole sphere contract
+and prints its verdicts, so the lab log says which parts ran. In the lab the
+shader's look, `no-shader-error-fallback` and `dark-gate-opened-in-qml` stay
+with the RHI render on a machine with Xvfb and with the hardware gate; the
+manifest, source and software checks run there in full.

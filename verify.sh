@@ -223,10 +223,12 @@ run ruff check .
 step "level 0i - ansible-lint (production profile)"
 run ansible-lint
 
-# The shell's compiled shaders: the manifest always, and where the recorded
-# qsb is installed a rebuild that must give the committed bytes.
-step "level 0j - compiled shaders (manifest; byte-identical rebuild where qsb exists)"
-run_reported python tests/network_sphere_contract.py --manifest
+# The shell's compiled shaders and the sphere that runs them: the manifest
+# always, a rebuild with any installed qsb that must give the committed
+# bytes, and the RHI render where Xvfb exists. Level 0e runs the same
+# contract silently; here its verdicts, skips included, reach the log.
+step "level 0j - compiled shaders and the network sphere (rebuild and RHI verdicts shown)"
+run_reported python tests/network_sphere_contract.py
 
 step "level 1 - syntax-check (every playbook, discovered)"
 ok=1

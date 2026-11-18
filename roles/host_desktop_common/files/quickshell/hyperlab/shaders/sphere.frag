@@ -7,7 +7,9 @@
 // divided by radiusShare, so the sphere's own radius is 1.
 //
 // Every tint derives from `colour`, the network's palette colour. The only
-// other constants are white light and the iridescence phase.
+// other colour constants are white light, the grey glass floor that keeps a
+// dark colour reading as glass, the luminance weights that desaturate a dark
+// core and the iridescence phase.
 //
 // `time` moves the core and the engraving only while the sphere is lit: a
 // dark sphere is still, whatever time its parent passes.
@@ -34,6 +36,8 @@ layout(std140, binding = 0) uniform buf {
 
 const float TAU = 6.2831853;
 const vec3 IRIDESCENCE_PHASE = vec3(0.0, 0.33, 0.67);
+const vec3 GLASS_FLOOR = vec3(0.011);
+const vec3 LUMINANCE = vec3(0.3, 0.59, 0.11);
 
 float hash(vec3 p)
 {
@@ -118,7 +122,7 @@ void main()
         vec3 n = vec3(d.x, -d.y, sqrt(1.0 - r2));
         vec3 nb = vec3(d.x, -d.y, -n.z);
         float fresnel = pow(1.0 - n.z, 2.2);
-        vec3 col = C * 0.045 + vec3(0.011);
+        vec3 col = C * 0.045 + GLASS_FLOOR;
 
         float spin = turn + t * (kind == 0 ? 0.05 : 0.12 + 0.1 * lit);
         float e1 = engraving(n, spin, 0.35) * (0.35 + 0.65 * n.z);
@@ -153,7 +157,7 @@ void main()
                 cc *= 0.16 + 0.84 * lit;
             }
             if (lit < 0.5)
-                cc = mix(vec3(dot(cc, vec3(0.3, 0.59, 0.11))), cc, 0.7) * (0.55 + 0.8 * lit);
+                cc = mix(vec3(dot(cc, LUMINANCE)), cc, 0.7) * (0.55 + 0.8 * lit);
             core = smoothstep(rc, rc - 0.04, r);
         }
         col = mix(col, cc, core);

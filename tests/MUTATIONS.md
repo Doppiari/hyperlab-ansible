@@ -6344,9 +6344,9 @@ observations are software verification only.
 
 ## The glass network sphere and its compiled shader
 
-The check is `python tests/network_sphere_contract.py`; the manifest part
-alone is `python tests/network_sphere_contract.py --manifest`, which
-`verify.sh` level 0j runs. Files below are under
+The check is `python tests/network_sphere_contract.py`, which `verify.sh`
+level 0j runs with its verdicts shown; the manifest part alone is
+`python tests/network_sphere_contract.py --manifest`. Files below are under
 `roles/host_desktop_common/files/quickshell/hyperlab/` unless named in full.
 Before each break, save the named files to a separate copy. When the break
 says "rebuilt", run `tools/build-shaders.sh` after the edit, so the manifest
@@ -6372,12 +6372,18 @@ before the shader manifest and the components existed.
 | `shared-pattern` | `SphereStill.qml`: the bands also show for character 5 and the lattice never. | one colour: two characters share one drawing at 48 px, lit 1 | Exit 0, OK. |
 | `still-ignores-lit` | `NetworkSphere.qml`: the still form's `lit` becomes `1`. | software: lit and dark spheres look the same | Exit 0, OK. |
 | `still-blank` | `SphereStill.qml`: add `opacity: 0` on the root. | blank sphere: software: character 0, lit 1, 48 px | Exit 0, OK. |
-| `silent-skip` | `tools/build-shaders.sh`: the version-mismatch `printf` becomes `:`. | `--manifest`: a different qsb must skip the rebuild and say why | Exit 0, OK. |
-| `rebuild-not-compared` | `tools/build-shaders.sh`: the `cmp -s` test becomes `false`. | `--manifest`: the shader check accepted a .qsb that the recorded qsb does not rebuild from its source | Exit 0, OK. |
+| `silent-skip` | `tools/build-shaders.sh`: the `rebuild skipped: qsb not found` `printf` becomes `:`. | `--manifest`: without qsb the check must skip the rebuild and say why | Exit 0, OK. |
+| `version-gate-restored` | `tools/build-shaders.sh`: when the installed `qsb` is not the recorded one, print `rebuild skipped` and return 0 instead of rebuilding. | `--manifest`: a qsb of another version must rebuild and say which | Exit 0, OK. |
+| `rebuild-not-compared` | `tools/build-shaders.sh`: the `! cmp -s` test becomes `false`. | `--manifest`: a qsb of another version that builds other bytes must be refused | Exit 0, OK. |
+| `tinted-constant` | `shaders/sphere.frag`: `GLASS_FLOOR` becomes `vec3(0.02, 0.011, 0.011)`, rebuilt. | constant vec3 outside the reviewed list (a tint not from colour?) | Exit 0, OK. |
 | `symlink-accepted` | `tools/build-shaders.sh`: `digest` drops `! -L`. | `--manifest`: the shader check accepted a .qsb redirected through a symlink | Exit 0, OK. |
 
-All sixteen breaks exited 1 with the diagnostic listed; every restored copy
-was byte-identical and exited 0. `dark-gate-opened-in-qml` and
+All eighteen breaks exited 1 with the diagnostic listed; every restored copy
+was byte-identical and exited 0. The rebuild breaks are caught by fixtures
+that stand in a `qsb` of another version (one writing the committed bytes,
+one writing other bytes) and hide every `qsb` from the search, so they turn
+red on any machine, with or without Qt Shader Tools. Where a real `qsb` is
+installed, a manifest re-recorded over a stale `.qsb` is refused too. `dark-gate-opened-in-qml` and
 `no-shader-error-fallback` are caught only by the RHI part, which runs where
 Xvfb is installed; without it the contract prints `RHI render skipped` and
 the source and manifest checks still hold the shader side. Forcing the

@@ -10,9 +10,11 @@ software backend, when the effect reports an error (a missing or broken
 Checks, in order:
 
 1. Manifest. tools/build-shaders.sh --check accepts the committed shaders and
-   prints whether it rebuilt them byte for byte or why it skipped; fixtures
-   in a temporary copy show that it refuses stale, missing, duplicated,
-   unlisted and redirected inputs. `--manifest` stops here (verify.sh 0j).
+   prints whether it rebuilt them byte for byte, with which qsb, or why it
+   skipped; fixtures in a temporary copy show that it refuses stale,
+   missing, duplicated, unlisted and redirected inputs, rebuilds with a qsb
+   of another version and refuses the bytes that qsb does not reproduce.
+   `--manifest` stops here.
 2. Source. No colour literal, colour constructor or colour name in either
    component; no timer or animation; the shader's uniform block is exactly
    the reviewed one, `colour` is its only colour input, and `time` is read
@@ -25,6 +27,9 @@ Checks, in order:
    installed: the shader form is chosen; forceStill, a missing and a corrupt
    .qsb choose the still form; a dark sphere ignores time and a lit one
    moves. Without Xvfb the contract says that it skipped this part.
+
+verify.sh level 0j runs the whole contract and shows its verdicts (the
+rebuild and the RHI render), so a skipped part is visible in its log.
 
 `--sheet PATH` writes the software fixture sheet, `--rhi-sheet PATH` the
 shader sheet (only when the RHI render runs).
@@ -79,6 +84,17 @@ UNIFORMS = (
     ("float", "radiusShare"), ("float", "pixelRadius"), ("vec4", "colour"), ("vec2", "light"),
 )
 TIME_GATE = "float t = lit > 0.0 ? time : 0.0;"
+# Every all-number vec3 the shader may write, and what it is. A tint that
+# does not derive from `colour` is a refusal, like a colour literal in QML.
+# The value noise's lattice corners (each component 0 or 1) are allowed too.
+SHADER_VEC3 = {
+    "vec3(0.0)": "zero",
+    "vec3(1.0)": "white light",
+    "vec3(0.011)": "grey glass floor (GLASS_FLOOR)",
+    "vec3(0.3,0.59,0.11)": "luminance weights of the dark core (LUMINANCE)",
+    "vec3(0.0,0.33,0.67)": "iridescence phase (IRIDESCENCE_PHASE)",
+    "vec3(1.7,9.2,3.1)": "value noise octave offset",
+}
 
 SCENE = r'''
 import QtQuick
@@ -163,11 +179,6 @@ def recorded_version() -> str:
     return lines[0]
 
 
-def local_qsb() -> str | None:
-    found = shutil.which("qsb") or shutil.which("qsb", path="/usr/lib/qt6/bin")
-    return found
-
-
 def manifest_contract() -> list[str]:
     require(BUILD.is_file() and not BUILD.is_symlink(), "tools/build-shaders.sh is missing")
     for path in (SOURCE, COMPILED, MANIFEST):
@@ -231,20 +242,50 @@ def manifest_contract() -> list[str]:
         broken.chmod(0o755)
         refused(SHADERS, "an HYPERLAB_QSB that does not run", HYPERLAB_QSB=str(broken))
 
-        # A qsb of another version: the rebuild is skipped, and the check says so.
-        other = base / "other-qsb"
-        other.write_text("#!/bin/sh\nprintf 'qsb 0.0.0\\n'\n", encoding="utf-8")
-        other.chmod(0o755)
-        outcome = run_build("--check", env={"HYPERLAB_QSB": str(other)})
-        require(outcome.returncode == 0 and any(
-            line.startswith("rebuild skipped: ") and "qsb 0.0.0" in line for line in report(outcome)),
-            f"a different qsb must skip the rebuild and say why: {report(outcome)}")
+        # A qsb of another version still rebuilds: the same bytes pass and say
+        # which qsb made them, other bytes are a refusal that names it.
+        appended = "printf '\\0' >>\"$out\"\n"
+        for name, extra, accepted in (("same-bytes", "", True), ("other-bytes", appended, False)):
+            other = base / f"other-qsb-{name}"
+            other.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$1\" = --version ]; then printf 'qsb 0.0.0\\n'; exit 0; fi\n"
+                "out=\"\"\n"
+                "while [ $# -gt 0 ]; do\n"
+                "    if [ \"$1\" = -o ]; then out=\"$2\"; shift; fi\n"
+                "    shift\n"
+                "done\n"
+                f"cat '{COMPILED}' >\"$out\" || exit 1\n" + extra,
+                encoding="utf-8")
+            other.chmod(0o755)
+            outcome = run_build("--check", env={"HYPERLAB_QSB": str(other)})
+            said = report(outcome)
+            if accepted:
+                require(outcome.returncode == 0 and any(
+                    line.startswith("rebuild: ") and f"qsb 0.0.0 (recorded with {recorded_version()})" in line
+                    for line in said),
+                    f"a qsb of another version must rebuild and say which: {said}")
+            else:
+                require(outcome.returncode != 0 and any(
+                    "with qsb 0.0.0 and commit" in line for line in said),
+                    f"a qsb of another version that builds other bytes must be refused: {said}")
 
-        # Where the recorded qsb exists, the rebuild must reproduce the bytes:
-        # a manifest re-recorded over a stale .qsb is still a refusal.
-        qsb = local_qsb()
-        if qsb and subprocess.run([qsb, "--version"], capture_output=True, text=True,
-                                  check=False).stdout.strip() == recorded_version():
+        # Without any qsb the rebuild is skipped, and the check says so.
+        nowhere = base / "no-qt-tools"
+        nowhere.mkdir()
+        search = os.pathsep.join(entry for entry in os.environ.get("PATH", "").split(os.pathsep)
+                                 if entry and not (Path(entry) / "qsb").exists())
+        outcome = run_build("--check", env={"PATH": search, "HYPERLAB_QSB": "",
+                                                 "HYPERLAB_QT_BINDIR": str(nowhere)})
+        require(outcome.returncode == 0 and any(
+            line.startswith("rebuild skipped: qsb not found") for line in report(outcome)),
+            f"without qsb the check must skip the rebuild and say why: {report(outcome)}")
+
+        # Wherever a qsb exists, the rebuild must reproduce the bytes: a
+        # manifest re-recorded over a stale .qsb is still a refusal.
+        # The script's own verdict says whether it found a qsb: the contract
+        # does not search for one with rules of its own.
+        if verdicts[0].startswith("rebuild: "):
             rerecorded = fixture("rerecorded")
             # A change the compiler sees; a comment would compile to the same bytes.
             source = SOURCE.read_text(encoding="utf-8")
@@ -257,10 +298,9 @@ def manifest_contract() -> list[str]:
             manifest = [f"{digest}  sphere.frag" if line.endswith("  sphere.frag") else line
                         for line in manifest]
             (rerecorded / "SHADERS.sha256").write_text("\n".join(manifest) + "\n", encoding="utf-8")
-            refused(rerecorded, "a .qsb that the recorded qsb does not rebuild from its source")
+            refused(rerecorded, "a .qsb that the installed qsb does not rebuild from its source")
         else:
-            verdicts.append("manifest fixtures: the byte-identical refusal needs the recorded "
-                            f"{recorded_version()}, not found here")
+            verdicts.append("manifest fixtures: the re-recorded .qsb refusal needs a qsb, not found here")
     return verdicts
 
 
@@ -301,6 +341,11 @@ def source_contract() -> None:
     members = tuple(tuple(member.split()) for member in blocks[0].split(";") if member.strip())
     require(members == UNIFORMS, f"the uniform block is not the reviewed one: {members}")
     body = code.replace(blocks[0], "")
+    corners = {f"vec3({x},{y},{z})" for x in ("0.0", "1.0") for y in ("0.0", "1.0") for z in ("0.0", "1.0")}
+    constants = {re.sub(r"\s+", "", found)
+                 for found in re.findall(r"\bvec3\s*\(\s*[-+0-9.eE]+(?:\s*,\s*[-+0-9.eE]+)*\s*\)", body)}
+    unreviewed = sorted(constants - set(SHADER_VEC3) - corners)
+    require(not unreviewed, f"constant vec3 outside the reviewed list (a tint not from colour?): {unreviewed}")
     require(len(re.findall(r"\btime\b", body)) == 1 and body.count(TIME_GATE) == 1,
             "time is read once, behind the lit gate: a dark sphere is still")
     require(not re.search(r"\bt\s*=", body.replace(TIME_GATE, "")), "the gated clock is assigned once")

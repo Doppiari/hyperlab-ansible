@@ -10,14 +10,18 @@
 # line, then the SHA-256 of every source and of every .qsb.
 #
 # --check refuses a missing, unreadable, duplicated, unlisted or redirected
-# input and any digest that differs. Where the recorded qsb version is found,
-# it also rebuilds every shader into a temporary directory and requires the
-# committed bytes. Without that qsb it says the rebuild was skipped and why;
-# the digests are still checked.
+# input and any digest that differs. Wherever a qsb is found, whatever its
+# version, it also rebuilds every shader into a temporary directory and
+# requires the committed bytes; when that qsb is not the recorded one and the
+# bytes differ, the shaders must be rebuilt with it and committed. Without
+# any qsb it says the rebuild was skipped and why; the digests are still
+# checked.
 #
 # The host never runs this: the role installs the committed .qsb files, so
 # the host needs no shader compiler. HYPERLAB_QSB names the qsb to use;
-# otherwise it is looked up in PATH, then in /usr/lib/qt6/bin.
+# otherwise it is looked up in PATH, then in HYPERLAB_QT_BINDIR, the
+# directory where the distribution installs Qt's tools (/usr/lib/qt6/bin on
+# Arch, the default).
 set -uo pipefail
 
 readonly MANIFEST_NAME=SHADERS.sha256
@@ -38,9 +42,11 @@ find_qsb() {
         printf '%s\n' "${HYPERLAB_QSB}"
         return 0
     fi
+    local bindir="${HYPERLAB_QT_BINDIR:-/usr/lib/qt6/bin}"
+
     candidate="$(command -v qsb 2>/dev/null)" || candidate=""
-    if [[ -z "${candidate}" && -x /usr/lib/qt6/bin/qsb ]]; then
-        candidate=/usr/lib/qt6/bin/qsb
+    if [[ -z "${candidate}" && -x "${bindir}/qsb" ]]; then
+        candidate="${bindir}/qsb"
     fi
     [[ -n "${candidate}" ]] && printf '%s\n' "${candidate}"
     return 0
@@ -132,6 +138,7 @@ check() {
     local path=""
     local qsb=""
     local version=""
+    local origin=""
     local scratch=""
     local -a lines=()
     local -a sources=()
@@ -184,10 +191,9 @@ check() {
         return 0
     fi
     version="$(qsb_version "${qsb}")" || return 1
+    origin=""
     if [[ "${version}" != "${recorded}" ]]; then
-        printf 'rebuild skipped: %s is not the recorded %s; the digests match the manifest\n' \
-            "${version}" "${recorded}"
-        return 0
+        origin=" (recorded with ${recorded})"
     fi
     scratch="$(mktemp -d)" || { fail "cannot create a temporary directory"; return 1; }
     for name in "${sources[@]}"; do
@@ -197,12 +203,17 @@ check() {
         fi
         if ! cmp -s -- "${scratch}/${name}.qsb" "${dir}/${name}.qsb"; then
             rm -rf -- "${scratch}"
-            fail "${name}.qsb is not what ${version} builds from ${name}: run tools/build-shaders.sh"
+            if [[ -n "${origin}" ]]; then
+                fail "${name}.qsb is not what ${version} builds from ${name}${origin}:" \
+                    "run tools/build-shaders.sh with ${version} and commit the result"
+            else
+                fail "${name}.qsb is not what ${version} builds from ${name}: run tools/build-shaders.sh"
+            fi
             return 1
         fi
     done
     rm -rf -- "${scratch}"
-    printf 'rebuild: %d shader(s) byte-identical with %s\n' "${#sources[@]}" "${version}"
+    printf 'rebuild: %d shader(s) byte-identical with %s%s\n' "${#sources[@]}" "${version}" "${origin}"
 }
 
 main() {
