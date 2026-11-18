@@ -6265,6 +6265,10 @@ case-sensitive substring of the origin URL, so a lower-case
 
 ## Sfere map sources, geometry and navigation
 
+These breaks were run against the map of ADR 0067. ADR 0069 replaced its
+picture with the seal, whose breaks follow in the next section; the map's
+`SfereView.qml` lines named below no longer exist.
+
 The map check is `python tests/sfere_view_contract.py`; map-focus uses
 `python tests/host_quickshell_focus_navigation_contract.py`. QML filenames below are
 under `roles/host_desktop_common/files/quickshell/hyperlab/`. Before each
@@ -6341,6 +6345,48 @@ and loses both, so it is red. A forced delegate reset on every inventory
 timestamp is red on the identity check; the scenario then stops on that
 recorded failure instead of touching the destroyed spheres. These
 observations are software verification only.
+
+## Sfere seal: ports, spokes, heartbeat and atmosphere
+
+The check is `python tests/sfere_view_contract.py`; the geometry B break
+also runs `python tests/product_symbol_geometry_contract.py`, the fallback
+cards break `python tests/host_quickshell_focus_navigation_contract.py`, and
+the two Ambient motion file breaks the `ambient-motion` scenario of
+`python tests/host_quickshell_runtime_contract.py`. QML filenames below are
+under `roles/host_desktop_common/files/quickshell/hyperlab/`. Before each
+break, save the named file to a separate copy; make only the named change,
+run the check, copy the saved bytes back, compare them and rerun the check.
+
+The rewritten contract was first red on its layout check, "a network or its
+words leave the stage", before the seal's size was solved from the labels'
+measured heights.
+
+| Mutation | File and break | Observed red diagnostic | Restored |
+| --- | --- | --- | --- |
+| `spoke-to-isolated` | `SfereView.qml`: `broken: row.isolated` becomes `broken: false`. | no-machines checks: "sealed port or broken spoke differs from forward isolated" | Exit 0, OK. |
+| `invented-port` | `SfereView.qml`: append a `phantom` entry to `ports`. | no-machines checks: "port set differs from the network source" | Exit 0, OK. |
+| `blade-ratio` | `IsolationGlyph.qml`: `arcInnerRatio: 0.685` becomes `0.7`. | product symbol: "glyph: arcInnerRatio must be 0.685"; Sfere no-machines checks: "keystone geometry differs from ADR 0056" | Exit 0, OK. |
+| `ambient-near-lit` | `SealAmbient.qml`: add a required `litPlaces` input and triple a mote's speed near a lit place; `SfereView.qml` passes the lit places. | the atmosphere gained an input: [..., 'litPlaces', ...] | Exit 0, OK. |
+| `stale-beat` | `SfereView.qml`: drop `view.fresh &&` from `beatPending` and `!view.fresh ||` from `updateBeat`. | five-networks checks: "the heart beats with a stale source, or the words do not say so" | Exit 0, OK. |
+| `ambient-ignores-reduced` | `SfereView.qml`: drop `&& !view.reduced` from `ambientActive`. | five-networks checks: "reduced motion left something moving" | Exit 0, OK. |
+| `ambient-ignores-hidden` | `SfereView.qml`: drop `view.visible &&` from `shown`. | five-networks checks: "a hidden seal kept its clock running" | Exit 0, OK. |
+| `lit-without-running` | `SfereView.qml`: `runningCount > 0` becomes `runningCount >= 0` in a network's `lit`. | no-machines checks: "a core is lit where no managed Machine runs, or dark where one does" | Exit 0, OK. |
+| `character-keys` | `SfereView.qml`: remove `lab` from `networkCharacters`. | the palette and character tables have different keys | Exit 0, OK. |
+| `spoke-colour-literal` | `SealSpoke.qml`: add `property color inventedTone: "red"`. | colour literal in SealSpoke.qml | Exit 0, OK. |
+| `second-timer` | `SealAmbient.qml`: add a running 16 ms `Timer`. | the seal must have exactly one timer, at 33 ms | Exit 0, OK. |
+| `panel-gateway` | `SfereView.qml`: `gatewayWords` always returns `unknown`. | no-machines checks: "the panel's gateway, DHCP or GPU level differ from net list" | Exit 0, OK. |
+| `engraving-in-cut` | `HostKeystone.qml`: centre the left blade's words at 0.62 pi instead of pi. | no-machines checks: "an engraved letter sits in the cut between the blades" | Exit 0, OK. |
+| `no-fallback-cards` | `SfereView.qml`: the panel's Machines become `[]` when no network is shown. | five-networks checks: "with no network shown, a managed Machine is no longer one card away"; focus navigation: grid-focus: "selectable seal card missing" | Exit 0, OK. |
+| `ambient-absent-off` | `ShellState.qml`: an absent `ambient-motion` file sets `ambientMotion` false. | ambient-motion: "ambient-motion file content read wrongly" | Exit 0, OK. |
+| `ambient-unknown-on` | `ShellState.qml`: any content but `0` or `false` reads as on. | ambient-motion: "ambient-motion file content read wrongly" | Exit 0, OK. |
+
+All sixteen breaks exited 1 with the diagnostic listed, and every restored
+copy was byte-identical and exited 0. `ambient-near-lit` is refused by the
+source check before any scene runs: the atmosphere's whole interface is the
+seal's geometry and one clock, so making it faster near a network needs an
+input it may not have. The runtime check that motes move no faster near a
+network, and that lighting every core leaves the atmosphere unchanged,
+stands behind it. These observations are software verification only.
 
 ## The glass network sphere and its compiled shader
 
