@@ -11,16 +11,20 @@ code. Changing a shell directory without its IPC callers, unit graph and
 refresh observer identities would break an existing session.
 
 The three repositories still declare MIT at their roots. The operator chose
-GPL-3.0-or-later for future versions on 2026-11-09. Five author identities,
-listed in the decision packet, are confirmed by the operator; the other two
-repositories use subsets of those five. Confirmation of commit identities
+GPL-3.0-or-later for future versions on 2026-11-09 and confirmed on the same
+day that five author identities are theirs. Those five are the full set in
+this repository's history, rechecked on 2026-11-10 and 2026-11-18; the other
+two repositories use subsets of them. Confirmation of commit identities
 does not resolve third-party origins. The source audit still records four
 GPL-2.0-or-later patches without a complete GPL copy and 105 images without
 provenance. The evidence repository has its own unresolved derivations.
 
-Doppiari already exists as the operator's GitHub organisation. Repository
-transfer, final internal spellings, compatibility lifetime and the licence
-switch date require the operator's decisions. No implementation or transfer
+Doppiari is the operator's GitHub organisation. On 2026-11-16 the three
+repositories moved to it with their names and history kept, and the
+references on `main` were updated to the new owner. Only an optional rename
+inside the organisation, with its reference update, remains. The repository
+names, final internal spellings, compatibility lifetime and the licence
+switch date require the operator's decisions. No implementation or rename
 is authorized by this record's Proposed status.
 
 ## Candidate names
@@ -35,9 +39,9 @@ These are candidates for approval, not installed interfaces.
 | `hyperlab-*.service`, session targets and desktop entries | Corresponding `sfere-*` names | One coherent unit graph and Ly catalogue; preserve Sway recovery and logout semantics. |
 | `/etc/hyperlabctl/checkout` | Keep initially; `/etc/sfere/checkout` is a later candidate | One authoritative regular pointer; never choose silently between two pointers. |
 | Presentation helpers `privatestack-*`, `hyperlab-*` | Corresponding `sfere-*` names | Exact forwarding executables where needed; security-sensitive helpers need separate units and checks. |
-| `importriri/hyperlab-ansible` | `Doppiari/sfere` | Transfer the existing repository with its history; update callers explicitly. |
-| `importriri/arch-bootstrap` | `Doppiari/sfere-bootstrap` | Same; preserve the stage-1 storage interface. |
-| `importriri/arch-hypervisor-lab` | `Doppiari/sfere-lab` | Same; preserve old evidence and commit identities. |
+| `Doppiari/hyperlab-ansible` | `Doppiari/sfere`, or keep the current name | Rename inside the organisation, keeping its history; update callers explicitly. |
+| `Doppiari/arch-bootstrap` | `Doppiari/sfere-bootstrap`, or keep the current name | Same; preserve the stage-1 storage interface. |
+| `Doppiari/arch-hypervisor-lab` | `Doppiari/sfere-lab`, or keep the current name | Same; preserve old evidence and commit identities. |
 | Palette filenames and pool IDs such as `hyperlab-trust-v2` | New `sfere-*` spellings only for approved, cleared assets | Keep historical IDs and digest-bound records; a name change supplies no rights. |
 
 ## Proposed migration policy
@@ -146,33 +150,39 @@ hardware gates stay open.
 
 ## Repository transfer and final guard
 
-The operator transfers the existing three repositories to the existing
-Doppiari organisation and applies the chosen names. Preserve commit objects
-and history; do not recreate repositories by copying current files. Verify
-permissions and target-name availability first. Transfer depends on approval
-of this record and the chosen repository names: approval authorizes the
-operation, and names identify its destinations. It does not depend on code
-migrations, asset clearance or licence execution; moving existing repositories
-does not require changing their contents or terms. The chosen licence switch
-may precede, coincide with or follow the transfer.
+The owner move is done: on 2026-11-16 the three repositories moved to the
+Doppiari organisation with their history and names kept, and the CI
+checkout, README, guides, release notes and v3 acceptance manifest on `main`
+name the new owner. What remains is optional: renaming the repositories
+inside the organisation to the chosen names, and the reference update that
+follows. If the operator keeps the current names, only a check that no
+current caller names the previous owner remains.
 
-Complete the transfers and chosen repository renames before ordinary
-repository-reference updates in CI, ISO fetch inputs or guides. Earlier
-implementation units retain the current resolvable repository references.
-The stage-2 reference and CI selector update follows the transfers directly
-and waits for no code migration, so the CI checkout of a moved repository
-does not depend on a rename redirect while the namespace units land; the
-installed-migration acceptance is a separate, later step.
-Check settings, redirects and
-existing CI callers after each transfer; pause further transfers on failure.
-Either transfer the affected repository back when permissions and name
-availability permit, or queue a minimal caller-repair unit in each affected
-repository against that target, which now exists. Such a repair depends only
-on this record's approval and that target's existence, not on all transfers
-or code migrations; repeat the failed checks before resuming. Once all targets
-exist and callers pass, perform the remaining reference updates in one
-repository at a time and require its checks before proceeding. Do not rely
-on redirects for action references or hosted project sites. Do not reuse the
+A rename keeps commit objects and history; do not recreate repositories by
+copying current files. Verify permissions and target-name availability
+first. The rename depends on approval of this record and the chosen
+repository names: approval authorizes the operation, and names identify its
+destinations. It does not depend on code migrations, asset clearance or
+licence execution; renaming existing repositories does not require changing
+their contents or terms. The chosen licence switch may precede, coincide
+with or follow the rename.
+
+Complete the chosen repository renames before ordinary repository-reference
+updates in CI, ISO fetch inputs or guides. Earlier implementation units
+retain the current resolvable repository references. The stage-2 reference
+and CI selector update follows the renames directly and waits for no code
+migration, so the CI checkout of a renamed repository does not depend on a
+rename redirect while the namespace units land; the installed-migration
+acceptance is a separate, later step. Check settings, redirects and existing
+CI callers after each rename; pause further renames on failure. Either
+rename the affected repository back when name availability permits, or
+queue a minimal caller-repair unit in each affected repository against that
+target, which now exists. Such a repair depends only on this record's
+approval and that target's existence, not on all renames or code
+migrations; repeat the failed checks before resuming. Once all targets exist
+and callers pass, perform the remaining reference updates in one repository
+at a time and require its checks before proceeding. Do not rely on
+redirects for action references or hosted project sites. Do not reuse the
 old repository locations.
 
 Update the real cross-repository checkout paths and required comparisons,
@@ -181,12 +191,12 @@ comparison, `tests/cross_repo_contract.py`, release inputs and newcomer
 guides. Private integration references and local remotes need their own
 inventory at execution time; no uninspected external path is assumed.
 
-The last namespace implementation unit adds a tracked-path and text guard for
-old product names and all three former repository names across the repositories.
-The guard follows completion of the ADR 0059 visible migration: the surfaces
-that record still defers are live display labels, which fit none of the
-exception categories below, so they are migrated with their readers and
-narrow checks before the guard runs, not absorbed into it.
+The last namespace implementation unit adds a tracked-path and text guard
+for old product names and all three former repository names across the
+repositories. The guard follows completion of the ADR 0059 visible
+migration: the surfaces that record still defers are live display labels,
+which fit none of the exception categories below, so they are migrated with
+their readers and narrow checks before the guard runs, not absorbed into it.
 Unresolved asset pools and evidence derivations do not block the namespace
 migrations or this guard: retain their current identifiers and bytes with
 exact exceptions that record the unresolved publication gate. Renaming
@@ -203,8 +213,8 @@ publication asset/derivation, or an exact guard pattern/negative fixture.
 Validate exception-manifest names as typed metadata, not arbitrary prose;
 do not exempt the manifest or guard source wholesale. Never exempt an entire
 docs, tests or ADR tree. Parse structured inputs and argv to distinguish
-preserved policy identifiers from obsolete callers. Refuse missing, duplicate, redirected,
-stale or overly broad exception records. Planned mutations inject old
+preserved policy identifiers from obsolete callers. Refuse missing,
+duplicate, redirected, stale or overly broad exception records. Planned mutations inject old
 command/config/unit/CI references, new old-named paths, unexpected history
 text, missing and duplicate exceptions and a forbidden state symlink;
 all must fail their relevant checks, while approved history and preserved
@@ -235,14 +245,15 @@ switch date. Candidate spellings remain subject to the operator's name
 clearance. Approve this ADR before any implementation unit is queued.
 The chosen names and alias lifetime constrain every unit, the final guard
 included, since the guard checks the chosen spellings and the public
-aliases still retained. The switch date imposes no ordering on repository transfer, the
-code migrations, the installer rename or the reference updates; it gates only
-the three licence units, and the final guard follows them, so the switch date
-bounds the completion of the final guard.
-Authorship is already confirmed for the five inventoried identities; only
-an additional identity would need another answer, and it would hold the
-licence unit concerned and the final guard after it. Asset-origin exceptions
-remain separate publication blockers, not a reopening of the licence choice.
+aliases still retained. The switch date imposes no ordering on the
+repository rename, the code migrations, the installer rename or the
+reference updates; it gates only the three licence units, and the final
+guard follows them, so the switch date bounds the completion of the final
+guard. Authorship is already confirmed for the five inventoried identities;
+only an additional identity would need another answer, and it would hold
+the licence unit concerned and the final guard after it. Asset-origin
+exceptions remain separate publication blockers, not a reopening of the
+licence choice.
 
 Acceptance requires a tested maintenance upgrade and reversal, unchanged
 Machine/storage state, an unchanged second apply, software checks in all

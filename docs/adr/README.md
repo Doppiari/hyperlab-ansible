@@ -194,7 +194,8 @@ entered the pipeline.
 62. [`0062-sfere-namespace-and-release-transition.md`](0062-sfere-namespace-and-release-transition.md)
     — proposed: coordinate CLI, shell and session names while retaining
     durable state; execute the decided GPL-3.0-or-later switch separately
-    and transfer the existing repositories to Doppiari before the final guard.
+    and finish any chosen rename of the repositories, already moved to
+    Doppiari, before the final guard.
 
 63. [`0063-v1-acceptance-campaign.md`](0063-v1-acceptance-campaign.md)
     — proposed: a separate version-3 campaign for the selected v1, retaining
@@ -665,15 +666,16 @@ remain.
   - Decision: proposed migration policy and candidate internal names;
     GPL-3.0-or-later is the operator's settled licence choice.
   - Built: none — the record plans the transition; no namespace, licence
-    or repository transfer has been implemented.
+    or repository rename has been implemented. The owner move to Doppiari
+    was done separately on 2026-11-16.
   - Activation: none — there is no transition code to activate.
   - Source: none
   - Prerequisites: the operator's final names, alias lifetime, switch date
-    and acceptance of the record; transfers may proceed independently of
-    asset resolution, code migrations and the licence switch. Ordered namespace
-    implementation and refusal checks, and the ADR 0059 visible migration,
-    precede the final guard and installed-host acceptance; asset-rights
-    resolution remains a separate publication gate.
+    and acceptance of the record; a repository rename may proceed
+    independently of asset resolution, code migrations and the licence
+    switch. Ordered namespace implementation and refusal checks, and the
+    ADR 0059 visible migration, precede the final guard and installed-host
+    acceptance; asset-rights resolution remains a separate publication gate.
 
 - [ADR 0063](0063-v1-acceptance-campaign.md)
   - Decision: proposed.

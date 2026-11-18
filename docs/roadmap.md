@@ -991,10 +991,12 @@ Measured with the complete security plane active.
       a new identity needs confirmation. Resolve third-party source notices,
       unknown image origins and evidence derivations before claiming
       publication clearance; root licence changes do not clear those assets
-- [ ] operator transfer of the existing repositories to the existing Doppiari
-      organisation with history preserved, independently of asset resolution,
-      code migrations and the licence switch date; repair failed callers against
-      each existing target before continuing, then complete dependent-reference
+- [ ] the repositories moved to the Doppiari organisation on 2026-11-16 with
+      their names and history kept; what remains is the optional rename inside
+      the organisation to the names chosen in ADR 0062, independently of asset
+      resolution, code migrations and the licence switch date, with history
+      and caller checks after each rename; repair failed callers against each
+      existing target before continuing, then complete dependent-reference
       updates, maintenance-session upgrade/reversal and unchanged second apply.
       After the visible name migration above is finished, end with an
       old-name guard whose exact exceptions distinguish canonical
