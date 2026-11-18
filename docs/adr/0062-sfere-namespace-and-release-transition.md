@@ -159,6 +159,10 @@ may precede, coincide with or follow the transfer.
 Complete the transfers and chosen repository renames before ordinary
 repository-reference updates in CI, ISO fetch inputs or guides. Earlier
 implementation units retain the current resolvable repository references.
+The stage-2 reference and CI selector update follows the transfers directly
+and waits for no code migration, so the CI checkout of a moved repository
+does not depend on a rename redirect while the namespace units land; the
+installed-migration acceptance is a separate, later step.
 Check settings, redirects and
 existing CI callers after each transfer; pause further transfers on failure.
 Either transfer the affected repository back when permissions and name
@@ -179,6 +183,10 @@ inventory at execution time; no uninspected external path is assumed.
 
 The last namespace implementation unit adds a tracked-path and text guard for
 old product names and all three former repository names across the repositories.
+The guard follows completion of the ADR 0059 visible migration: the surfaces
+that record still defers are live display labels, which fit none of the
+exception categories below, so they are migrated with their readers and
+narrow checks before the guard runs, not absorbed into it.
 Unresolved asset pools and evidence derivations do not block the namespace
 migrations or this guard: retain their current identifiers and bytes with
 exact exceptions that record the unresolved publication gate. Renaming
@@ -225,9 +233,15 @@ The operator chooses the final CLI, config, helper, unit, path and repository
 names; the duration and release boundary of public aliases; and the licence
 switch date. Candidate spellings remain subject to the operator's name
 clearance. Approve this ADR before any implementation unit is queued.
-The switch date imposes no ordering on repository transfer.
+The chosen names and alias lifetime constrain every unit, the final guard
+included, since the guard checks the chosen spellings and the public
+aliases still retained. The switch date imposes no ordering on repository transfer, the
+code migrations, the installer rename or the reference updates; it gates only
+the three licence units, and the final guard follows them, so the switch date
+bounds the completion of the final guard.
 Authorship is already confirmed for the five inventoried identities; only
-an additional identity would need another answer. Asset-origin exceptions
+an additional identity would need another answer, and it would hold the
+licence unit concerned and the final guard after it. Asset-origin exceptions
 remain separate publication blockers, not a reopening of the licence choice.
 
 Acceptance requires a tested maintenance upgrade and reversal, unchanged

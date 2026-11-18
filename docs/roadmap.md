@@ -996,7 +996,8 @@ Measured with the complete security plane active.
       code migrations and the licence switch date; repair failed callers against
       each existing target before continuing, then complete dependent-reference
       updates, maintenance-session upgrade/reversal and unchanged second apply.
-      Finish with an old-name guard whose exact exceptions distinguish canonical
+      After the visible name migration above is finished, end with an
+      old-name guard whose exact exceptions distinguish canonical
       compatibility state, immutable history and unresolved publication assets;
       asset clearance remains required for a separate release-clearance decision
 - [ ] wallpaper and polish, screenshots, video and release documentation

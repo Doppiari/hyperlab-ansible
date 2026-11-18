@@ -671,8 +671,9 @@ remain.
   - Prerequisites: the operator's final names, alias lifetime, switch date
     and acceptance of the record; transfers may proceed independently of
     asset resolution, code migrations and the licence switch. Ordered namespace
-    implementation and refusal checks precede the final guard and installed-host
-    acceptance; asset-rights resolution remains a separate publication gate.
+    implementation and refusal checks, and the ADR 0059 visible migration,
+    precede the final guard and installed-host acceptance; asset-rights
+    resolution remains a separate publication gate.
 
 - [ADR 0063](0063-v1-acceptance-campaign.md)
   - Decision: proposed.
