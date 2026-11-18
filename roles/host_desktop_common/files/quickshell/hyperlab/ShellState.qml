@@ -1230,9 +1230,12 @@ Scope {
             return;
         }
 
+        // Attachments are passed through as observed: null when the domain
+        // could not be read, never guessed. They grant no identity.
         state.observedDomains = parsed.machines.map(row => ({
             "name": row.name,
             "state": row.state,
+            "networks": Array.isArray(row.networks) ? row.networks.map(String) : null,
             "provenance": "unclassified",
             "managed": row.managed === true
                 ? true

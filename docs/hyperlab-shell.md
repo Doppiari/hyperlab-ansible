@@ -219,7 +219,8 @@ exercise five occupied workspaces with long, unconfirmed Machine names.
 ## Sfere map
 
 **Sfere** is the first workspace tab. Clicking the product glyph in the rail,
-pressing Enter on it or using its accessible press action opens this map.
+pressing Enter on it or using its accessible press action opens this map;
+so does `qs -c hyperlab ipc call workspace sfere`, for a compositor binding.
 The command palette keeps its existing keyboard and IPC routes. The host is
 geometry B at the centre in the HOST grey: focus never tints this core.
 
@@ -227,19 +228,22 @@ Every registry Machine and every other observed libvirt domain appears as a
 MachineSphere. Domains form angular sectors in palette order, external last.
 Running Machines use the inner ellipse; other observed states use the outer.
 Distance carries no network or trust rank. The same two radii serve every
-sector. The map has no drift; only an observed transition can move the shared
+sector. Every sphere has its own angle, running ones spread evenly among
+their sector's angles, so no sphere stands on another's line to the host. The map has no drift; only an observed transition can move the shared
 sphere's state arc, and reduced motion holds that arc still. A small window
 scrolls the scene instead of shrinking or overlapping its controls.
 
 Links use the same network-inventory read as Networks and hyperlabctl net
-list. Only a registry Machine attached to a declared NAT network reported
-active gets a line to the host as router. Lab's isolated network draws none.
+list. Only a Machine or external domain attached to a declared NAT network
+reported active gets a line to the host as router. The attachment decides,
+never the domain: a dev Machine attached only to lab has no line. Lab's isolated network draws none.
 An inactive, missing or unknown forwarding mode draws none. A line is not
 proof of firewall rules, access to host services or reachability; no link
 between Machines is inferred. The existing Networks opt-in remains in force:
 with it disabled the map explains why links are absent. A stale or failed
-answer also withholds links. External observations expose no attachments to
-this shell and therefore have no network lines.
+answer also withholds links. External observations carry the attachments
+the raw inventory reports, or none when it could not read them. A line stops
+outside its own Machine's name, the host word and the host GPU token.
 
 The GPU token follows current gpuOwnership, on its owner or on the host when
 a known answer names no owner. Unknown and stale answers draw no token and
@@ -254,8 +258,9 @@ selects its own readout; leaving falls back to keyboard focus, then hover.
 Arrows move
 in sector order; Enter or click opens the existing Machine context pane.
 External spheres open the read-only inventory, without an operational pane.
-Beyond 24 Machines the largest sectors collapse into a sphere with a count;
-the GPU owner remains individual. Mixed states use a neutral outline and the
+Beyond 24 Machines the largest sectors collapse into spheres with a count,
+one per orbit, so a count of running Machines sits on the inner orbit and
+the rest on the outer; the GPU owner remains individual. Mixed states use a neutral outline and the
 words mixed states, rather than claiming a shared running state. Count
 activation opens Machines. A count has a link only when all its members share
 the same declared active NAT network. An invisible accessible list still

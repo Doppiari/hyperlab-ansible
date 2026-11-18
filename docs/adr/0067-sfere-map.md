@@ -25,18 +25,24 @@ MachineSphere per Machine, including neutral external observations.
 Use angular sectors in the shell's existing provenance order, external last.
 Sector widths follow their population; two tilted ellipses distinguish
 running from other observed states. Every sector uses the same two radii.
-Place spheres by arc length and reserve both tangential and radial clearance;
-a small window scrolls instead of overlapping spheres. There is no orbit
+Every sphere has its own angle: inside a sector the running Machines are
+spread evenly among the angles and the others take the rest, so no sphere
+stands on another's ray to the host. Place spheres by arc length and reserve
+both tangential and radial clearance; a small window scrolls instead of
+overlapping spheres. Sector headings stay inside the scene; above and below
+the orbit a reboot mark follows its domain on one line. There is no orbit
 drift: this follows the shell's existing rule against ambient loops. Reported
 transitions retain MachineSphere's existing motion and reduced-motion rule.
 
-A line connects a registry Machine to the host as network router only when
-its observed attachment names a declared NAT network reported active by the
-existing Networks source. An isolated, inactive, missing or unknown network
+A line connects a Machine or an external domain to the host as network
+router only when its observed attachment names a declared NAT network
+reported active by the existing Networks source. An isolated, inactive, missing or unknown network
 draws none. Lines do not represent firewall acceptance, access to host
-services or measured reachability. External observations currently supply no
-attachments to the shell, so they draw no lines. No Machine-to-Machine path
-is inferred. The Networks opt-in remains authoritative: Sfere becomes a
+services or measured reachability. External observations pass their
+reported attachments through unchanged, null when unreadable; the domain
+never stands in for an attachment. A line runs straight from its sphere to
+the emblem and stops outside its own name, the host word and the host GPU
+token. No Machine-to-Machine path is inferred. The Networks opt-in remains authoritative: Sfere becomes a
 second visible consumer of the same reader, flight generation, timeout and
 30-second cadence. With the feature off, a stale answer or a failed answer,
 the map states why it draws no links.
@@ -48,7 +54,9 @@ Mark sectors above the retained boot claim as requiring a reboot, qualifying
 a stale or failed claim as last seen. Services never becomes a ladder rung.
 
 Above 24 Machines, collapse the largest sectors until at most 24 spheres
-remain, with one count per collapsed sector plus its GPU owner if present.
+remain. A collapsed sector keeps its GPU owner individual and draws one count
+per orbit with two or more members, so a count stands only on the orbit all
+its Machines share.
 A shared state or disposable lifecycle is drawn only when all counted
 members share it. Mixed states use a neutral outline, the count and the
 words mixed states. A count has a network line only if every member shares
@@ -75,7 +83,8 @@ No activation changes an observed state or dispatches a Machine operation.
 
 The navigation contracts retain an exact route inventory. The bar now has
 four openWorkspace calls: Sfere, Diagnostics, Control Center and emergency
-Machines. WorkspaceSurface owns the two additional state-only routes for
+Machines. ShellIpc gains `workspace sfere`, so the first destination has the
+same external route as the others. WorkspaceSurface owns the two additional state-only routes for
 map inventory and Create, and the map's selection handler; SfereView owns
 one arrow-focus route. The former presentation-wide toggleLauncher marker
 was specific to the old glyph action and is replaced by the Sfere entry
@@ -90,8 +99,11 @@ the real net list formatter and trust provider/CLI over repository network
 configuration. It checks four 1920x1080 fixture scenes, 24 Machines in a
 small window, transitions with reduced motion, source failures, keyboard and
 pointer routes, counts and the full accessible list. Its optional --renders
-argument retains the four captures. Mutation checks cover invented links,
-domain-dependent radii, tinting, literals, ownership, boot restrictions,
-collapse, clearance and navigation. These are software checks; installed
+argument retains the four captures. Fixture attachments differ from domains (a dev Machine on lab only, null
+attachments, lab plus a NAT network), so a link derived from the domain is
+refused. Mutation checks cover invented links, links through other spheres or
+words, clipped headings, domain-dependent radii, tinting, literals,
+ownership, boot restrictions, per-orbit collapse, clearance, delegate
+identity across identical polls and navigation. These are software checks; installed
 Quickshell, compositor focus and the physical Nitro/Predator view remain
 operator acceptance.

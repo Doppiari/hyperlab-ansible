@@ -72,9 +72,21 @@ def source_contract() -> None:
     require("networksMapVisible:" in root, "the root does not expose map visibility to the shared network source")
 
 
+def declared_links(case: dict, networks: list[dict]) -> list[list[str]]:
+    """Host links from each row's own attachment, never from its domain."""
+    paths = {row["name"] for row in networks if row["forward"] == "nat" and row["state"] == "active"}
+    out = []
+    for row in case["machines"]:
+        require("networks" in row, f"{row['name']} has no declared attachment")
+        path = next((name for name in row["networks"] or [] if name in paths), None)
+        if path is not None:
+            out.append(["host", row["name"], path])
+    return out
+
+
 def rows_for(case: dict) -> list[dict]:
     return [dict(runtime.MACHINE_TEMPLATE, name=row["name"], provenance=row["domain"],
-                 state=row["state"], networks=[row["domain"]], network=row["domain"],
+                 state=row["state"], networks=row["networks"], network=(row["networks"] or [None])[0],
                  lifecycle="disposable" if row["disposable"] else "permanent",
                  gpu_relation="none", gpu="", vfio=False)
             for row in case["machines"] if row["domain"] != "external"]
@@ -86,7 +98,8 @@ SETUP = r'''
             const networks = @@NETWORKS@@;
             const ladder = @@LADDER@@;
             sharedState.applyOutsideDomainsPayload(JSON.stringify({machines_available: true,
-                machines: fixture.machines.map(row => ({name: row.name, state: row.state, managed: row.domain !== "external"}))}));
+                machines: fixture.machines.map(row => ({name: row.name, state: row.state, networks: row.networks,
+                                                       managed: row.domain !== "external"}))}));
             sharedState.applyFeatures('{"networks_view_enabled":true}');
             sharedSurfaces.openWorkspace("sfere");
             const map = find(workspaceSurface, "sfere-view");
@@ -99,7 +112,26 @@ SETUP = r'''
             }
             function slots() { return nodes(map, item => item.objectName.indexOf("sfere-slot-") === 0); }
             function balls() { return nodes(map, item => item.objectName.indexOf("sfere-sphere-") === 0); }
-            function lines() { return nodes(map, item => item.objectName.indexOf("sfere-link-") === 0); }
+            function lines() { return nodes(map, item => item.objectName.indexOf("sfere-link-") === 0 && item.visible); }
+            // Distance from a point to a segment, and from a box to a segment.
+            function reach(px, py, ax, ay, bx, by) {
+                const dx = bx - ax, dy = by - ay;
+                const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy || 1)));
+                return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+            }
+            function boxReach(x, y, w, h, ax, ay, bx, by) {
+                for (let step = 0; step <= 64; step++) {
+                    const px = ax + (bx - ax) * step / 64, py = ay + (by - ay) * step / 64;
+                    if (px >= x && px <= x + w && py >= y && py <= y + h) return 0;
+                }
+                return Math.min(reach(x, y, ax, ay, bx, by), reach(x + w, y, ax, ay, bx, by),
+                                reach(x, y + h, ax, ay, bx, by), reach(x + w, y + h, ax, ay, bx, by),
+                                ...[[ax, ay], [bx, by]].map(([px, py]) =>
+                                    Math.hypot(Math.max(x - px, 0, px - x - w), Math.max(y - py, 0, py - y - h))));
+            }
+            function overlaps(a, b) {
+                return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+            }
             function answerNetworks(rows) {
                 if (!sharedState.networksInFlight) sharedState.requestNetworks();
                 sharedState.finishNetworks(sharedState.networksFlightGeneration, JSON.stringify(rows), 0);
@@ -178,6 +210,58 @@ CHECKS = r'''
                 check(networks.some(row => row.name === line.network && row.forward === "nat" && row.state === "active"),
                       "a link does not name an active declared NAT network");
             }
+            const stroke = sharedTokens.focusOutline / 2;
+            for (const line of lines()) {
+                const own = slots().find(item => item.entry.key === line.machine);
+                check(line.span >= sharedTokens.spaceLg, "a declared link is too short to be seen");
+                for (const slot of slots()) {
+                    const name = find(map, "sfere-name-" + slot.entry.key);
+                    const corner = name.mapToItem(slot.parent, 0, 0);
+                    const clear = boxReach(corner.x, corner.y, name.width, name.height,
+                                           line.fromX, line.fromY, line.toX, line.toY);
+                    if (slot === own) {
+                        check(!name.visible || clear > stroke, "a link strikes through its own Machine's name");
+                        continue;
+                    }
+                    check(reach(slot.centreX, slot.centreY, line.fromX, line.fromY, line.toX, line.toY)
+                          > slot.width / 2 + sharedTokens.spaceSm,
+                          "a link passes through another sphere");
+                    check(!name.visible || clear > sharedTokens.spaceXs, "a link crosses another sphere's name");
+                }
+                for (const word of [find(map, "sfere-host-word"), find(map, "sfere-host-gpu")]) {
+                    const box = word.mapToItem(own.parent, word.childrenRect.x, word.childrenRect.y);
+                    check(!word.visible || boxReach(box.x, box.y, Math.max(word.width, word.childrenRect.width),
+                                                    Math.max(word.height, word.childrenRect.height),
+                                                    line.fromX, line.fromY, line.toX, line.toY) > stroke,
+                          "a link strikes through the host's words");
+                }
+            }
+            const names = slots().map(slot => {
+                const name = find(map, "sfere-name-" + slot.entry.key);
+                const corner = name.mapToItem(slot.parent, 0, 0);
+                return {slot: slot, visible: name.visible, x: corner.x, y: corner.y, width: name.width, height: name.height};
+            }).filter(name => name.visible);
+            for (const name of names) {
+                for (const slot of slots())
+                    check(slot === name.slot || !overlaps(name, slot), "a Machine name covers another sphere");
+                for (const other of names)
+                    check(other === name || !overlaps(name, other), "two Machine names overlap");
+            }
+            for (const sector of map.sectors) {
+                const heading = find(map, "sfere-sector-" + sector.id);
+                const corner = heading.mapToItem(plot, 0, 0);
+                if (map.width >= 1600)
+                    check(corner.x >= 0 && corner.y >= 0 && corner.x + heading.width <= plot.width
+                          && corner.y + heading.height <= plot.height,
+                          "a sector heading leaves the view");
+                for (const slot of slots())
+                    check(!overlaps(heading, slot), "a sector heading covers a sphere");
+                for (const name of names)
+                    check(!overlaps(heading, name), "a sector heading covers a Machine name");
+            }
+            for (const slot of slots().filter(item => item.entry.kind === "group"))
+                check(slot.entry.members.every(row => (row.observed === "running") === (slot.orbitName === "inner")),
+                      "a count sits on an orbit some of its Machines are not on");
             if (fixture.machines.length <= 24)
                 check(lines().map(line => slots().find(slot => slot.entry.key === line.machine).entry.id).sort().join(",") === declared.sort().join(","),
                       "map links differ from declared attachments");
@@ -201,6 +285,9 @@ CHECKS = r'''
             sharedState.applyMachinePayload(JSON.stringify({machines_available: true, machines: sharedState.machines}));
             keyEvents.wait(30);
             check(slots().every((slot, i) => slot === beforeSlots[i]), "identical poll rebuilt the spheres");
+            // Rebuilt spheres leave later steps holding destroyed items: stop
+            // on the recorded failure instead of hanging on a TypeError.
+            if (window.firstFailure >= 0) { Qt.exit(40 + window.firstFailure); return; }
             const phases = balls().map(ball => ball.phase);
             keyEvents.wait(180);
             check(balls().every((ball, i) => ball.phase === phases[i]), "reduced motion animated a sphere");
@@ -247,6 +334,11 @@ INTERACTION = r'''
             keyEvents.wait(10);
             check(find(map, "sfere-readout").text.indexOf("dev-desk") >= 0,
                   "new hover retained another sphere's focused readout");
+            sharedState.applyMachinePayload(JSON.stringify({machines_available: true, machines: sharedState.machines}));
+            keyEvents.wait(30);
+            check(find(map, "sfere-slot-machine:clean-desk").activeFocus
+                  && find(map, "sfere-readout").text.indexOf("dev-desk") >= 0,
+                  "identical poll moved the readout or the focus");
             keyEvents.mouseClick(target, target.width / 2, target.height / 2);
             check(sharedSurfaces.workspaceView === "machines" && sharedSurfaces.selectedMachineId === "dev-desk",
                   "click did not open the existing Machine pane");
@@ -298,10 +390,8 @@ def main() -> int:
     networks = network_rows()
     cases = json.loads(FIXTURE.read_text())["cases"]
     for case in cases:
-        expected = [["host", row["name"], row["domain"]] for row in case["machines"]
-                    if any(net["name"] == row["domain"] and net["forward"] == "nat" and net["state"] == "active"
-                           for net in networks) and row["domain"] != "external"]
-        require(case["links"] == expected, "fixture contains a pair the network source does not declare")
+        require(case["links"] == declared_links(case, networks),
+                "fixture contains a pair the network source does not declare")
     levels = yaml.safe_load((ROOT / "group_vars/all/networks.yml").read_text())["gpu_trust_levels"]
     ladder = cli_ladder(levels)["cli"]
     runner = shutil.which("qmlscene6") or shutil.which("qmlscene")
@@ -312,11 +402,20 @@ def main() -> int:
     stress = dict(cases[-1], id="twenty-four", machines=cases[-1]["machines"][:24])
     stress["links"] = [pair for pair in stress["links"] if pair[1] in {row["name"] for row in stress["machines"]}]
     transitions = dict(cases[1], id="transitions", machines=[dict(row, state="starting") for row in cases[1]["machines"]])
-    collision = dict(cases[-1], id="key-collision", gpu_owner="group-clean",
-                     machines=[dict(row, name="group-clean") if row["name"] == "dev-01" else dict(row)
+    # A Machine named like the clean sector's outer count.
+    collision = dict(cases[-1], id="key-collision", gpu_owner="group-clean-outer",
+                     machines=[dict(row, name="group-clean-outer") if row["name"] == "dev-01" else dict(row)
                                for row in cases[-1]["machines"]],
-                     links=[[a, "group-clean" if b == "dev-01" else b, c] for a, b, c in cases[-1]["links"]])
-    cases.extend([stress, transitions, collision])
+                     links=[[a, "group-clean-outer" if b == "dev-01" else b, c] for a, b, c in cases[-1]["links"]])
+    # An external domain on a declared NAT network gets its line too.
+    outside = dict(cases[2], id="external-link", machines=cases[2]["machines"] + [
+        {"name": "outside-nat", "domain": "external", "state": "shut off", "disposable": False,
+         "networks": ["clean"]}])
+    outside["links"] = declared_links(outside, networks)
+    require(["host", "outside-nat", "clean"] in outside["links"]
+            and not any(pair[1] == "hl-lab-host" for pair in outside["links"]),
+            "external link fixture lost its declared and undeclared rows")
+    cases.extend([stress, transitions, collision, outside])
     root = (runtime.QML / "shell.qml").read_text()
     binding = re.search(r"networksMapVisible:\s*(.*?)\n\s*networksPageVisible:", root, re.S)
     require(binding is not None, "missing map visibility binding")
@@ -378,7 +477,7 @@ def main() -> int:
             capture = setup + CHECKS
             for label, scenario, destination in (("checks", body, ""), ("render", capture,
                     str(args.renders.resolve() / f"{case['id']}-1920x1080.png") if args.renders else "")):
-                if label == "render" and (not args.renders or case["id"] in {"twenty-four", "transitions", "key-collision"}):
+                if label == "render" and (not args.renders or case["id"] in {"twenty-four", "transitions", "key-collision", "external-link"}):
                     continue
                 width, height = (800, 600) if case["id"] == "twenty-four" else (1920, 1080)
                 source, messages = runtime.scenario_source(width, height, rows_for(case), scenario,

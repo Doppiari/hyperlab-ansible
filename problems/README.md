@@ -530,4 +530,8 @@ proof.
   a sector count could shadow a Machine named group-clean; disjoint view keys
   now preserve object and readout identity without changing backend names.
 
+- [`sfere-link-through-inner-sphere.md`](sfere-link-through-inner-sphere.md):
+  outer spheres shared inner spheres' angles, so a line to the host seemed to
+  join two Machines; every sphere in a sector now has its own angle.
+
 Author: [importriri](https://github.com/importriri).

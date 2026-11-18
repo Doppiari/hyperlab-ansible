@@ -26,8 +26,12 @@ scroll the larger scene; domain never participates in choosing a radius.
 
 `tests/sfere_view_contract.py` checks every pair of drawn control envelopes
 for intersection and every sphere's bounds, at full size and with 24 Machines
-in 800x600. Removing the radial-clearance term reproduces the failure. The
-restored layout passes. Physical scale and display legibility still require
+in 800x600. When this was found, removing the radial-clearance term
+reproduced the failure. Since every sphere in a sector has its own angle
+([sfere-link-through-inner-sphere.md](sfere-link-through-inner-sphere.md)),
+no inner and outer sphere meet on one ray, and the orbit floor alone keeps
+them apart: that term is now a margin and its removal stays green. Removing
+the arc-length term fails spheres overlap; the restored layout passes. Physical scale and display legibility still require
 operator review.
 
 A second small-window check scrolls to the far edge before focusing each

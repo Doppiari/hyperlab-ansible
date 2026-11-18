@@ -13,31 +13,46 @@
           "name": "clean-desk",
           "domain": "clean",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "clean"
+          ]
         },
         {
           "name": "dev-desk",
           "domain": "dev",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dev"
+          ]
         },
         {
           "name": "service-desk",
           "domain": "services",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "services"
+          ]
         },
         {
           "name": "dirty-desk",
           "domain": "dirty",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dirty"
+          ]
         },
         {
           "name": "lab-test",
           "domain": "lab",
           "state": "shut off",
-          "disposable": true
+          "disposable": true,
+          "networks": [
+            "lab"
+          ]
         }
       ],
       "gpu_owner": "dev-desk",
@@ -71,73 +86,108 @@
           "name": "clean-00",
           "domain": "clean",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "clean"
+          ]
         },
         {
           "name": "dev-01",
           "domain": "dev",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dev"
+          ]
         },
         {
           "name": "services-02",
           "domain": "services",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "services"
+          ]
         },
         {
           "name": "dirty-03",
           "domain": "dirty",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "lab",
+            "dirty"
+          ]
         },
         {
           "name": "lab-04",
           "domain": "lab",
           "state": "running",
-          "disposable": true
+          "disposable": true,
+          "networks": [
+            "lab"
+          ]
         },
         {
           "name": "clean-05",
           "domain": "clean",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "clean"
+          ]
         },
         {
           "name": "dev-06",
           "domain": "dev",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dev"
+          ]
         },
         {
           "name": "services-07",
           "domain": "services",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": null
         },
         {
           "name": "dirty-08",
           "domain": "dirty",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dirty"
+          ]
         },
         {
           "name": "lab-09",
           "domain": "lab",
           "state": "shut off",
-          "disposable": true
+          "disposable": true,
+          "networks": [
+            "lab"
+          ]
         },
         {
           "name": "dev-10",
           "domain": "dev",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "lab"
+          ]
         },
         {
           "name": "hl-lab-host",
           "domain": "external",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "hl-lab-testbed"
+          ]
         }
       ],
       "gpu_owner": "dev-01",
@@ -174,18 +224,8 @@
         ],
         [
           "host",
-          "services-07",
-          "services"
-        ],
-        [
-          "host",
           "dirty-08",
           "dirty"
-        ],
-        [
-          "host",
-          "dev-10",
-          "dev"
         ]
       ]
     },
@@ -196,181 +236,270 @@
           "name": "clean-00",
           "domain": "clean",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "clean"
+          ]
         },
         {
           "name": "dev-01",
           "domain": "dev",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dev"
+          ]
         },
         {
           "name": "services-02",
           "domain": "services",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "services"
+          ]
         },
         {
           "name": "dirty-03",
           "domain": "dirty",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dirty"
+          ]
         },
         {
           "name": "lab-04",
           "domain": "lab",
           "state": "running",
-          "disposable": true
+          "disposable": true,
+          "networks": [
+            "lab"
+          ]
         },
         {
           "name": "clean-05",
           "domain": "clean",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "clean"
+          ]
         },
         {
           "name": "dev-06",
           "domain": "dev",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dev"
+          ]
         },
         {
           "name": "services-07",
           "domain": "services",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "services"
+          ]
         },
         {
           "name": "dirty-08",
           "domain": "dirty",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dirty"
+          ]
         },
         {
           "name": "lab-09",
           "domain": "lab",
           "state": "shut off",
-          "disposable": true
+          "disposable": true,
+          "networks": [
+            "lab"
+          ]
         },
         {
           "name": "clean-10",
           "domain": "clean",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "clean"
+          ]
         },
         {
           "name": "dev-11",
           "domain": "dev",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dev"
+          ]
         },
         {
           "name": "services-12",
           "domain": "services",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "services"
+          ]
         },
         {
           "name": "dirty-13",
           "domain": "dirty",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "lab",
+            "dirty"
+          ]
         },
         {
           "name": "lab-14",
           "domain": "lab",
           "state": "running",
-          "disposable": true
+          "disposable": true,
+          "networks": [
+            "lab"
+          ]
         },
         {
           "name": "clean-15",
           "domain": "clean",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "clean"
+          ]
         },
         {
           "name": "dev-16",
           "domain": "dev",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dev"
+          ]
         },
         {
           "name": "services-17",
           "domain": "services",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "lab"
+          ]
         },
         {
           "name": "dirty-18",
           "domain": "dirty",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dirty"
+          ]
         },
         {
           "name": "lab-19",
           "domain": "lab",
           "state": "shut off",
-          "disposable": true
+          "disposable": true,
+          "networks": [
+            "lab"
+          ]
         },
         {
           "name": "clean-20",
           "domain": "clean",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "clean"
+          ]
         },
         {
           "name": "dev-21",
           "domain": "dev",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": null
         },
         {
           "name": "services-22",
           "domain": "services",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "services"
+          ]
         },
         {
           "name": "dirty-23",
           "domain": "dirty",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dirty"
+          ]
         },
         {
           "name": "lab-24",
           "domain": "lab",
           "state": "running",
-          "disposable": true
+          "disposable": true,
+          "networks": [
+            "lab"
+          ]
         },
         {
           "name": "clean-25",
           "domain": "clean",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "clean"
+          ]
         },
         {
           "name": "dev-26",
           "domain": "dev",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dev"
+          ]
         },
         {
           "name": "services-27",
           "domain": "services",
           "state": "shut off",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "services"
+          ]
         },
         {
           "name": "dirty-28",
           "domain": "dirty",
           "state": "running",
-          "disposable": false
+          "disposable": false,
+          "networks": [
+            "dirty"
+          ]
         },
         {
           "name": "lab-29",
           "domain": "lab",
           "state": "shut off",
-          "disposable": true
+          "disposable": true,
+          "networks": [
+            "lab"
+          ]
         }
       ],
       "gpu_owner": "dev-01",
@@ -447,11 +576,6 @@
         ],
         [
           "host",
-          "services-17",
-          "services"
-        ],
-        [
-          "host",
           "dirty-18",
           "dirty"
         ],
@@ -459,11 +583,6 @@
           "host",
           "clean-20",
           "clean"
-        ],
-        [
-          "host",
-          "dev-21",
-          "dev"
         ],
         [
           "host",

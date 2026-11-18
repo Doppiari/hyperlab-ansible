@@ -100,10 +100,11 @@ Item {
         return "";
     }
 
-    // The network that links an entry to the host, or "". A count sphere is
-    // linked only when every Machine it stands for is.
+    // The network that links an entry to the host, or "". An external
+    // domain follows the same rule as a Machine: the attachment it reports.
+    // A count sphere is linked only when every Machine it stands for is.
     function pathFor(entry) {
-        if (entry.kind === "machine")
+        if (entry.kind === "machine" || entry.kind === "external")
             return view.memberPath(entry.networks);
 
         if (entry.kind !== "group")
@@ -168,7 +169,8 @@ Item {
                 "sphereState": view.inventoryAvailable ? "external" : "unclassified",
                 "observed": String(outside[index].state),
                 "disposable": false,
-                "networks": [],
+                "networks": Array.isArray(outside[index].networks)
+                    ? outside[index].networks.map(String) : [],
                 "count": 1
             });
         }
@@ -176,35 +178,48 @@ Item {
         return out;
     }
 
-    // One count per crowded sector. Preserve the current GPU owner; a count
-    // never claims a state or lifecycle that its members do not share.
+    // A crowded sector collapses into one count per orbit, so a count sits
+    // only on the orbit all its Machines are on. Preserve the current GPU
+    // owner; a count never claims a state or lifecycle its members do not
+    // share.
     function collapse(rows) {
         const out = rows.filter(row => view.gpuOwner.length > 0 && row.id === view.gpuOwner);
-        const group = rows.filter(row => out.indexOf(row) < 0);
+        const rest = rows.filter(row => out.indexOf(row) < 0);
+        const orbits = ["inner", "outer"];
 
-        if (group.length < 2)
-            return rows;
+        for (let orbit = 0; orbit < orbits.length; orbit++) {
+            const group = rest.filter(row => view.inner(row) === (orbits[orbit] === "inner"));
 
-        const sameState = group.every(row => row.observed === group[0].observed);
-        out.push({
-            "id": "group-" + group[0].sector,
-            "key": "group:" + group[0].sector,
-            "kind": "group",
-            "name": group.length + " Machines",
-            "sector": group[0].sector,
-            "domain": group[0].domain,
-            "sphereState": sameState ? group[0].sphereState : "unclassified",
-            "observed": sameState ? group[0].observed : "mixed states",
-            "disposable": group.every(row => row.disposable),
-            "networks": [],
-            "members": group,
-            "count": group.length
-        });
+            if (group.length < 2) {
+                for (let index = 0; index < group.length; index++)
+                    out.push(group[index]);
+
+                continue;
+            }
+
+            const sameState = group.every(row => row.observed === group[0].observed);
+            out.push({
+                "id": "group-" + group[0].sector + "-" + orbits[orbit],
+                "key": "group:" + group[0].sector + ":" + orbits[orbit],
+                "kind": "group",
+                "name": group.length + " Machines",
+                "sector": group[0].sector,
+                "domain": group[0].domain,
+                "sphereState": sameState ? group[0].sphereState : "unclassified",
+                "observed": sameState ? group[0].observed : "mixed states",
+                "disposable": group.every(row => row.disposable),
+                "networks": [],
+                "members": group,
+                "count": group.length
+            });
+        }
+
         return out;
     }
 
-    // What is drawn, in sector order: running first, then by name. This is
-    // also the order of the arrow keys and of the hidden list.
+    // What is drawn, in sector order: running first, then by name. The
+    // layout keeps each orbit in this order; the arrow keys follow the
+    // angles it gives, around the ring.
     readonly property var entries: {
         const order = view.sectorOrder;
         const bySector = {};
@@ -263,8 +278,11 @@ Item {
     // One empty slot between sectors, so a sector reads as a group.
     readonly property real sectorGap: 1
 
-    // Sectors take a share of the turn by the number of slots they need;
-    // inside a sector each orbit spreads its own spheres evenly.
+    // Sectors take a share of the turn by the number of spheres they hold.
+    // Every sphere has its own angle: a link runs from its sphere straight
+    // to the host, so no other sphere may stand on that ray, or the line
+    // would seem to join two Machines. Inside a sector the running Machines
+    // are spread evenly among the angles and the others take the rest.
     readonly property var layout: {
         const sectors = [];
         const known = {};
@@ -286,7 +304,7 @@ Item {
 
         for (let index = 0; index < sectors.length; index++) {
             sectors[index].slots = Math.max(
-                1, sectors[index].inner.length, sectors[index].outer.length);
+                1, sectors[index].inner.length + sectors[index].outer.length);
             weight += sectors[index].slots + view.sectorGap;
         }
 
@@ -297,19 +315,20 @@ Item {
         for (let index = 0; index < sectors.length; index++) {
             const sector = sectors[index];
             const start = cursor + view.sectorGap / 2;
-            const orbits = ["inner", "outer"];
+            const running = sector.inner.length;
+            const total = running + sector.outer.length;
+            let inner = 0;
+            let outer = 0;
 
-            for (let orbit = 0; orbit < orbits.length; orbit++) {
-                const rows = sector[orbits[orbit]];
+            for (let angle = 0; angle < total; angle++) {
+                const takeInner = Math.floor((angle + 1) * running / total)
+                    > Math.floor(angle * running / total);
 
-                for (let row = 0; row < rows.length; row++) {
-                    slots.push({
-                        "entry": rows[row],
-                        "orbit": orbits[orbit],
-                        "fraction":
-                            (start + (row + 0.5) * sector.slots / rows.length) / weight
-                    });
-                }
+                slots.push({
+                    "entry": takeInner ? sector.inner[inner++] : sector.outer[outer++],
+                    "orbit": takeInner ? "inner" : "outer",
+                    "fraction": (start + angle + 0.5) / weight
+                });
             }
 
             words.push({
@@ -345,25 +364,6 @@ Item {
 
     onLayoutChanged: view.adoptLayout()
     Component.onCompleted: view.adoptLayout()
-
-    readonly property var links: {
-        const out = [];
-
-        for (let index = 0; index < view.slots.length; index++) {
-            const network = view.pathFor(view.slots[index].entry);
-
-            if (network.length > 0) {
-                out.push({
-                    "id": view.slots[index].entry.key,
-                    "network": network,
-                    "orbit": view.slots[index].orbit,
-                    "fraction": view.slots[index].fraction
-                });
-            }
-        }
-
-        return out;
-    }
 
     // ---------------------------------------------------------- geometry
 
@@ -449,6 +449,36 @@ Item {
         return orbit === "inner" ? view.orbitInner : view.orbitOuter;
     }
 
+    // How far a ray from the origin along (dx, dy) runs before it leaves the
+    // box, or 0 when it never enters it. A link starts and ends outside the
+    // words it would otherwise strike through.
+    function leave(x, y, width, height, dx, dy) {
+        let low = 0;
+        let high = Infinity;
+        const spans = [[x, width, dx], [y, height, dy]];
+
+        for (let index = 0; index < spans.length; index++) {
+            const start = spans[index][0];
+            const end = start + spans[index][1];
+            const step = spans[index][2];
+
+            if (Math.abs(step) < 1e-9) {
+                if (start > 0 || end < 0)
+                    return 0;
+
+                continue;
+            }
+
+            const a = start / step;
+            const b = end / step;
+
+            low = Math.max(low, Math.min(a, b));
+            high = Math.min(high, Math.max(a, b));
+        }
+
+        return high >= low ? high : 0;
+    }
+
     readonly property real sceneWidth:
         Math.max(view.width, view.orbitOuter * 2 + view.marginSide * 2)
     readonly property real sceneHeight: Math.max(
@@ -468,16 +498,18 @@ Item {
         Math.min(view.sphereMax, Math.floor(view.slotArc * 0.62),
             Math.floor(view.orbitOuter * view.tilt * (1 - view.innerRatio) - view.tokens.spaceSm)))
 
-    // The emblem stays inside the inner orbit, so no sphere passes behind it.
+    // The emblem and its word stay inside the inner orbit, so no sphere
+    // passes behind it and a link from below still has room to be seen.
     readonly property int hostSize: Math.max(
         view.tokens.spaceSection,
         Math.min(320, Math.floor(
-            (view.orbitInner * view.tilt - view.sphereSize / 2 - view.tokens.spaceHuge)
+            (view.orbitInner * view.tilt - view.sphereSize / 2 - view.tokens.spaceHuge
+                - hostWord.height - view.tokens.spaceXs)
             * 2 / (host.radiusRatio * 2))))
     readonly property real hostRadius: view.hostSize * host.radiusRatio
 
     readonly property bool namesVisible:
-        view.slotArc >= 110 && view.sphereSize >= 40
+        view.slotArc >= 80 && view.sphereSize >= 40
 
     // ------------------------------------------------------------- words
 
@@ -519,7 +551,7 @@ Item {
             && entry.id === view.gpuOwner)
             parts.push("owns the GPU");
 
-        if (entry.kind !== "external" && view.networksStatus === "ready") {
+        if (view.networksStatus === "ready") {
             const path = view.pathFor(entry);
 
             parts.push(path.length === 0
@@ -752,60 +784,6 @@ Item {
                 }
             }
 
-            // Links: one item per declared path, from the sphere's edge to
-            // the edge of the emblem. A neutral line: a link is not a trust
-            // identity, and it never reaches the core.
-            Repeater {
-                model: view.links
-
-                delegate: Item {
-                    id: link
-
-                    required property var modelData
-
-                    readonly property string machine: modelData.id
-                    readonly property string network: modelData.network
-                    readonly property real angle: view.angleAt(modelData.fraction)
-                    readonly property real orbit: view.orbitRadius(modelData.orbit)
-                    readonly property real sphereX:
-                        view.centreX + link.orbit * Math.cos(link.angle)
-                    readonly property real sphereY:
-                        view.centreY + link.orbit * view.tilt * Math.sin(link.angle)
-                    readonly property real reach: Math.hypot(
-                        view.centreX - link.sphereX, view.centreY - link.sphereY)
-                    readonly property real fromGap:
-                        view.sphereSize / 2 + view.tokens.spaceSm
-                    readonly property real toGap:
-                        view.hostRadius + view.tokens.spaceSm
-                    readonly property real span:
-                        Math.max(0, link.reach - link.fromGap - link.toGap)
-                    readonly property real fromX: link.sphereX
-                        + (view.centreX - link.sphereX) / link.reach * link.fromGap
-                    readonly property real fromY: link.sphereY
-                        + (view.centreY - link.sphereY) / link.reach * link.fromGap
-                    readonly property real toX: link.fromX
-                        + (view.centreX - link.sphereX) / link.reach * link.span
-                    readonly property real toY: link.fromY
-                        + (view.centreY - link.sphereY) / link.reach * link.span
-
-                    objectName: "sfere-link-" + modelData.id
-                    x: link.fromX
-                    y: link.fromY
-                    transformOrigin: Item.TopLeft
-                    rotation: Math.atan2(
-                        view.centreY - link.sphereY,
-                        view.centreX - link.sphereX) * 180 / Math.PI
-
-                    Rectangle {
-                        y: -height / 2
-                        width: link.span
-                        height: view.tokens.focusOutline
-                        antialiasing: true
-                        color: view.theme.boundaryStrong
-                    }
-                }
-            }
-
             // The host: the product symbol, in the HOST grey, always.
             IsolationGlyph {
                 id: host
@@ -820,6 +798,8 @@ Item {
             }
 
             ShellLabel {
+                id: hostWord
+
                 objectName: "sfere-host-word"
                 x: view.centreX - width / 2
                 y: view.centreY + view.hostRadius + view.tokens.spaceXs
@@ -906,6 +886,8 @@ Item {
                     readonly property real centreY:
                         view.centreY + slot.orbit * view.tilt * Math.sin(slot.angle)
 
+                    readonly property string network: view.pathFor(slot.entry)
+
                     // A state outside the sphere's vocabulary is drawn as the
                     // outline, so its word is always written beside it.
                     readonly property bool unsupported:
@@ -949,7 +931,65 @@ Item {
                         }
                     ]
 
+                    // The link: a declared path, from outside this sphere and its
+                    // name to outside the emblem, its word and its GPU token. A
+                    // neutral line: a link is not a trust identity, and it never
+                    // reaches the core. Drawn under the sphere.
+                    Item {
+                        id: link
+
+                        readonly property string machine: slot.entry.key
+                        readonly property string network: slot.network
+                        readonly property real reach: Math.hypot(
+                            view.centreX - slot.centreX, view.centreY - slot.centreY)
+                        readonly property real dirX: (view.centreX - slot.centreX) / link.reach
+                        readonly property real dirY: (view.centreY - slot.centreY) / link.reach
+                        readonly property real fromGap: Math.max(
+                            view.sphereSize / 2 + view.tokens.spaceSm,
+                            name.visible
+                                ? view.leave(name.x - slot.width / 2, name.y - slot.height / 2,
+                                    name.width, name.height, link.dirX, link.dirY)
+                                    + view.tokens.spaceXs
+                                : 0)
+                        readonly property real toGap: Math.max(
+                            view.hostRadius + view.tokens.spaceSm,
+                            view.leave(hostWord.x - view.centreX, hostWord.y - view.centreY,
+                                hostWord.width, hostWord.height, -link.dirX, -link.dirY)
+                                + view.tokens.spaceXs,
+                            hostToken.visible
+                                ? view.leave(
+                                    hostToken.x + hostToken.childrenRect.x - view.centreX,
+                                    hostToken.y + hostToken.childrenRect.y - view.centreY,
+                                    hostToken.childrenRect.width, hostToken.childrenRect.height,
+                                    -link.dirX, -link.dirY) + view.tokens.spaceXs
+                                : 0)
+                        readonly property real span:
+                            Math.max(0, link.reach - link.fromGap - link.toGap)
+                        readonly property real fromX: slot.centreX + link.dirX * link.fromGap
+                        readonly property real fromY: slot.centreY + link.dirY * link.fromGap
+                        readonly property real toX: link.fromX + link.dirX * link.span
+                        readonly property real toY: link.fromY + link.dirY * link.span
+
+                        objectName: "sfere-link-" + slot.entry.key
+                        visible: link.network.length > 0
+                        z: -1
+                        x: link.fromX - slot.x
+                        y: link.fromY - slot.y
+                        transformOrigin: Item.TopLeft
+                        rotation: Math.atan2(link.dirY, link.dirX) * 180 / Math.PI
+
+                        Rectangle {
+                            y: -height / 2
+                            width: link.span
+                            height: view.tokens.focusOutline
+                            antialiasing: true
+                            color: view.theme.boundaryStrong
+                        }
+                    }
+
                     ShellLabel {
+                        id: name
+
                         objectName: "sfere-name-" + slot.entry.key
                         anchors.top: parent.bottom
                         anchors.horizontalCenter: parent.horizontalCenter
@@ -1000,7 +1040,10 @@ Item {
             Repeater {
                 model: view.sectors
 
-                delegate: Column {
+                // Above and below the orbit the reboot words follow the domain
+                // on one line, so the heading fits the margin; beside it they
+                // stack.
+                delegate: Grid {
                     id: sector
 
                     required property var modelData
@@ -1023,11 +1066,16 @@ Item {
                         sector.side > 0.35 ? sector.anchorX
                         : (sector.side < -0.35 ? sector.anchorX - width
                             : sector.anchorX - width / 2)))
-                    y: sector.depth < -0.35 ? sector.anchorY - height
+                    y: Math.max(view.tokens.spaceSm, Math.min(
+                        view.sceneHeight - height - view.tokens.spaceSm,
+                        sector.depth < -0.35 ? sector.anchorY - height
                         : (sector.depth > 0.35 ? sector.anchorY
-                            : sector.anchorY - height / 2)
+                            : sector.anchorY - height / 2)))
                     z: 4
-                    spacing: 2
+                    columns: Math.abs(sector.side) > 0.35 ? 1 : 2
+                    rowSpacing: 2
+                    columnSpacing: view.tokens.spaceSm
+                    verticalItemAlignment: Grid.AlignVCenter
 
                     ShellLabel {
                         tokens: view.tokens

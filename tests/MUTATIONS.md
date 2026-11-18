@@ -6292,31 +6292,52 @@ a readout that scrolled out of view before those corrections.
 | `glyph-route` | `HyperLabBar.qml`: Open machines instead of sfere in onLauncherRequested. | five-domains checks: "the glyph did not open Sfere" | Exit 0, OK. |
 | `create-route` | `WorkspaceSurface.qml`: Set machineStage.creating to false in onCreateRequested. | host-alone checks: "Create did not open the existing Create flow" | Exit 0, OK. |
 | `map-source-route` | `shell.qml`: Prepend `false &&` to networksMapVisible. | host-alone checks: "opening Sfere did not reuse the enabled Networks reader" | Exit 0, OK. |
-| `orbit-clearance` | `SfereView.qml`: Replace the radial-clearance term in neededOuter with zero. | twenty-four checks: "spheres overlap" | Exit 0, OK. |
+| `orbit-clearance` | `SfereView.qml`: Replace the radial-clearance term in neededOuter with zero. | GREEN, exit 0 since each sphere has its own angle (see below). | Exit 0, OK. |
+| `orbit-arc-clearance` | `SfereView.qml`: Remove the arc-length term from neededOuter. | twenty-four checks: "spheres overlap" | Exit 0, OK. |
 | `focus-centre-tint` | `SfereView.qml`: Bind the host core to the focusedMachine identity when its kind is machine. | five-domains checks: "Machine focus tinted the centre" | Exit 0, OK. |
 | `scrolling-readout` | `SfereView.qml`: Subtract scroll.contentX from the fixed legend x binding. | twenty-four checks: "scrolling hid the focused Machine readout" | Exit 0, OK. |
 | `pane-route` | `WorkspaceSurface.qml`: set machineStage.creating to true in onMachineRequested. | five-domains checks: "Enter did not open the existing Machine pane" | Exit 0, OK. |
 | `plot-height` | `SfereView.qml`: use view.height instead of scroll.height as the minimum sceneHeight. | host-alone checks: "full-size fixture clipped the scene behind the readout" | Exit 0, OK. |
 | `map-focus` | `WorkspaceSurface.qml`: pass true instead of false to the map's selectMachine request. | grid-focus: "map selection refocused" | Exit 0, OK. |
 | `hover-priority` | `SfereView.qml`: restore unconditional hover-first fallback and make both hover/focus handlers call noteReadout. | five-domains checks: "keyboard focus retained another sphere's hover readout" | Exit 0, OK. |
-| `identical-poll` | In a temporary copy of the complete QML tree, bypass adoptLayout's JSON-key guard with `false && key === view.layoutKey`; run the same contract with runtime.QML pointing at that copy. | GREEN, exit 0: the actual delegate identities remained stable for identical observations. | Exit 0, OK. |
-| `forced-reset` | In an isolated QML copy, handle machinesObservedAtChanged by setting slotRepeater.model to an empty array, then restoring view.slots with Qt.callLater. | five-domains checks: "identical poll rebuilt the spheres" | Exit 0, OK. |
+| `identical-poll` | `SfereView.qml`: bypass adoptLayout's JSON-key guard with `false && key === view.layoutKey`. | five-domains checks: "identical poll moved the readout or the focus" | Exit 0, OK. |
+| `forced-reset` | `SfereView.qml`: handle machinesObservedAtChanged by setting slotRepeater.model to an empty array, then restoring view.slots with Qt.callLater. | five-domains checks: "identical poll rebuilt the spheres" | Exit 0, OK. |
 | `count-key` | `SfereView.qml`: give groups the machine:group- prefix instead of group:. | key-collision checks: "count sphere key collided with a Machine name" | Exit 0, OK. |
+| `shared-angle` | `SfereView.qml`: Give a sector `max(inner, outer)` angles and place each orbit's spheres on its own `(row - 0.5)` fractions, so an outer sphere shares an inner sphere's angle. | twelve-external checks: "a link passes through another sphere" | Exit 0, OK. |
+| `heading-clamp` | `SfereView.qml`: Drop the `Math.max`/`Math.min` clamp from the sector heading's y. | twelve-external checks: "a sector heading leaves the view" | Exit 0, OK. |
+| `heading-two-lines` | `SfereView.qml`: Set the sector heading Grid to `columns: 1` everywhere. | thirty checks: "a sector heading covers a sphere" | Exit 0, OK. |
+| `round-one-heading` | `SfereView.qml`: Both of the two previous breaks together: the round-one heading. | twelve-external checks: "a sector heading leaves the view" | Exit 0, OK. |
+| `domain-path` | `SfereView.qml`: Return `view.memberPath([entry.domain])` instead of the entry's attachments. | twelve-external checks: "a link is drawn for a pair the network source does not declare" | Exit 0, OK. |
+| `mixed-count` | `SfereView.qml`: Put every non-owner member of a crowded sector in the inner count. | thirty checks: "a count sits on an orbit some of its Machines are not on" | Exit 0, OK. |
+| `ipc-sfere` | `ShellIpc.qml`: remove the `workspace sfere` handler. | focus navigation contract: unreviewed openWorkspace routes: {'HyperLabBar.qml': 4, 'ShellIpc.qml': 5, 'ShellSurfaces.qml': 1} | Exit 0, OK. |
+| `external-attachment` | `ShellState.qml`: keep `"networks": null` for every outside-domains row. | external-link checks: "map links differ from declared attachments" | Exit 0, OK. |
+| `own-name-gap` | `SfereView.qml`: Replace `name.visible` with `false` in the link's fromGap. | twelve-external checks: "a link strikes through its own Machine's name" | Exit 0, OK. |
+| `host-word-gap` | `SfereView.qml`: Remove the host-word term from the link's toGap. | five-domains checks: "a link strikes through the host's words" | Exit 0, OK. |
+| `host-word-room` | `SfereView.qml`: Remove the host word's height from hostSize. | twelve-external checks: "a declared link is too short to be seen" | Exit 0, OK. |
 
-Twenty-three breaks exited 1; the additional identical-poll guard bypass stayed
-green. Every one of the twenty-four byte-identical restorations exited 0.
-The collapse-limit replay guards its secondary count activation so the
+Thirty-five breaks exited 1 with the named diagnostic; `orbit-clearance`
+stayed green. Every one of the thirty-six byte-identical restorations exited
+0. The collapse-limit replay guards its secondary count activation so the
 missing count cannot mask the primary sphere-count failure. Source checks
 refuse colour literals and animations; runtime checks inspect actual drawn
 links, radii, host colours, tokens, list entries and navigation. Fixture links
 are independently judged against the real net list formatter over repository
-network configuration, including the isolated lab network.
+network configuration, including the isolated lab network, and from each
+row's own attachment: fixture rows attach a dev Machine only to lab, give one
+Machine null attachments and another lab plus a NAT network, so a link taken
+from the domain is refused.
 
-The guard-bypass mutation did not break the asserted behaviour: the Qt
-runtime retained the delegate objects for identical observations even without
-that early return in these fixtures. This is an observed green result, not a
-claim that the check detected the removed guard or that Qt always preserves
-identity for every model update. The production guard remains. Forcing an actual delegate reset on every
-inventory timestamp update does fail the identity check. Both temporary
-copies were restored and the live source hash stayed unchanged. These
+`orbit-clearance` stays green because two inner and outer spheres no longer
+share an angle, and the 260-unit orbit floor already leaves the 32-unit
+sphere more than its diameter between the orbits at the top and bottom. The
+radial term only adds the 8-unit margin around that; the arc-length term is
+what keeps 24 spheres apart in 800x600, and removing it is red. The radial
+term stays as a margin, not as a checked invariant.
+
+The identical-poll check keeps the pointer on one sphere and the keyboard
+focus on another across a poll that reports the same Machines, then requires
+the same readout and focus. Bypassing the layout guard rebuilds the spheres
+and loses both, so it is red. A forced delegate reset on every inventory
+timestamp is red on the identity check; the scenario then stops on that
+recorded failure instead of touching the destroyed spheres. These
 observations are software verification only.
