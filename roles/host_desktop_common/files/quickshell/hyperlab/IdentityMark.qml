@@ -21,6 +21,11 @@ Item {
     property string productName: ""
     property string productByline: ""
 
+    // The core of the mark. Only the host bar passes anything but the
+    // primary text tone: there the core follows focus (ADR 0064).
+    property color core: identity.theme.textPrimary
+    property bool coreHollow: false
+
     property bool wordmarkVisible: true
     property bool subtitleVisible: false
 
@@ -60,10 +65,12 @@ Item {
         spacing: identity.tokens.spaceSm
 
         IsolationGlyph {
+            objectName: "identity-glyph"
             anchors.verticalCenter: parent.verticalCenter
             size: identity.tokens.brandMark
             stroke: identity.theme.textPrimary
-            core: identity.theme.textPrimary
+            core: identity.core
+            coreHollow: identity.coreHollow
         }
 
         Column {

@@ -4,6 +4,41 @@ These notes keep the failures that changed a HyperLab contract. Start from the
 symptom; each page records what was actually wrong, the fix and the regression
 proof.
 
+- [`bar-focus-words-elided-domain.md`](bar-focus-words-elided-domain.md):
+  middle elision hid the domain beside a coloured core; a separate label now
+  keeps domain/state words unelided and tests their painted bounds.
+- [`bar-clock-overlapped-narrow-readouts.md`](bar-clock-overlapped-narrow-readouts.md):
+  the approximate clock centre collided with long focus and stale readouts;
+  measured bounds, compact gaps and capacity including workspace overflow
+  keep the 800-pixel fixtures apart.
+- [`bar-geometry-measured-in-fallback-fonts.md`](bar-geometry-measured-in-fallback-fonts.md):
+  CI drew the rail in DejaVu and reported an overlap the host fonts do not
+  have; the contract now refuses fallback fonts and CI installs the shell's.
+
+- [`qml-wiring-missed-inherited-item-state.md`](qml-wiring-missed-inherited-item-state.md):
+  structural wiring rejected the sphere's inherited Item.state, although
+  Qt applied it; the resolver now recognises its actual property owner.
+- [`machine-tile-enter-activated-twice.md`](machine-tile-enter-activated-twice.md):
+  a tile and its shared card both handled Enter; real key events now require
+  one activation, with the shared card owning that key.
+- [`machine-tile-wash-hid-shared-feedback.md`](machine-tile-wash-hid-shared-feedback.md):
+  the domain wash replaced the shared card's hover and press fill; the tile now
+  uses the same handler states to add neutral feedback over the wash.
+
+- [`cli-render-standalone-import.md`](cli-render-standalone-import.md):
+  a terminal palette dependency broke direct loading of the status renderers;
+  the package import now stays inside the palette reader.
+- [`cli-machine-intent-colour.md`](cli-machine-intent-colour.md):
+  terminal Machine dots coloured requested intent as confirmed provenance;
+  both Machine and VM lists now use the shared inventory classification.
+- [`bar-core-palette-gap-disagreed-with-words.md`](bar-core-palette-gap-disagreed-with-words.md):
+  an incomplete domain palette made the core hollow while the focus words
+  still named an identity; both now consume one presentation answer.
+
+- [`release-campaign-missed-v1-scope.md`](release-campaign-missed-v1-scope.md):
+  the historical service campaign could not describe the selected v1; a
+  separate version-bound campaign records each required observation.
+
 - [`product-wallpaper-material-and-resolution.md`](product-wallpaper-material-and-resolution.md):
   product relief lacked the preferred stone and sphere materials; native
   product rendering now shares v3, while the engine pins pool resolution.
@@ -49,12 +84,19 @@ proof.
 - [`networks-feature-reload-with-unchanged-content.md`](networks-feature-reload-with-unchanged-content.md):
   a file notification clears the opt-in; a successful unchanged reload must
   reapply it even without a text-change signal.
+- [`gpu-commandline-bypassed-handoff.md`](gpu-commandline-bypassed-handoff.md):
+  textual hostdev detection missed passthrough in QEMU arguments; prepare now
+  parses XML and permits only the reviewed Looking Glass extension.
 - [`gpu-ladder-state-write-fail-open.md`](gpu-ladder-state-write-fail-open.md):
   the qemu hook ignored a failed rung write and let concurrent prepares
   overwrite a dirtier rung; it now commits under a lock by atomic rename.
 - [`emergency-key-active-before-acceptance.md`](emergency-key-active-before-acceptance.md):
   the proposed emergency key was already bound and advertised; it is now
   unbound while the explicit CLI, status and confirmed Restore remain usable.
+
+- [`disposable-boot-access.md`](disposable-boot-access.md): disposable
+  restarts discarded the agent restriction and SSH host key; the seed now
+  restores the restriction and managed starts refresh the owner's strict pin.
 - [`machine-create-kept-record-after-projection-refused.md`](machine-create-kept-record-after-projection-refused.md):
   a creation refused by `project` kept the record `create` wrote, so a
   retry said "already exists"; the shell now creates in one staged step
@@ -430,6 +472,9 @@ proof.
 - [`ci-skipped-shell-palette-and-choices.md`](ci-skipped-shell-palette-and-choices.md):
   CI omitted six shell, palette and choices checks that the local verifier ran;
   execution fixtures now compare both paths and require failure propagation.
+- [`guest-contract-lost-user-installed-ansible.md`](guest-contract-lost-user-installed-ansible.md):
+  the shared guest fixture hid CI's user-installed Ansible executable and Python
+  packages when it isolated PATH and HOME.
 
 - [`machine-capability-failures-lost-their-cause.md`](machine-capability-failures-lost-their-cause.md):
   failed capability reads hid known refusal causes or stayed unanswered.
@@ -449,5 +494,24 @@ proof.
 - [`external-machines-hidden-and-coloured.md`](external-machines-hidden-and-coloured.md):
   native Machines hid external domains and undercounted running state, while
   recovery assigned DEV without a reviewed spec.
+- [`bar-core-hidden-under-fullscreen-guest.md`](bar-core-hidden-under-fullscreen-guest.md):
+  a fullscreen guest covers the bar core and focus item; only the ADR 0039
+  ring remains, in colour alone and without a hollow Unknown. Open.
+- [`bar-focus-omitted-unsupported-state-word.md`](bar-focus-omitted-unsupported-state-word.md):
+  the focus item omitted crashed and unknown inventory state words beside
+  the neutral sphere despite retaining the proven Machine domain.
+- [`wiring-contract-refused-item-state.md`](wiring-contract-refused-item-state.md):
+  the QML wiring contract read a shared word as a HyperLab property and
+  refused MachineSphere's Item.state; ADR 0065 now recognises the inherited
+  property while refusing it on QtObject-based components.
+
+- [`machine-projection-guard-missed-rendered-tiles.md`](machine-projection-guard-missed-rendered-tiles.md):
+  the Machine presentation guard checked an unused component instead of the
+  rendered tiles; tiles and dense rows now retain the guest-pixel and lifecycle
+  refusals.
+
+- [`shell-refresh-contract-assumed-synchronous-stop.md`](shell-refresh-contract-assumed-synchronous-stop.md):
+  real refresh fixtures assumed synchronous SIGSTOP delivery and could accept
+  an early stop refusal without inspecting the busy child.
 
 Author: [importriri](https://github.com/importriri).

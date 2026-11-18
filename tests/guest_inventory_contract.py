@@ -1,17 +1,46 @@
 #!/usr/bin/env python3
-"""Host-independent contract for managed guest runtime inventory."""
+"""Host-independent contract for managed guest runtime inventory.
+
+ADR 0018: every new boot of a disposable Machine has new SSH host keys. The
+public managed Start and Power Cycle playbooks run the inventory publisher
+after such a boot, as the owner without become, so the pin and the runtime
+inventory follow the boot that is running; an already-running target and
+check mode publish nothing. Exercised with the real playbooks, a stub virsh
+and real strict SSH over a pipe to `sshd -i` (no listening socket).
+"""
 from __future__ import annotations
 
 import base64
+import getpass
 import importlib.util
+import inspect
 import json
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
+from typing import Any
 
 import yaml
+from ansible.modules import known_hosts
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tests"))
+
+import guest_contract  # noqa: E402
+
 TOOL_PATH = ROOT / "tools" / "guest_agent_address.py"
+PUBLISHER = ROOT / "playbooks" / "vm-guest-inventory.yml"
+NEW_BOOT = "guest_start_new_disposable_boot | default(false) | bool"
+LOCKED_FIRST = "Check whether the operation lock already exists"
+LOCKED_LAST = "Execute the selected operation under the lifecycle locks"
+MACHINE = "srv-fix-01"
+MAC = "52:54:00:6a:01:31"
 
 
 def load_tool():
@@ -66,6 +95,585 @@ def check_host_key_tool() -> None:
 
     content = tool.read_guest_file(agent, Path("/usr/bin/virsh"), "dev-01", tool.HOST_KEY_PATH)
     assert content == line and calls == ["guest-file-open", "guest-file-read", "guest-file-close"]
+
+
+def entry_playbook(name: str, tmp: Path) -> list[dict[str, Any]]:
+    """Run the public lifecycle and publisher with fixture hardware discovery."""
+    source = yaml.safe_load((ROOT / "playbooks" / name).read_text(encoding="utf-8"))
+    assert isinstance(source, list) and len(source) == 2, f"{name}: {source}"
+    lifecycle, publish = source
+    assert lifecycle["become"] is True and lifecycle["roles"][-1] == "guest", f"{name} lost its guest play"
+    assert set(publish) == {"name", "ansible.builtin.import_playbook", "when"}, f"{name} changes how the publisher runs: {publish}"
+    assert publish["ansible.builtin.import_playbook"] == "vm-guest-inventory.yml", f"{name} imports {publish['ansible.builtin.import_playbook']}"
+    assert publish["when"] == NEW_BOOT, f"{name} publishes on {publish['when']!r}"
+    # Run the real per-Machine locking of the guest role and the real shared
+    # start tasks, including start/domstate, locks and readiness. Hardware
+    # inspection and capacity discovery are fixtures; their own contracts
+    # cover them. Every libvirt argv goes to the stub.
+    task_dir = tmp / "lifecycle"
+    task_dir.mkdir(exist_ok=True)
+    main = yaml.safe_load((ROOT / "roles/guest/tasks/main.yml").read_text(encoding="utf-8"))
+    names = [task.get("name") for task in main]
+    guest_contract.write_yaml(task_dir / "locked.yml", main[names.index(LOCKED_FIRST):names.index(LOCKED_LAST) + 1])
+    for filename in ("start.yml", "power-cycle.yml"):
+        shutil.copy(ROOT / "roles/guest/tasks" / filename, task_dir / filename)
+    guest_contract.write_yaml(task_dir / "validate.yml", [{
+        "name": "Use the validated fixture domain", "ansible.builtin.assert": {
+            "that": ["guest_plan.device_profile == 'standard'"]}}])
+    guest_contract.write_yaml(task_dir / "memory.yml", [{
+        "name": "Use the fixture capacity", "ansible.builtin.debug": {"msg": "capacity available"}}])
+    guest_contract.write_yaml(task_dir / "inspect.yml", [{
+        "name": "Observe the stopped fixture", "ansible.builtin.set_fact": {"guest_domain_state": "shut off"}}])
+    return [
+        {"name": lifecycle["name"], "hosts": lifecycle["hosts"], "gather_facts": False,
+         "vars_files": [str(ROOT / "roles/guest/defaults/main.yml")],
+         "vars": {"guest_operation": lifecycle["vars"]["guest_operation"]},
+         "tasks": [{"name": "Exercise the lifecycle under its locks",
+                    "ansible.builtin.include_tasks": str(task_dir / "locked.yml")}]},
+        {**publish, "ansible.builtin.import_playbook": str(PUBLISHER)},
+    ]
+
+
+# Stands in for the publisher's Python: runs the real tool, then, after each
+# tool named in PAUSE_AFTER, waits until the test releases it.
+PAUSE_AFTER = ("plan_tool.py", "guest_host_key.py")
+PAUSING_PYTHON = '''#!{python} -I
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+here = Path(__file__).resolve().parent
+result = subprocess.run([{python!r}, *sys.argv[1:]], check=False)
+for name in {pause_after!r}:
+    if any(arg.endswith(name) for arg in sys.argv[1:]):
+        (here / ("paused-" + name)).touch()
+        deadline = time.monotonic() + 300
+        while not (here / ("release-" + name)).exists() and time.monotonic() < deadline:
+            time.sleep(0.1)
+sys.exit(result.returncode)
+'''
+
+
+def boot_scenario(address: str, host_key: str) -> dict[str, list[dict[str, Any]]]:
+    evidence = (" Name       MAC address          Protocol     Address\n"
+                "-------------------------------------------------------------------------------\n"
+                " lo         00:00:00:00:00:00    ipv4         127.0.0.1/8\n"
+                f" enp1s0     {MAC}    ipv4         {address}/24\n")
+    read = {"count": len(host_key), "eof": True, "buf-b64": base64.b64encode(host_key.encode()).decode()}
+    return {
+        "domifaddr": [{"stdout": evidence}],
+        "guest-file-open": [{"stdout": json.dumps({"return": 5})}],
+        "guest-file-read": [{"stdout": json.dumps({"return": read})}],
+        "guest-file-close": [{"stdout": json.dumps({"return": {}})}],
+    }
+
+
+class Lab:
+    """One operator home, runtime directory and Machine, all in a temporary tree."""
+
+    def __init__(self, tmp: Path, *, machine: str = MACHINE, owner: Lab | None = None) -> None:
+        self.tmp = tmp
+        self.machine = machine
+        self.user = getpass.getuser()
+        self.home = owner.home if owner else tmp / "home"
+        self.known_hosts = self.home / ".ssh/known_hosts"
+        self.run = owner.run if owner else tmp / "run"
+        if owner is None:
+            (self.home / ".ssh").mkdir(parents=True, mode=0o700)
+            self.known_hosts.write_text("", encoding="utf-8")
+            self.run.mkdir(mode=0o700)
+            subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "operator",
+                            "-f", str(self.home / ".ssh/hyperlab_ed25519")], check=True)
+        self.inventory = self.run / f"{machine}.ini"
+        self.stubs = tmp / "stub"
+        authorized = tmp / "authorized_keys"
+        shutil.copy(self.home / ".ssh/hyperlab_ed25519.pub", authorized)
+        authorized.chmod(0o600)
+        plan = {"name": machine, "os_family": "linux", "cloud_init": True, "qemu_guest_agent": True,
+                "lifecycle": "disposable", "network_profile": "lab", "owner": self.user, "mac": MAC,
+                "device_profile": "standard", "capacity_lock_path": str(tmp / "capacity.lock"),
+                "lock_path": str(tmp / f"{machine}.lock")}
+        (tmp / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        self.plan_tool = tmp / "plan_tool.py"
+        self.plan_tool.write_text("import pathlib, sys\nsys.stdout.write((pathlib.Path(__file__).parent"
+                                  " / 'plan.json').read_text())\n", encoding="utf-8")
+        self.plan = plan
+
+    def host_key(self, boot: int) -> Path:
+        key = self.tmp / f"host-key-{boot}"
+        if not key.exists():
+            subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", f"root@boot-{boot}",
+                            "-f", str(key)], check=True)
+        return key
+
+    def public_key(self, boot: int) -> str:
+        return " ".join(self.host_key(boot).with_suffix(".pub").read_text(encoding="utf-8").split()[:2])
+
+    @property
+    def identity_lock(self) -> Path:
+        """The owner's publication lock, held from before the boot until the pin."""
+        return self.run / f"{self.machine}.inventory.lock"
+
+    @property
+    def database_lock(self) -> Path:
+        return self.run / "known-hosts.lock"
+
+    def unlocked(self) -> bool:
+        return (not self.identity_lock.exists() and not self.database_lock.exists()
+                and not Path(self.plan["lock_path"]).exists())
+
+    def start(self, playbook: str, scenario: dict[str, list[dict[str, Any]]], *options: str,
+              state: str = "shut off") -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
+        argv, environment = self.invocation(playbook, scenario, *options, state=state, stubs=self.stubs)
+        result = subprocess.run(argv, cwd=self.tmp, env=environment, text=True, capture_output=True, check=False)
+        return result, guest_contract.stub_calls(self.stubs)
+
+    def invocation(self, playbook: str, scenario: dict[str, list[dict[str, Any]]], *options: str,
+                   state: str, stubs: Path, python: str = sys.executable,
+                   host_key_tool: Path = ROOT / "tools/guest_host_key.py",
+                   pin_pause: Path | None = None) -> tuple[list[str], dict[str, str]]:
+        scenario = {**guest_contract.boot_result(), "guestinfo": [{"stdout": "hostname: fixture"}],
+                    "guest-info": [guest_contract.agent_info(False)], "guest-exec": [guest_contract.EXEC_DISABLED],
+                    "start": [{}], "domstate": [{"stdout": "running"}], "destroy": [{}], **scenario}
+        if playbook == "vm-power-cycle.yml":
+            scenario["domstate"] = [{"stdout": "shut off"}, {"stdout": "running"}]
+        stub = guest_contract.write_stub_virsh(stubs, scenario)
+        if playbook == PUBLISHER.name:
+            plays = [{"name": "Publish on its own", "ansible.builtin.import_playbook": str(PUBLISHER)}]
+        else:
+            plays = entry_playbook(playbook, self.tmp)
+            plays[0]["vars"]["guest_domain_state"] = state
+        if pin_pause is not None:
+            plays[-1]["ansible.builtin.import_playbook"] = str(pausing_publisher(self.tmp, pin_pause))
+        argv, environment = guest_contract.playbook_invocation(self.tmp, plays, {
+            "guest_spec": f"vm-specs/.generated/{self.machine}.yml",
+            "guest_plan": self.plan,
+            "guest_cloud_init_user": self.user,
+            "guest_repository_root": str(ROOT), "guest_python_bin": sys.executable,
+            "guest_virsh_bin": str(stub), "guest_mkdir_bin": "/usr/bin/mkdir", "guest_rmdir_bin": "/usr/bin/rmdir",
+            "guest_existing_state": {"memory_mb": 2048}, "guest_confirm_power_cycle": self.machine,
+            "guest_qga_timeout_seconds": 2, "guest_disposable_agent_poll_seconds": 1,
+            "guest_wait_for_qga": True,
+            "guest_inventory_plan_tool": str(self.plan_tool),
+            "guest_inventory_python_bin": python,
+            "guest_inventory_virsh_bin": str(stub),
+            "guest_inventory_address_tool": str(ROOT / "tools/guest_agent_address.py"),
+            "guest_inventory_host_key_tool": str(host_key_tool),
+            "guest_inventory_operator_home": str(self.home),
+            "guest_inventory_runtime_path": str(self.run),
+            "guest_identity_lock_root": str(self.run),
+        }, *options, inventory=ROOT / "inventory.ini")
+        if pin_pause is not None:
+            environment["ANSIBLE_LIBRARY"] = str(self.tmp / "library")
+        return argv, environment
+
+    def boot_scenario(self, boot: int, address: str) -> dict[str, list[dict[str, Any]]]:
+        public = self.host_key(boot).with_suffix(".pub").read_text(encoding="utf-8")
+        scenario = boot_scenario(address, public)
+        # The cloud-init result is read before the public host key.
+        scenario["guest-file-open"] = [{"stdout": '{"return":5}'}] * 2
+        scenario["guest-file-read"] = guest_contract.boot_result()["guest-file-read"] + scenario["guest-file-read"]
+        return scenario
+
+    def boot(self, playbook: str, boot: int, address: str) -> None:
+        scenario = self.boot_scenario(boot, address)
+        result, calls = self.start(playbook, scenario, state="running" if playbook == "vm-power-cycle.yml" else "shut off")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert self.unlocked(), f"{playbook} left a lock behind"
+        commands = guest_contract.agent_calls(calls)
+        assert commands == ["guest-file-open", "guest-file-read", "guest-file-close", "guest-info", "guest-exec",
+                            "guest-file-open", "guest-file-read", "guest-file-close"], calls
+        assert sum(argv[0] == "start" for argv in calls) == 1, calls
+        if playbook == "vm-power-cycle.yml":
+            assert calls[:2] == [["destroy", self.machine], ["domstate", self.machine]], calls
+            assert calls.index(["destroy", self.machine]) < calls.index(["start", self.machine]), calls
+        # The new boot's proof waits for the agent itself; nothing else does.
+        assert not any(argv[0] == "guestinfo" for argv in calls), calls
+        assert calls.index(["start", self.machine]) < next(
+            i for i, argv in enumerate(calls) if "qemu-agent-command" in argv), calls
+        assert any(argv[1:3] == ["qemu:///system", "domifaddr"] for argv in calls), calls
+
+    def pins(self) -> dict[str, list[str]]:
+        pins: dict[str, list[str]] = {}
+        for line in self.known_hosts.read_text(encoding="utf-8").splitlines():
+            host, kind, key = line.split()[:3]
+            pins.setdefault(host, []).append(f"{kind} {key}")
+        return pins
+
+    def record(self) -> dict[str, str]:
+        lines = self.inventory.read_text(encoding="utf-8").splitlines()
+        assert lines[0] == "[workstations]" and len(lines) == 2, lines
+        fields = shlex.split(lines[1])
+        assert fields[0] == self.machine, fields
+        return dict(field.split("=", 1) for field in fields[1:])
+
+    def ssh(self, boot: int) -> subprocess.CompletedProcess[str]:
+        """Strict SSH with the published inventory's own arguments, to a
+        server that holds the given boot's host key."""
+        sshd = shutil.which("sshd", path="/usr/sbin:/usr/bin:/sbin:/bin")
+        assert sshd, "the strict-SSH proof needs OpenSSH's sshd (it serves one connection on a pipe)"
+        config = self.tmp / f"sshd-{boot}.conf"
+        config.write_text("\n".join([
+            f"HostKey {self.host_key(boot)}", f"AuthorizedKeysFile {self.tmp / 'authorized_keys'}",
+            "StrictModes no", "PasswordAuthentication no", "KbdInteractiveAuthentication no",
+            "UsePAM no", "PidFile none", ""]), encoding="utf-8")
+        record = self.record()
+        argv = ["ssh", "-F", "/dev/null", *shlex.split(record["ansible_ssh_common_args"]),
+                "-o", "GlobalKnownHostsFile=/dev/null", "-i", record["ansible_ssh_private_key_file"],
+                "-o", f"ProxyCommand={sshd} -i -f {config} -E {self.tmp / 'sshd.log'}",
+                "-l", record["ansible_user"], record["ansible_host"], "true"]
+        environment = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(self.tmp), "LC_ALL": "C"}
+        return subprocess.run(argv, env=environment, text=True, capture_output=True, check=False, timeout=60)
+
+
+def check_publisher_entries() -> None:
+    """Only Start and Power Cycle publish; Create and Reset keep the explicit inventory step."""
+    for name in ("vm-create.yml", "vm-reset.yml"):
+        plays = yaml.safe_load((ROOT / "playbooks" / name).read_text(encoding="utf-8"))
+        assert [play.get("ansible.builtin.import_playbook") for play in plays] == [None], (
+            f"{name} imports a playbook; docs/first-machine.md says it needs the inventory step")
+        assert plays[0]["roles"][-1] == "guest", f"{name} lost its guest play"
+
+
+def check_lock_privilege() -> None:
+    """These tasks must override the privileged lifecycle play explicitly."""
+    tasks = guest_contract.walk_tasks(guest_contract.load_unique(
+        (ROOT / "roles/guest/tasks/main.yml").read_text(encoding="utf-8")))
+    for name in ("Acquire the owner's publication lock before the new boot",
+                 "Release the publication lock unless the publisher now holds it"):
+        matches = [task for task in tasks if task.get("name") == name]
+        assert len(matches) == 1, f"expected one lifecycle task: {name}"
+        assert matches[0].get("become") is False, f"{name}: must explicitly declare become: false"
+
+
+def check_duplicate_pins() -> None:
+    """Plain, hashed and mixed duplicates refuse without publishing inventory."""
+    with tempfile.TemporaryDirectory() as td:
+        lab = Lab(Path(td))
+        address = "10.10.4.31"
+        old = f"{address} {lab.public_key(1)}\n"
+        hashed = lab.tmp / "hashed-hosts"
+        hashed.write_text(old, encoding="utf-8")
+        subprocess.run(["ssh-keygen", "-H", "-f", str(hashed)], check=True, capture_output=True)
+        hashed_old = hashed.read_text(encoding="utf-8")
+        assert hashed_old.startswith("|1|"), hashed_old
+        for label, duplicates, playbook in (
+            ("plain", old * 2, "vm-start.yml"),
+            ("hashed", hashed_old * 2, PUBLISHER.name),
+            ("mixed", old + hashed_old, "vm-start.yml"),
+        ):
+            lab.known_hosts.write_text(duplicates, encoding="utf-8")
+            scenario = (boot_scenario(address, lab.public_key(2)) if playbook == PUBLISHER.name
+                        else lab.boot_scenario(2, address))
+            result, _ = lab.start(playbook, scenario)
+            assert result.returncode != 0, f"{label}: duplicate previous-boot pins were accepted"
+            assert failed_task(result.stdout) == "Refuse duplicate SSH pins for the selected address", result.stdout
+            assert lab.known_hosts.read_text(encoding="utf-8") == duplicates, f"{label}: refusal changed the database"
+            assert not lab.inventory.exists(), f"{label}: refusal published inventory"
+            assert lab.unlocked(), f"{label}: refusal left a lock behind"
+
+
+def check_replaceable_pins() -> None:
+    """Only an unmarked Ed25519 pin can be replaced by the current boot key."""
+    with tempfile.TemporaryDirectory() as td:
+        lab = Lab(Path(td))
+        address = "10.10.4.31"
+        previous_keys = {"ed25519": lab.public_key(1)}
+        for kind in ("rsa", "ecdsa"):
+            path = lab.tmp / f"previous-{kind}"
+            subprocess.run(["ssh-keygen", "-q", "-t", kind, "-N", "", "-f", str(path)], check=True)
+            previous_keys[kind] = " ".join(path.with_suffix(".pub").read_text(encoding="utf-8").split()[:2])
+
+        scenario = boot_scenario(address, lab.public_key(2))
+        for label, marker, key in (
+            ("rsa", "", previous_keys["rsa"]),
+            ("ecdsa", "", previous_keys["ecdsa"]),
+            ("certificate authority", "@cert-authority ", previous_keys["ed25519"]),
+            ("revoked", "@revoked ", previous_keys["ed25519"]),
+        ):
+            for hashed in (False, True):
+                previous = f"{address} {key}\n"
+                lab.known_hosts.write_text(previous, encoding="utf-8")
+                if hashed:
+                    # ssh-keygen -H leaves marked entries clear; hash first.
+                    subprocess.run(["ssh-keygen", "-H", "-f", str(lab.known_hosts)],
+                                   check=True, capture_output=True)
+                    previous = lab.known_hosts.read_text(encoding="utf-8")
+                    assert previous.startswith("|1|"), previous
+                previous = marker + previous
+                lab.known_hosts.write_text(previous, encoding="utf-8")
+                case = f"{'hashed' if hashed else 'plain'} {label}"
+                result, _ = lab.start(PUBLISHER.name, scenario)
+                assert result.returncode != 0, f"{case}: an incompatible previous-boot pin was accepted"
+                assert failed_task(result.stdout) == "Refuse SSH pins that cannot be replaced safely", result.stdout
+                assert lab.known_hosts.read_text(encoding="utf-8") == previous, f"{case}: refusal changed the database"
+                assert not lab.inventory.exists(), f"{case}: refusal published inventory"
+                assert lab.unlocked(), f"{case}: refusal left a lock behind"
+
+        # A hashed address alone must not block a supported replacement.
+        for hashed in (False, True):
+            lab.known_hosts.write_text(f"{address} {previous_keys['ed25519']}\n", encoding="utf-8")
+            if hashed:
+                subprocess.run(["ssh-keygen", "-H", "-f", str(lab.known_hosts)],
+                               check=True, capture_output=True)
+            result, _ = lab.start(PUBLISHER.name, scenario)
+            assert result.returncode == 0, result.stdout + result.stderr
+            assert lab.pins() == {address: [lab.public_key(2)]}, lab.pins()
+            assert lab.unlocked(), "a supported pin replacement left a lock behind"
+            current = lab.ssh(2)
+            assert current.returncode == 0, current.stderr
+            stale = lab.ssh(1)
+            assert stale.returncode == 255 and "Host key verification failed" in stale.stderr, stale.stderr
+
+
+def pausing_publisher(tmp: Path, barrier: Path) -> Path:
+    """Instrument only the installed pin module's final atomic replacement.
+
+    The real production task ordering, conditions, arguments and handlers
+    remain intact. The module has already built its replacement from the old
+    database when it pauses, so a concurrent unprotected update would be lost.
+    """
+    library = tmp / "library"
+    library.mkdir()
+    source = inspect.getsource(known_hosts)
+    anchor = "        module.atomic_move(outf.name, path)"
+    assert source.count(anchor) == 1, "known_hosts replacement instrumentation is no longer unique"
+    pause = f'''        import time
+        with open({str(barrier / "paused")!r}, "w", encoding="utf-8"):
+            pass
+        deadline = time.monotonic() + 300
+        while not os.path.exists({str(barrier / "release")!r}):
+            if time.monotonic() >= deadline:
+                raise RuntimeError("pin replacement barrier timed out")
+            time.sleep(0.1)
+'''
+    (library / "paused_known_hosts.py").write_text(source.replace(anchor, pause + anchor), encoding="utf-8")
+    plays = guest_contract.load_unique(PUBLISHER.read_text(encoding="utf-8"))
+    pins = [task for task in guest_contract.walk_tasks(plays[0]["tasks"]) if "ansible.builtin.known_hosts" in task]
+    assert len(pins) == 1, "expected one production pin task"
+    pins[0]["paused_known_hosts"] = pins[0].pop("ansible.builtin.known_hosts")
+    path = tmp / "paused-publisher.yml"
+    guest_contract.write_yaml(path, plays)
+    return path
+
+
+def check_shared_known_hosts_publication() -> None:
+    """Different Machines cannot overwrite the same owner's pin database."""
+    for first_entry, second_entry in (("vm-start.yml", PUBLISHER.name), (PUBLISHER.name, "vm-start.yml")):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "a").mkdir()
+            (root / "b").mkdir()
+            a = Lab(root / "a")
+            b = Lab(root / "b", machine="srv-fix-02", owner=a)
+            address_a, address_b = "10.10.4.31", "10.10.4.32"
+            before = f"{address_a} {a.public_key(1)}\n{address_b} {b.public_key(1)}\n"
+            a.known_hosts.write_text(before, encoding="utf-8")
+            barrier = root / "barrier"
+            barrier.mkdir()
+
+            def scenario(lab: Lab, entry: str, address: str) -> dict[str, list[dict[str, Any]]]:
+                return (boot_scenario(address, lab.public_key(2)) if entry == PUBLISHER.name
+                        else lab.boot_scenario(2, address))
+
+            argv, environment = a.invocation(first_entry, scenario(a, first_entry, address_a), state="shut off",
+                                             stubs=a.stubs, pin_pause=barrier)
+            first = subprocess.Popen(argv, cwd=a.tmp, env=environment, text=True,
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            try:
+                deadline = time.monotonic() + 300
+                while not (barrier / "paused").exists():
+                    assert first.poll() is None, f"the first publisher ended before replacement: {first.communicate()[0]}"
+                    assert time.monotonic() < deadline, "the first publisher never reached its replacement"
+                    time.sleep(0.1)
+                result, _ = b.start(second_entry, scenario(b, second_entry, address_b))
+                if result.returncode != 0:
+                    assert failed_task(result.stdout) == "Refuse a concurrent update of the owner's SSH pins", result.stdout
+                    assert a.database_lock.is_dir(), "the contender removed the first publisher's database lock"
+                    assert not b.identity_lock.exists(), "the contender left its own Machine lock behind"
+                    assert not b.inventory.exists(), "the contender published inventory despite refusal"
+                    assert a.known_hosts.read_text(encoding="utf-8") == before, "contention changed the database"
+            finally:
+                (barrier / "release").touch()
+                output = first.communicate(timeout=300)[0]
+            assert first.returncode == 0, output
+            assert a.unlocked(), "the first publisher left a lock behind"
+            if result.returncode != 0:
+                # The contender may already have booted: retry its standalone
+                # publisher, without making another boot just to pin this one.
+                retry, _ = b.start(PUBLISHER.name, boot_scenario(address_b, b.public_key(2)))
+                assert retry.returncode == 0, retry.stdout + retry.stderr
+            assert a.pins() == {address_a: [a.public_key(2)], address_b: [b.public_key(2)]}, (
+                f"a shared database update was lost: {a.pins()}")
+            assert a.unlocked() and b.unlocked(), "publication left a lock behind"
+            for lab in (a, b):
+                current = lab.ssh(2)
+                assert current.returncode == 0, f"strict SSH rejected the current boot: {current.stderr}"
+                stale = lab.ssh(1)
+                assert stale.returncode == 255 and "Host key verification failed" in stale.stderr, (
+                    f"strict SSH accepted a stale boot: {stale.returncode} {stale.stderr}")
+
+
+def check_disposable_repin() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        lab = Lab(Path(td))
+
+        def public(boot: int) -> str:
+            return " ".join(lab.host_key(boot).with_suffix(".pub").read_text().split()[:2])
+
+        lab.boot("vm-start.yml", 1, "10.10.4.31")
+        assert lab.pins() == {"10.10.4.31": [public(1)]}, lab.pins()
+        assert lab.ssh(1).returncode == 0, lab.ssh(1).stderr
+
+        # The second start of the same Machine: same address, new host key.
+        lab.boot("vm-start.yml", 2, "10.10.4.31")
+        assert lab.pins() == {"10.10.4.31": [public(2)]}, f"the second boot was not pinned: {lab.pins()}"
+        record = lab.record()
+        assert record["ansible_host"] == "10.10.4.31" and "StrictHostKeyChecking=yes" in record["ansible_ssh_common_args"]
+        assert lab.ssh(2).returncode == 0, f"strict SSH to the second boot failed: {lab.ssh(2).stderr}"
+        stale = lab.ssh(1)
+        assert stale.returncode == 255 and "Host key verification failed" in stale.stderr, (
+            f"strict SSH accepted the first boot's key: {stale.returncode} {stale.stderr}")
+
+        # A power cycle is a new boot too; here its lease moved.
+        lab.boot("vm-power-cycle.yml", 3, "10.10.4.32")
+        assert lab.pins()["10.10.4.32"] == [public(3)], f"the power-cycled boot was not pinned: {lab.pins()}"
+        assert lab.record()["ansible_host"] == "10.10.4.32", "the inventory names the earlier boot's address"
+        assert lab.ssh(3).returncode == 0, lab.ssh(3).stderr
+        assert lab.ssh(2).returncode == 255, "strict SSH accepted the second boot's key after the power cycle"
+
+        before = (lab.known_hosts.read_text(), lab.inventory.read_text())
+        # A boot whose key cannot be read through the agent fails the start
+        # and leaves the pin alone; nothing reads a key from the network.
+        failing = boot_scenario("10.10.4.32", "")
+        failing["guest-file-open"] = [{"stdout": '{"return":5}'},
+                                      {"rc": 1, "stderr": "error: Guest agent is not responding\n"}]
+        failing["guest-file-read"] = guest_contract.boot_result()["guest-file-read"]
+        result, _ = lab.start("vm-start.yml", failing)
+        assert result.returncode != 0, "a start whose host key could not be pinned succeeded"
+        assert "Read the guest SSH host key through QEMU Guest Agent" in result.stdout, result.stdout
+        assert (lab.known_hosts.read_text(), lab.inventory.read_text()) == before, "a failed pin changed the pin"
+        assert lab.unlocked(), "a failed key read left a lock behind"
+
+        failing["domifaddr"] = [{"stdout": "no managed IPv4 address"}]
+        result, _ = lab.start("vm-start.yml", failing)
+        assert result.returncode != 0, "a start whose address could not be discovered succeeded"
+        assert "Resolve the unique managed guest address through QEMU Guest Agent" in result.stdout
+        assert (lab.known_hosts.read_text(), lab.inventory.read_text()) == before, "failed discovery changed the pin"
+        assert lab.unlocked(), "failed discovery left a lock behind"
+
+        # Not a new boot: no discovery, no pin, no inventory.
+        for label, playbook, options, state in (
+            ("already running", "vm-start.yml", (), "running"),
+            ("check mode", "vm-start.yml", ("--check",), "shut off"),
+            ("check mode", "vm-power-cycle.yml", ("--check",), "running"),
+        ):
+            result, calls = lab.start(playbook, boot_scenario("10.10.4.33", public(4)), *options, state=state)
+            assert result.returncode == 0, f"{label} {playbook}: {result.stdout}{result.stderr}"
+            assert not any("qemu-agent-command" in argv or "domifaddr" in argv or argv[0] in ("start", "destroy")
+                           for argv in calls), f"{label} {playbook}: boot or publisher ran ({calls})"
+            assert lab.unlocked(), f"{label} {playbook}: a lock was left behind"
+        assert (lab.known_hosts.read_text(), lab.inventory.read_text()) == before, "a start that made no boot repinned"
+
+
+def failed_task(output: str) -> str | None:
+    """The name of the task whose result was the run's first failed one."""
+    task = None
+    for line in output.splitlines():
+        if line.startswith("TASK [") and "]" in line:
+            task = line[len("TASK ["):line.rindex("]")]
+        elif line.startswith(("fatal:", "failed:")):
+            return task
+    return None
+
+
+def check_pin_failure() -> None:
+    """Discovery succeeds, but replacing the pin fails: the start fails and nothing is published."""
+    with tempfile.TemporaryDirectory() as td:
+        lab = Lab(Path(td))
+        lab.boot("vm-start.yml", 1, "10.10.4.31")
+        before = (lab.known_hosts.read_text(), lab.inventory.read_text())
+        # A key tool that succeeds with a line for another address: the
+        # known_hosts module refuses it, also when the contract runs as root.
+        public = " ".join(lab.host_key(2).with_suffix(".pub").read_text().split()[:2])
+        tool = lab.tmp / "other_host_key.py"
+        tool.write_text(f"print({('10.10.4.99 ' + public)!r})\n", encoding="utf-8")
+        argv, environment = lab.invocation("vm-start.yml", lab.boot_scenario(2, "10.10.4.31"), state="shut off",
+                                           stubs=lab.stubs, host_key_tool=tool)
+        result = subprocess.run(argv, cwd=lab.tmp, env=environment, text=True, capture_output=True, check=False)
+        assert result.returncode != 0, "a start whose pin could not be replaced succeeded"
+        assert failed_task(result.stdout) == "Pin the guest SSH host key for strict checking", result.stdout
+        assert (lab.known_hosts.read_text(), lab.inventory.read_text()) == before, (
+            "a failed pin replacement still changed the pin or published inventory")
+        assert lab.unlocked(), "a failed pin replacement left a lock behind"
+
+
+def check_concurrent_publication() -> None:
+    """A Power Cycle cannot cross its stop/start boundary while a Start is still pinning."""
+    with tempfile.TemporaryDirectory() as td:
+        lab = Lab(Path(td))
+        pause = lab.tmp / "pause"
+        pause.mkdir()
+        python = pause / "python"
+        python.write_text(PAUSING_PYTHON.format(python=sys.executable, pause_after=PAUSE_AFTER), encoding="utf-8")
+        python.chmod(0o700)
+        argv, environment = lab.invocation("vm-start.yml", lab.boot_scenario(1, "10.10.4.31"), state="shut off",
+                                           stubs=lab.tmp / "stub-a", python=str(python))
+        first = subprocess.Popen(argv, cwd=lab.tmp, env=environment, text=True,
+                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        try:
+            # Start A pauses twice: as its publisher begins, after the
+            # lifecycle play ended (before the publisher takes anything), and
+            # after it read boot 1's key, before that key is pinned.
+            for attempt, name in enumerate(PAUSE_AFTER):
+                deadline = time.monotonic() + 300
+                while not (pause / f"paused-{name}").exists():
+                    assert first.poll() is None, f"the first start ended before its pin: {first.communicate()[0]}"
+                    assert time.monotonic() < deadline, f"the first start never reached {name}"
+                    time.sleep(0.1)
+                stubs = lab.tmp / f"stub-b{attempt}"
+                argv, environment = lab.invocation("vm-power-cycle.yml", lab.boot_scenario(2, "10.10.4.31"),
+                                                   state="running", stubs=stubs)
+                second = subprocess.run(argv, cwd=lab.tmp, env=environment, text=True, capture_output=True,
+                                        check=False)
+                calls = guest_contract.stub_calls(stubs)
+                assert second.returncode != 0, f"after {name}: a power cycle ran while another start was still pinning"
+                assert not any(argv[0] in ("destroy", "start") for argv in calls), (
+                    f"after {name}: the power cycle crossed its stop/start boundary during the other publication: {calls}")
+                assert "is still publishing" in second.stdout, second.stdout
+                assert lab.identity_lock.is_dir(), f"after {name}: the refused power cycle released the other lock"
+                (pause / f"release-{name}").touch()
+        finally:
+            for name in PAUSE_AFTER:
+                (pause / f"release-{name}").touch()
+            output = first.communicate(timeout=300)[0]
+        assert first.returncode == 0, output
+        assert lab.unlocked(), "the first start left a lock behind"
+        assert lab.ssh(1).returncode == 0, lab.ssh(1).stderr
+
+        # Once the first publication is done, the power cycle goes through
+        # and its boot is the one pinned.
+        lab.boot("vm-power-cycle.yml", 2, "10.10.4.31")
+        public = " ".join(lab.host_key(2).with_suffix(".pub").read_text().split()[:2])
+        assert lab.pins() == {"10.10.4.31": [public]}, lab.pins()
+        assert lab.ssh(2).returncode == 0, lab.ssh(2).stderr
+        stale = lab.ssh(1)
+        assert stale.returncode == 255 and "Host key verification failed" in stale.stderr, stale.stderr
+
+        # Run on its own, the publisher takes the same lock: it refuses while
+        # a start holds it and leaves none behind when it is done.
+        public = lab.host_key(2).with_suffix(".pub").read_text(encoding="utf-8")
+        lab.identity_lock.mkdir()
+        result, _ = lab.start(PUBLISHER.name, boot_scenario("10.10.4.31", public))
+        assert result.returncode != 0, "the publisher ran on its own while a start held the lock"
+        assert "is being started or published" in result.stdout, result.stdout
+        assert lab.identity_lock.is_dir(), "the refused publisher removed a lock it did not take"
+        lab.identity_lock.rmdir()
+        result, _ = lab.start(PUBLISHER.name, boot_scenario("10.10.4.31", public))
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert lab.unlocked(), "the publisher on its own left its lock behind"
+        assert lab.ssh(2).returncode == 0, lab.ssh(2).stderr
 
 
 def main() -> int:
@@ -231,6 +839,14 @@ def main() -> int:
     assert '"privileged": False' in inventory_action
     assert '"requires": None' in inventory_action
 
+    check_publisher_entries()
+    check_lock_privilege()
+    check_duplicate_pins()
+    check_replaceable_pins()
+    check_shared_known_hosts_publication()
+    check_disposable_repin()
+    check_pin_failure()
+    check_concurrent_publication()
     print("managed guest inventory contract: OK")
     return 0
 

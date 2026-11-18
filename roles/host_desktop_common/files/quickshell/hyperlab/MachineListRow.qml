@@ -2,8 +2,8 @@
 //
 // The dense alternative to the card grid, used when an inventory is large
 // enough that a grid stops being readable. It carries the same facts in the
-// same order — name, provenance, state, allocation, GPU relationship — so
-// switching layout changes density and nothing else.
+// same host projection, with a sphere beside the name, operating system,
+// state, memory allocation and GPU relationship.
 
 import QtQuick
 
@@ -39,7 +39,7 @@ Rectangle {
         : (
             press.pressed
             ? row.theme.fillPressed
-            : (hover.hovered ? row.theme.fillHover : "transparent")
+            : (hover.hovered ? row.theme.fillHover : row.theme.alpha(row.theme.textPrimary, 0))
         )
 
     border.width:
@@ -70,11 +70,17 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         spacing: row.tokens.spaceLg
 
-        ProvenanceMarker {
+        MachineSphere {
+            objectName: "machine-list-sphere-" + row.machine.name
             anchors.verticalCenter: parent.verticalCenter
             tokens: row.tokens
             theme: row.theme
-            identity: String(row.machine.provenance)
+            machineName: String(row.machine.name)
+            domain: String(row.machine.provenance)
+            state: String(row.machine.state)
+            disposable: row.machine.lifecycle === "disposable"
+            gpuOwner: row.relation === "held"
+            size: row.tokens.spaceHuge
         }
 
         ShellLabel {
@@ -128,7 +134,8 @@ Rectangle {
         text:
             row.relation === "held"
             ? "Holds the GPU"
-            : (row.relation === "unknown" ? "Passthrough unknown" : "")
+            : (row.relation === "configured" ? "Passthrough configured"
+                : (row.relation === "unknown" ? "Passthrough unknown" : ""))
         color: row.theme.textQuiet
     }
 

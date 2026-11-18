@@ -35,10 +35,6 @@ VERIFY = Path("verify.sh")
 # The render invocation, written out here rather than read from verify.sh,
 # so that an edit to verify.sh cannot change what is required.
 RENDER = ("-i", "inventory.ini", "tests/render.yml")
-EXTRA_VARS = (
-    "--extra-vars",
-    '{"hardware_profiles":{"nitro-3060":{"vfio_ids":["10de:2520","10de:228e"]}}}',
-)
 SKIP_PRIVILEGED = ("--skip-tags", "privileged")
 SUDO_PROBE = ("sudo", "-n", "true")
 
@@ -258,12 +254,12 @@ class Fixture:
 
 def expected_render(fixture: Fixture, case: Case) -> list[Command]:
     if case.credential == "none":
-        return [("ansible-playbook", *RENDER, *SKIP_PRIVILEGED, *EXTRA_VARS)]
+        return [("ansible-playbook", *RENDER, *SKIP_PRIVILEGED)]
     if case.credential == "file":
         become = ("--become-password-file", str(fixture.password))
-        return [("ansible-playbook", *become, *RENDER, *EXTRA_VARS)]
+        return [("ansible-playbook", *become, *RENDER)]
     if case.credential == "passwordless":
-        return [("ansible-playbook", *RENDER, *EXTRA_VARS)]
+        return [("ansible-playbook", *RENDER)]
     return []
 
 

@@ -51,8 +51,9 @@ and showing current host trust and provenance. It then pins the main
 process with a PID descriptor, sends `SIGSTOP`, checks all its threads
 stopped once, and inspects its cgroup and descendants once. An incomplete
 stop causes immediate refusal and resume. There is no sleep or deadline
-polling during the pause, which normally lasts milliseconds. The shell
-cannot launch an application or action after this inspection. Only the
+polling during the pause. The real multithreaded shell's incomplete-stop
+rate is unmeasured. The shell cannot launch an application or action after
+this inspection. Only the
 exact read-only status observers in `ShellState.qml` and their own children
 may remain. The provenance observer is recognized in both its bridge form
 and its exact post-exec resolver form, validated against the checkout
@@ -102,7 +103,14 @@ order, tags and exact final task; every observer and the post-exec
 resolver; generation and transport refusals; both directions of clock
 correction; zero sleeps or monotonic waits during the pause; immediate
 late-child refusal; and queued launches against a real inert paused
-subprocess.
+subprocess. Real fixtures also force an incomplete first stop sample. Only
+that pause-entry refusal is retried, after resume and for at most five
+seconds; all other failures propagate. The busy-child fixture requires the
+paused inspection and its specific refusal, so an earlier stop refusal
+cannot stand in for child-survival evidence. Per-process signal sequences
+require resume after each incomplete stop, pinned kill without resume on
+launcher success, and resume on busy-child refusal. Installed refresh still
+refuses an incomplete stop immediately and requires a later apply.
 Its isolated Ansible fixture covers a later failure and retry, a failed
 refresh and retry, adapter-only and unit-only changes followed immediately
 by `changed=0`, already stale residents, unrelated helpers and check mode. This is
@@ -160,7 +168,7 @@ no click is ever intercepted by something invisible.
 At full width the rail has three bounded regions:
 
 ```text
-[symbol Sfere] [workspaces]   [focused surface] | 09:41 Thu 4 Sep |   [provenance] [GPU] [net audio battery] [settings]
+[symbol Sfere] [workspaces]   [focused surface] | 09:41 Thu 4 Sep |   [focus] [GPU] [net audio battery] [settings]
 ```
 
 The clock holds the display centre while both side regions still fit beside
@@ -172,7 +180,13 @@ it. Below that the rail reduces in a defined order rather than colliding:
 4. workspace chips fold into a counted overflow.
 
 Time, essential system access and any unavailable-data indication always
-survive.
+survive. Below 820 logical pixels the extra gaps between right-hand controls
+collapse to their own padding and the left group uses the smallest spacing.
+The workspace capacity reserves the clock's actual measured width and its
+gaps before allocating chips, including the extra width of a counted overflow.
+The focus item stays visible on narrow rails; only its Machine name may elide,
+while its domain and state words remain unelided. The 800-pixel fixtures also
+exercise five occupied workspaces with long, unconfirmed Machine names.
 
 - **Workspace chips** show only what the compositor reported: active,
   occupied or urgent. An empty or unreadable snapshot says
@@ -181,14 +195,22 @@ survive.
 - **Context** is the compositor's own name for the focused host surface. It
   is host metadata about a host process. It is not a provenance claim and it
   is never the GPU trust tooltip wearing a different label.
-- **Provenance** and **GPU** are separate fields answering separate
-  questions. The provenance badge reports the focused surface's identity as
-  resolved by the host (see [Focused-surface provenance](#focused-surface-provenance)):
-  HOST for a host-native surface, the VM's reviewed identity for a verified
-  managed transport, a warning-toned "Unresolved" for a surface that looks
-  managed but has no valid host registration, and quiet text while the
-  resolution is pending or unavailable. Context and provenance never merge:
-  Looking Glass stays the context while DEV is the provenance. The GPU entry shows a
+- **Focus** and **GPU** are separate fields answering separate questions.
+  The focus item and the core of the product symbol answer "where am I
+  typing?" from the focused surface's identity as resolved by the host (see
+  [Focused-surface provenance](#focused-surface-provenance) and
+  [Bar core](#bar-core)): the grey core and the host sphere with **Host**
+  for a host-native surface, the Machine's domain colour and its sphere with
+  its name and domain (`dev-01 · dev`) for a verified viewer of one managed
+  Machine, and a hollow core with the neutral outline and **Unknown** for
+  anything else, a surface that looks managed but has no valid host
+  registration included. An unresolved answer adds the word `unresolved`;
+  pending re-validation and stale-source answers do not. The item is always
+  shown; the reason for Unknown is in its accessible name, and the resolver's
+  own answer is in
+  Diagnostics, which the item opens. Context and focus never
+  merge: Looking Glass stays the context while `dev-01 · dev` is the focus.
+  The GPU entry shows a
   current owner, a retained boot claim, or an unreadable source — and stays
   silent when ownership is known and nothing holds it, because a free GPU at
   idle is not news.
@@ -198,8 +220,9 @@ survive.
 Product inventory grouped by host-resolved provenance, with a count per group
 and an explicit Unclassified group last. Every other observed libvirt domain
 appears below in **Not managed**, with lifecycle **external**, name and state.
-Those rows have a neutral outline and transparent fill, never a domain colour
-or HOST grey, and carry no selection, power or console actions. The same raw
+Those tiles have a neutral sphere and border with transparent fill, never a
+domain colour or HOST grey, and carry no selection, power or console actions.
+The dense layout keeps the same neutral outline and sphere. The same raw
 inventory stays in Diagnostics. This is visibility without adoption
 ([ADR 0060](adr/0060-external-machine-visibility.md): accepted population
 change; proposed external visual state).
@@ -246,25 +269,62 @@ VM pill, with a separate 30-second command timeout for the full document
 build. Command failure, timeout and malformed JSON show **VM ?**. Installed
 read latency still needs measurement on Nitro.
 
-Product cards are 300–420 units wide and carry, in
-order: name and operating system, provenance, state, the allocation the
-machine was given (memory, vCPU, network), and its relationship to the
-passthrough GPU.
+Product tiles are 300–420 units wide, grouped in the palette's domain order
+(CLEAN, DEV, SERVICES, DIRTY, LAB, then Unclassified), followed by Not managed.
+Empty groups are omitted. Each tile starts with a `MachineSphere` and a state
+word, followed by its name and **memory · vCPU · domain** allocation line.
+A 7% wash mixes the resolved domain's palette colour over the raised surface.
+Hover and press add the shared card's neutral feedback over that wash;
+selection takes precedence. Passthrough
+configuration or ownership is written below; ownership also docks the GPU
+mark on the sphere, and disposable lifecycle adds its dashed ring.
+Unclassified Machines keep a neutral sphere and surface without a domain
+wash. External tiles remain unfilled even if their network names a domain.
+Their existing read-only projection omits memory and vCPU, so the allocation
+line says **Unknown · Unknown vCPU · external**; network attachment supplies
+neither an allocation nor an identity. External grid tiles use the same
+column widths and sphere padding as product tiles.
 
-The operating system comes from the Machine's checked-in image manifest
-(`os_variant`), read by the host: `Arch Linux`, `Debian 13`, `Fedora 44`,
-`Windows 11`. A guest cannot rename itself there, and a variant the host
-does not know reads **OS unknown** instead of a guess.
+The operating system in dense rows and the pane comes from the Machine's
+checked-in image manifest (`os_variant`), read by the host: `Arch Linux`,
+`Debian 13`, `Fedora 44`, `Windows 11`. A guest cannot rename itself there.
+An unknown variant reads **OS unknown** in the row and **Unknown** in the pane.
 
-Memory and vCPU are labelled **allocation**, never consumption. A value the
-host did not publish says Unknown; `networks: null` (the domain could not be
-read) and `networks: []` (the domain declares none) are different facts and
+Memory and vCPU describe **allocation**, never consumption; the accessible
+name also labels them as allocation. A value the host did not publish says
+Unknown; `networks: null` (the domain could not be read) and `networks: []`
+(the domain declares none) are different facts and
 never share a sentence.
 
 Large inventories switch to a virtualized list, so every machine stays
 reachable. There is no two-row cap and no self-referential "view all" tile.
 
-Selecting a card opens the machine pane. **Selection never starts anything.**
+Selecting a tile opens the existing machine pane, whose header shows the
+same sphere at a larger size. Tab reaches every product tile; Left/Right
+follow tile order, and Up/Down move to the closest column in the preceding
+or following drawn row, across domain groups. Focus scrolls into view, and
+Enter or Space opens the pane. Filtering still applies to both populations.
+Every tile has an accessible name; external tiles are read-only groups and
+never enter the action tab order. **Selection never starts anything.**
+The presentation contract guards the rendered `MachineTile` and dense row
+against guest images (including derived and qualified image types), screen
+copies and lifecycle calls. The unused former `MachineModule` is absent from
+the source and deployment inventory. Existing installations may retain an
+unreferenced `MachineModule.qml`: the source-copy task does not prune
+destination files.
+
+A readable empty registry shows the host's grey sphere and one **Create a
+Machine** action, which opens the same Create view as **New Machine** in a
+populated inventory. If no domains are present, the filter and layout switch
+are hidden. Existing external domains remain below that guidance.
+Unavailable inventory and a filter with no matches keep their separate
+messages and never become the empty-host view.
+
+`python tests/machine_showcase_contract.py` executes the production QML with
+six synthetic Machines across four domains and one external domain, including
+real Qt key events. Its optional `--render-dir DIRECTORY` writes native
+1440×900 and 1920×1080 captures and a GTK comparison using the same fixture.
+Only transports are substituted; physical acceptance on Nitro remains open.
 
 ### The selected machine
 
@@ -929,7 +989,7 @@ Three systems meet in `Theme.qml` and stay separate.
 | System | Where it may appear |
 | --- | --- |
 | Appearance | every surface, boundary, fill and text tone |
-| Provenance | labelled provenance markers, provenance group headers, the explicit trust diagram |
+| Provenance | labelled provenance markers, Machine spheres, provenance group headers, the explicit trust diagram |
 | Status | operational warning and error, as text and shape |
 
 Provenance colours are fixed identity, immutable across every appearance, and
@@ -969,6 +1029,108 @@ constants, checked by `tests/product_symbol_geometry_contract.py`.
 "Sfere" is the wordmark and "by Doppiari" the byline; neither is a trust
 claim. There is no second logo. Software verification does not close physical
 Nitro acceptance under both compositors or Predator replay.
+
+### Machines
+
+Every Machine is a sphere and the host is the grey symbol at the centre
+([ADR 0064](adr/0064-spheres-are-machines.md), accepted operator decision).
+`MachineSphere.qml` is the one drawing of a Machine. The Machines showcase
+uses it on product tiles, dense rows, neutral external tiles, the selected
+Machine header and the empty host view; the bar's focus item uses it too.
+Other surfaces adopt it separately. Its inputs are `domain`, `state`,
+`disposable`, `gpuOwner`, `size`, `machineName` and `isHost`, with the
+shell's `theme` and `tokens`. The ADR's operator decision fixes the table
+below; how the component reads it (the outline tone, the libvirt words, the
+reserved HOST grey) is the ADR's proposed part:
+
+| State | Drawing |
+| --- | --- |
+| running | lit sphere in the domain colour |
+| shut off, `shutoff` | dark but filled sphere in its own darkened hue, always brighter than the ground, only its rim lit in the domain colour |
+| starting, stopping, `in shutdown` | dark sphere with an arc on its ring, clockwise for starting, counter-clockwise for stopping, moving only while the transition is reported and still under reduced motion |
+| paused, suspended, `pmsuspended` | dimmed sphere with two cuts through its top |
+| disposable | dashed ring around the sphere, with any state |
+| owns the GPU | a chip docked on the ring at the right, with any state |
+| external, unclassified, any other word | solid neutral outline in the appearance text tone, no fill |
+| domain `host` without `isHost`, `isHost` with another domain, or a domain not in lower case (`Host`, `Dev`) | the same neutral outline, word `unclassified`: the HOST grey sphere is the host's own |
+
+The sphere is lit from the upper left with a small highlight and draws
+nothing beyond its own edge, from 12 to 256 pixels. Domain, light and the
+pause cuts hold at every size; the disposable dashes and the GPU token are
+promised only from 32 pixels, so a surface drawing a smaller sphere writes
+`disposable` and `GPU` beside it. Its accessible name reads
+`dev-01, dev, running`, extended with `disposable` and `owns the GPU`;
+`domainWord` is the word a surface writes beside it: the domain, `external`
+for an external domain, `unclassified` when no identity resolved. A Machine
+in a state outside the table (`crashed`, `unknown`) is drawn as the outline
+with its domain still in the accessible name; a surface writes the state
+word beside it, because the outline alone reads as external. The
+component reads nothing from the host and has no pointer handler: it changes
+only when its caller reports a state the bridge, GPU ownership or inventory
+confirmed. The arcs and ring of the product symbol still carry no claim; its
+core in the host bar does (below).
+
+### Bar core
+
+In the host bar, and only there, the core of the product symbol follows
+focus (ADR 0064). `ShellState.focusedMachine` derives the identity from
+`focusedProvenance` and uses the Machine inventory for the state the sphere
+draws. The bar combines that answer with domain palette availability to
+present one of three answers:
+
+| Answer | When | Core | Focus item |
+| --- | --- | --- | --- |
+| host | the resolver named the surface host-native | filled, HOST grey | host sphere, `Host` |
+| machine | the resolver named one reviewed guest identity from the host-owned VM spec of a registered viewer | filled, the domain colour | the Machine's sphere, `dev-01 · dev` |
+| unknown | loading, resolving, unresolved, unavailable, a stale focus source, an inventory that names the Machine in another domain, or an incomplete domain palette | hollow outline in the text tone | neutral outline, `Unknown` |
+
+The mapping is the one the window borders use: the resolver
+(`tools/surface_provenance.py`) answers for the focused PID, app id and
+window id, verified against the per-user viewer registry and the reviewed
+spec; the title, clipboard and guest-agent data never enter. Every focus
+snapshot resets the answer to Unknown until the resolver answers again,
+including re-validation of the same window on the adapter's 30-second
+heartbeat and Sway window events such as title changes. This can briefly
+show the hollow core and `Unknown` and change the focus item's width even
+when focus has not moved; its visibility depends on resolver latency.
+A Machine never stays on the window that replaced it. The inventory only
+confirms the Machine's state for its sphere: if it does not list the Machine,
+the domain stays and the sphere draws the neutral outline with
+`state not confirmed` beside it. A reported state the sphere cannot draw,
+such as `crashed` or `unknown`, also keeps the proven domain core and adds
+the state word to the focus item (`dev-01 · dev · crashed`). These inventory
+states differ from unresolved provenance, which reads `Unknown` plus the
+visible word `unresolved`, with a hollow core. A pending request instead
+shows `Unknown` alone. The Machine name can elide to the right, with its
+full name still accessible; the separate domain and state label never
+elides, including when inventory is unlisted or stale. Inventory updates
+change the state word without a new focus event; returning to a supported state removes it. If the inventory
+lists the Machine in another domain, neither source is believed.
+The bar also requires a complete
+domain palette: a missing `dom_*` key makes both the core and the focus item
+Unknown, including host focus, until the palette is complete again. This
+presentation check leaves the resolver's answer intact in Diagnostics.
+A new colour fades in from transparent over `motionExpand`, never through
+another hue, only when it differs from the last proven colour drawn. An
+unchanged answer restores that colour without restarting the fade; the
+pending interval still reads Unknown. With reduced motion the fade is instant.
+`IsolationGlyph.qml` accepts a `core` colour and `coreHollow`;
+`IdentityMark.qml` forwards both, with the primary text tone and a filled
+core as defaults for every other surface. The idle desktop, wallpapers and
+lock surface keep the grey core. A fullscreen guest covers the bar
+([open record](../problems/bar-core-hidden-under-fullscreen-guest.md)).
+`tests/bar_core_focus_contract.py` checks five fixture states (host
+terminal, dev viewer, dirty viewer, unmapped window, stale source) under
+Sway and Hyprland through the real adapter, shell state, resolver and bar,
+on captured pixels, plus `crashed` and `unknown` inventory states with a
+neutral sphere, a visible state word and the retained domain core. A
+31-character services Machine exercises crashed, unlisted and stale inventory;
+the contract reads the domain label's actual truncation and painted bounds.
+Every case also renders at 800 pixels and checks the focus item, clock,
+identity, workspaces, GPU, system readouts and settings for containment and
+overlap. The unresolved marker is absent while each request is pending.
+Software-verified; Nitro acceptance under both
+compositors stays open.
 
 ## Security boundaries
 

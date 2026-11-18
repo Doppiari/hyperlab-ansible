@@ -50,6 +50,10 @@ def main(root: Path) -> int:
             # Normalize the variant name in the banner before comparing structure.
             for name in variants:
                 shape = shape.replace(f"palette: {name}", "palette: V")
+            if filename == "hyperlab-palette-quickshell.json":
+                # Match only this variant's generated top-level name. An unquoted
+                # marker keeps a wrong literal name of "V" distinguishable.
+                shape = shape.replace(f'\n  "name": "{variant}",\n', '\n  "name": V,\n', 1)
             shapes.append(shape)
         if len(set(shapes)) != 1:
             failures.append(f"{filename}: different structure across variants")

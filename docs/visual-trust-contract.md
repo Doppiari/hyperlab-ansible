@@ -122,6 +122,70 @@ specified by ADR 0060.
 
 The selected appearance theme is independent from those meanings.
 
+### Spheres are Machines
+
+[ADR 0064](adr/0064-spheres-are-machines.md) (accepted, operator decision
+2026-11-02) gives these identities one shape. Every Machine is a sphere
+tinted with its domain colour; the host is the grey product symbol, drawn on
+the host only (product glyph, idle desktop, host wallpaper, lock surface)
+and never tinted there. A Machine's state is shape and light, never colour
+alone: lit when running, a dark body with a coloured rim when shut off, a
+moving arc only while a transition is reported, a dimmed body with a pause
+notch when paused or suspended, a dashed ring when disposable, the GPU token
+on its ring when it owns the GPU, and the neutral outline above for an
+external or unclassified domain. The domain is also written as a word beside
+the sphere where space allows. `MachineSphere.qml` is the one drawing every
+surface uses. The HOST grey sphere is the host's own: the component draws it
+only when its caller marks the sphere as the host, and draws the neutral
+outline for any other Machine whose provenance says `host` (a proposed
+component choice of the ADR).
+
+The product symbol's arcs and ring carry no trust claim. Its core in the host
+bar does: it takes the colour of the Machine that owns the focused window,
+and grey only while the host itself has focus, drawn by the host from the
+host-owned provenance below, so no guest can fake it (ADR 0064). When focus
+cannot be proven to belong to the host or to one Machine (still resolving,
+unresolved, unavailable, a stale focus source, or a Machine inventory that
+names that Machine in another domain) the core is drawn hollow, an outline
+in the neutral text tone, and the focus item beside the bar's readouts says
+**Unknown**: Unknown is never the HOST grey and never a domain colour. The
+focus item draws the same answer as a `MachineSphere` and words
+(`dev-01 · dev`, `Host`, `Unknown`); its words stay in the text tone, so a
+colour never appears without its domain word. Only the Machine name may
+elide, at its right edge; the domain and any state suffix remain unelided
+inside the focus item, including with a 31-character name or stale inventory.
+An unresolved surface adds the visible word `unresolved` beside `Unknown`;
+loading, pending and stale-source answers do not carry that marker. It
+identifies a refused provenance answer without using a warning colour or
+changing the hollow core. The window title, clipboard
+and guest-agent data never enter this mapping: it reads only the resolver's
+answer for the focused process and the inventory row of the same Machine.
+A proven Machine with an unsupported inventory state keeps its domain core
+and shows the state word beside the neutral sphere (`dev-01 · dev · crashed`
+or `dev-01 · dev · unknown`); without a confirmed state it says
+`state not confirmed`. State uncertainty does not erase a proven identity:
+the hollow core and the word `Unknown` remain for unplaced focus.
+An incomplete domain palette makes both signals Unknown, even when the
+resolver named a host or Machine identity; restoring the palette restores
+the presentation of that answer. Every focus snapshot, including an
+unchanged-window heartbeat, reads Unknown until the fresh resolver answer.
+A new colour fades in over the expansion motion token (180 ms),
+instantly with reduced motion, and never blends through another hue. The
+idle desktop, the wallpapers and the lock surface keep the grey core. A
+fullscreen guest covers the bar; only the ADR 0039 ring remains, see
+[the open record](../problems/bar-core-hidden-under-fullscreen-guest.md).
+`tests/bar_core_focus_contract.py` runs the chain from Sway and Hyprland
+focus fixtures through the real adapter, shell state and resolver to the
+captured bar. The spheres inside guest wallpapers are ambience: a guest
+draws its own wallpaper, so they prove nothing. Authority stays with
+host-drawn signals, the bar core and the window borders. No theme or scheme
+changes a sphere colour, the host grey, the bar core or a trust colour. The
+one themed tone on a sphere is the neutral outline of an external or
+unclassified Machine: it is the appearance text tone, as above, so a theme
+may change its shade, and under every appearance it must stay far from the
+HOST grey and every domain colour (a proposed component choice of the ADR,
+checked by `tests/machine_sphere_contract.py`).
+
 ### Focus and keyboard trust indication
 
 Trust-mode keyboard RGB follows the host-resolved provenance of the currently

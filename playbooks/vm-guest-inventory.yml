@@ -3,6 +3,8 @@
   hosts: hypervisor
   become: false
   gather_facts: false
+  # Both publication locks are released by handlers, also when a task fails.
+  force_handlers: true
   environment:
     LC_ALL: C
   vars:
@@ -17,7 +19,25 @@
       {{ guest_inventory_repository_root }}/group_vars/all/vm-resource-profiles.yml
     guest_inventory_python_bin: /usr/bin/python
     guest_inventory_virsh_bin: /usr/bin/virsh
+    guest_inventory_runtime_path: "/run/user/{{ guest_inventory_operator_uid }}"
+    guest_inventory_mkdir_bin: /usr/bin/mkdir
+    guest_inventory_rmdir_bin: /usr/bin/rmdir
+    guest_inventory_lock_path: >-
+      {{ guest_inventory_runtime_path }}/{{ guest_inventory_plan.name }}.inventory.lock
+    guest_inventory_known_hosts_lock_path: >-
+      {{ guest_inventory_runtime_path }}/known-hosts.lock
   tasks:
+    # ADR 0018: after a new disposable boot, managed Start and Power Cycle
+    # hand over the lock they took before the boot (roles/guest/tasks/main.yml).
+    # From here this play owns it, so no other start crosses a stop/start
+    # boundary until this boot's key is pinned and its inventory published.
+    - name: Take over the publication lock of the boot just started
+      when: guest_identity_lock_handover is defined
+      ansible.builtin.debug:
+        msg: "Holding {{ guest_identity_lock_handover }} until this boot is published."
+      changed_when: true
+      notify: Release the publication lock
+
     - name: Refuse a missing guest selector
       ansible.builtin.assert:
         that:
@@ -103,8 +123,88 @@
 
     - name: Inspect the private runtime directory
       ansible.builtin.stat:
-        path: "/run/user/{{ guest_inventory_operator_uid }}"
+        path: "{{ guest_inventory_runtime_path }}"
       register: guest_inventory_runtime_dir
+
+    - name: Refuse an unsafe runtime directory
+      ansible.builtin.assert:
+        that:
+          - guest_inventory_runtime_dir.stat.isdir | default(false)
+          - not (guest_inventory_runtime_dir.stat.islnk | default(false))
+          - guest_inventory_runtime_dir.stat.pw_name == guest_inventory_plan.owner
+        fail_msg: >-
+          Runtime inventory requires the operator-owned runtime directory.
+
+    - name: Inspect the publication lock handed over by the lifecycle
+      when: guest_identity_lock_handover is defined
+      ansible.builtin.stat:
+        path: "{{ guest_identity_lock_handover }}"
+        follow: false
+      register: guest_inventory_lock_handed
+
+    - name: Require the handed-over lock to be this Machine's
+      when: guest_identity_lock_handover is defined
+      ansible.builtin.assert:
+        that:
+          - guest_identity_lock_handover == guest_inventory_lock_path
+          - guest_inventory_lock_handed.stat.isdir | default(false)
+          - not (guest_inventory_lock_handed.stat.islnk | default(false))
+          - guest_inventory_lock_handed.stat.pw_name == guest_inventory_plan.owner
+        fail_msg: >-
+          The lifecycle handed over {{ guest_identity_lock_handover }}, not this
+          Machine's owner-held publication lock {{ guest_inventory_lock_path }}.
+
+    # Run on its own (after create or reset), this play takes the lock
+    # itself, so a managed Start or Power Cycle of the Machine waits for it.
+    - name: Acquire the publication lock for a publication on its own
+      when:
+        - guest_identity_lock_handover is not defined
+        - not ansible_check_mode
+      ansible.builtin.command:
+        argv:
+          - "{{ guest_inventory_mkdir_bin }}"
+          - "{{ guest_inventory_lock_path }}"
+      register: guest_inventory_lock_acquire
+      changed_when: guest_inventory_lock_acquire.rc == 0
+      failed_when: false
+      notify: Release the publication lock
+
+    - name: Refuse a publication while a start or another publication runs
+      when:
+        - guest_identity_lock_handover is not defined
+        - not ansible_check_mode
+      ansible.builtin.assert:
+        that:
+          - guest_inventory_lock_acquire.rc == 0
+        fail_msg: >-
+          {{ guest_inventory_plan.name }} is being started or published right
+          now ({{ guest_inventory_lock_path }} exists). Retry when that ends;
+          inspect a lock that outlives it before removing it.
+
+    # Different Machines still replace the same owner's database. Hold this
+    # second lock across its inspection, duplicate check and atomic update,
+    # for both lifecycle handover and standalone publication.
+    - name: Acquire the owner's shared SSH pin database lock
+      when: not ansible_check_mode
+      ansible.builtin.command:
+        argv:
+          - "{{ guest_inventory_mkdir_bin }}"
+          - "{{ guest_inventory_known_hosts_lock_path }}"
+      register: guest_inventory_known_hosts_lock_acquire
+      changed_when: guest_inventory_known_hosts_lock_acquire.rc == 0
+      failed_when: false
+      notify: Release the shared SSH pin database lock
+
+    - name: Refuse a concurrent update of the owner's SSH pins
+      when: not ansible_check_mode
+      ansible.builtin.assert:
+        that:
+          - guest_inventory_known_hosts_lock_acquire.rc == 0
+        fail_msg: >-
+          The owner's SSH pins are being updated, or their lock
+          {{ guest_inventory_known_hosts_lock_path }} could not be made.
+          Retry vm-guest-inventory.yml after that publication ends. Inspect a
+          lock that outlives it before removing it.
 
     - name: Inspect strict SSH controller inputs
       ansible.builtin.stat:
@@ -115,19 +215,16 @@
         - "{{ guest_inventory_operator_home }}/.ssh/known_hosts"
       register: guest_inventory_ssh_inputs
 
-    - name: Refuse unsafe runtime or SSH controller inputs
+    - name: Refuse unsafe SSH controller inputs
       ansible.builtin.assert:
         that:
-          - guest_inventory_runtime_dir.stat.isdir | default(false)
-          - not (guest_inventory_runtime_dir.stat.islnk | default(false))
-          - guest_inventory_runtime_dir.stat.pw_name == guest_inventory_plan.owner
           - guest_inventory_ssh_inputs.results | length == 2
           - item.stat.isreg | default(false)
           - not (item.stat.islnk | default(false))
           - item.stat.pw_name == guest_inventory_plan.owner
         fail_msg: >-
-          Runtime inventory requires the operator-owned runtime directory,
-          private SSH identity and strict known-hosts database.
+          Runtime inventory requires the operator-owned private SSH identity
+          and strict known-hosts database.
         quiet: true
       loop: "{{ guest_inventory_ssh_inputs.results }}"
       loop_control:
@@ -150,10 +247,10 @@
       changed_when: false
       check_mode: false
 
-    # A new Machine generates its SSH host keys on first boot. The key is read
-    # over the hypervisor's QEMU Guest Agent channel, never accepted from the
-    # network, and pinned to the address just resolved; a stale key for a
-    # reused address is replaced.
+    # Every disposable boot generates new SSH host keys, as does a new Machine.
+    # The key is read over the hypervisor's QEMU Guest Agent channel, never
+    # accepted from the network, and pinned to the address just resolved;
+    # a stale key for a reused address is replaced.
     - name: Read the guest SSH host key through QEMU Guest Agent
       ansible.builtin.command:
         argv:
@@ -168,6 +265,52 @@
       register: guest_inventory_host_key
       changed_when: false
       check_mode: false
+
+    # OpenSSH matches clear and hashed host fields. known_hosts replaces
+    # only one unmarked line of the same key type, so refuse duplicates
+    # and incompatible entries before any update.
+    - name: Find all existing SSH pins for the selected address
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/ssh-keygen
+          - -F
+          - "{{ guest_inventory_address.stdout }}"
+          - -f
+          - "{{ guest_inventory_operator_home }}/.ssh/known_hosts"
+      register: guest_inventory_previous_keys
+      changed_when: false
+      check_mode: false
+      failed_when: >-
+        guest_inventory_previous_keys.rc not in [0, 1] or
+        guest_inventory_previous_keys.stderr | length > 0 or
+        (guest_inventory_previous_keys.rc == 1 and
+         guest_inventory_previous_keys.stdout | length > 0)
+
+    - name: Refuse duplicate SSH pins for the selected address
+      ansible.builtin.assert:
+        that:
+          - >-
+            guest_inventory_previous_keys.stdout_lines
+            | reject('match', '^#') | list | length <= 1
+        fail_msg: >-
+          The strict known-hosts database has duplicate entries for
+          {{ guest_inventory_address.stdout }}, including any hashed matches.
+          Inspect and resolve them before retrying; no inventory was published.
+
+    - name: Refuse SSH pins that cannot be replaced safely
+      ansible.builtin.assert:
+        that:
+          - item.split() | length >= 3
+          - item.split()[1] == 'ssh-ed25519'
+        fail_msg: >-
+          The strict known-hosts entry for {{ guest_inventory_address.stdout }}
+          is not an unmarked Ed25519 pin. Inspect and resolve it before retrying;
+          no inventory was published.
+      loop: >-
+        {{ guest_inventory_previous_keys.stdout_lines
+           | reject('match', '^#') | list }}
+      loop_control:
+        label: "{{ guest_inventory_address.stdout }}"
 
     - name: Pin the guest SSH host key for strict checking
       ansible.builtin.known_hosts:
@@ -201,6 +344,21 @@
           [workstations]
           {{ guest_inventory_host_record }}
         dest: >-
-          /run/user/{{ guest_inventory_operator_uid }}/{{ guest_inventory_plan.name }}.ini
+          {{ guest_inventory_runtime_path }}/{{ guest_inventory_plan.name }}.ini
         owner: "{{ guest_inventory_plan.owner }}"
         mode: '0600'
+
+  handlers:
+    - name: Release the shared SSH pin database lock
+      ansible.builtin.command:
+        argv:
+          - "{{ guest_inventory_rmdir_bin }}"
+          - "{{ guest_inventory_known_hosts_lock_path }}"
+      changed_when: true
+
+    - name: Release the publication lock
+      ansible.builtin.command:
+        argv:
+          - "{{ guest_inventory_rmdir_bin }}"
+          - "{{ guest_identity_lock_handover | default(guest_inventory_lock_path) }}"
+      changed_when: true

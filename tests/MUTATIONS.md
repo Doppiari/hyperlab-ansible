@@ -4560,3 +4560,1705 @@ strict checkout refusal before the fix.
 | V51 | In `provenance_resolver`, use the resolved resolver returned by `provenance_source()` and set `checkout = resolver.parent.parent` for argv matching | symlinked checkout | `literal symlinked checkout observer rejected` |
 | V52 | Remove `include(resolver, str(resolver))` from `source_generation` | symlinked checkout | `symlinked checkout resolver omitted from installed generation` |
 | V53 | Remove the `resolver.resolve(strict=True) != resolver` refusal | symlinked checkout | `redirected checkout tools directory accepted` |
+
+### Asynchronous stopping in inert-process fixtures
+
+`delayed_stop_contract(module, directory)` forces the first post-SIGSTOP
+sample for each real fixture to report a running thread. Before the fixture
+fix it reproduced CI's `Shell did not stop every thread; reapply` error.
+Installed `paused_shell` still samples once and immediately resumes on
+refusal. Only inert fixtures retry that exact entry failure, after cleanup
+and within five seconds. They must still complete the real launch-prevention
+and paused busy-child checks. Other entry errors and all body errors
+propagate, including a body error with the same message as incomplete entry.
+`inert_pause_retry_contract()` checks retry scope, identity, deadline and
+resume before waiting without real delays.
+
+For replay, load the contract using `runpy.run_path()`. The `delayed` stage
+calls `delayed_stop_contract(load_refresh(), Path(temporary))` with a fresh
+`TemporaryDirectory`; `retry` calls `inert_pause_retry_contract()`; and
+`replacement` calls `replacement_contract(load_refresh(), Path(temporary))`.
+The ordinary real-process checks now also have their own
+`inert_replacement_contract(module, directory)` stage. Save the file before
+each mutation, restore the exact saved bytes and rerun the same focused
+stage. Every case below was observed red for the stated behavioral reason
+and then green after restoration. No mutation survived. An initial V56 edit
+caused a syntax error; the corrected mutation was rerun to obtain the
+behavioral failure recorded here.
+
+| ID | Break | Focused stage | Observed red result |
+| --- | --- | --- | --- |
+| V54 | Replace the launcher's `retry_inert_pause(...)` with direct `module.paused_shell(...)` | delayed | `Shell did not stop every thread; reapply` |
+| V55 | Remove the exact-message filter from the retry helper's entry exception handler | retry | `retry swallowed or changed a non-retryable failure` |
+| V56 | Move `yield process` inside the helper's retry `try`, after `enter_context`, so body errors reach the retry handler | retry | `retry swallowed or changed a non-retryable failure` |
+| V57 | Replace the retry deadline condition with `False` | retry | `retry swallowed or changed a non-retryable failure` |
+| V58 | Add `time.sleep(0.01)` immediately after successful `enter_context` | retry | `incomplete stop was not retried to a successful pause` |
+| V59 | Replace the busy-child fixture's retry wrapper with its original `pause` callable | delayed | `busy-child fixture refused before its paused cgroup inspection` |
+| V60 | Omit the production cleanup's pinned `SIGCONT` | replacement | `paused shell resumed before termination or not resumed on refusal` |
+| V61 | Remove the real launcher's `process.terminate()` | delayed | `non-observer appeared after the final inspection` |
+| V62 | Send pinned `SIGCONT` immediately after the real launcher's `process.terminate()` (ignore `ProcessLookupError` if it has exited) | delayed | `launcher signal sequence resumed after termination or missed retry cleanup` |
+| V63 | Open a PID descriptor for the busy shell and send an extra `SIGCONT` after its paused-child refusal, before checking `samples` | delayed | `busy-child signal sequence did not resume every stop` |
+
+V62 stayed green with the former aggregate `resumes >= 2` assertion. The
+exact per-process sequences make it red: every incomplete stop must resume,
+the launcher's final stop must end in pinned kill with no resume, and the
+busy-child fixture's final stop must resume. Additional genuine incomplete
+stops may retry within the existing deadline. Removing the injected signal
+restored green.
+
+For V63, mutate a separate source copy and compile it with the original
+contract's `__file__` so its repository paths remain unchanged, then call
+its `delayed` stage. Restore the exact saved copy and rerun: the extra
+busy-shell resume was red, restoration green.
+
+## Disposable boot access and SSH identity (ADR 0018)
+
+All twenty-three mutations below were observed red (exit 1), restored from
+plain copies, and observed green (exit 0). These fixtures prove software behavior;
+real cloud-init activation and transient-disk cleanup still require Nitro.
+
+Before replaying any one mutation, keep copies below the checkout with a
+`.saved` suffix so lint does not discover them as additional task files:
+
+```bash
+export MUTATION_BACKUP="$(mktemp -d "$PWD/tests/fixtures/boot-access.XXXXXX")"
+python - <<'PY'
+import os
+from pathlib import Path
+import shutil
+
+backup = Path(os.environ["MUTATION_BACKUP"])
+for relative in ['playbooks/vm-guest-inventory.yml', 'playbooks/vm-reset.yml', 'playbooks/vm-start.yml', 'roles/guest/defaults/main.yml', 'roles/guest/tasks/main.yml', 'roles/guest/tasks/start.yml', 'roles/guest/templates/user-data.j2']:
+    target = backup / (relative + ".saved")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(relative, target)
+PY
+```
+
+For each case run its Break, then Check (must fail with the stated reason),
+then Restore and the same Check (must pass). Do not combine mutations.
+
+### M1. Omit the disposable seed restriction
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/templates/user-data.j2')
+s = p.read_text()
+old = '  - path: /etc/qemu/qemu-ga.conf\n    owner: root:root\n    permissions: "0644"\n    content: {{ guest_disposable_agent_conf | to_json }}\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '', 1))
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_contract as t; t.test_disposable_seed()'
+```
+
+Observed red: `disposable seed has no agent restriction`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/templates/user-data.j2.saved" roles/guest/templates/user-data.j2
+```
+
+### M2. Omit activation of the seed restriction
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/templates/user-data.j2')
+s = p.read_text()
+old = '  - [systemctl, restart, qemu-guest-agent.service]\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '', 1))
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_contract as t; t.test_disposable_seed()'
+```
+
+Observed red: `restriction is never activated`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/templates/user-data.j2.saved" roles/guest/templates/user-data.j2
+```
+
+### M3. Accept every nonzero exec probe result
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/tasks/start.yml')
+s = p.read_text()
+old = "guest_start_exec_probe.rc == 0 or\n        'guest-exec has been disabled' not in (guest_start_exec_probe.stderr | lower)"
+assert s.count(old) == 1
+p.write_text(s.replace(old, 'guest_start_exec_probe.rc == 0', 1))
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_contract as t; t.test_disposable_start_proof()'
+```
+
+Observed red: `agent unavailable at the probe: the start succeeded`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/tasks/start.yml.saved" roles/guest/tasks/start.yml
+```
+
+### M4. Keep the first pin when runtime inventory already exists
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('playbooks/vm-guest-inventory.yml')
+s = p.read_text()
+old = '    - name: Pin the guest SSH host key for strict checking\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, "    - name: Pin the guest SSH host key for strict checking\n      when: lookup('ansible.builtin.fileglob', guest_inventory_runtime_path ~ '/' ~ guest_inventory_plan.name ~ '.ini') | length == 0\n", 1))
+PY
+```
+
+Check:
+
+```bash
+python tests/guest_inventory_contract.py
+```
+
+Observed red: `second boot was not pinned`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/playbooks/vm-guest-inventory.yml.saved" playbooks/vm-guest-inventory.yml
+```
+
+### M5. Run the boot action on an already-running target
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/tasks/start.yml')
+s = p.read_text()
+old = "guest_domain_state == 'shut off'\n         and not ansible_check_mode"
+assert s.count(old) == 1
+p.write_text(s.replace(old, 'not ansible_check_mode', 1))
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_contract as t; t.test_disposable_start_proof()'
+```
+
+Observed red: `already running:`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/tasks/start.yml.saved" roles/guest/tasks/start.yml
+```
+
+### M6. Run the boot action in check mode
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/tasks/start.yml')
+s = p.read_text()
+old = '         and not ansible_check_mode\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '', 1))
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_contract as t; t.test_disposable_start_proof()'
+```
+
+Observed red: `check mode:`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/tasks/start.yml.saved" roles/guest/tasks/start.yml
+```
+
+### M7. Skip this boot's cloud-init completion wait
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/tasks/start.yml')
+s = p.read_text()
+a = s.index("    - name: Wait for this boot's cloud-init")
+b = s.index("    - name: Wait until the new boot's agent")
+p.write_text(s[:a] + s[b:])
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_contract as t; t.test_disposable_start_proof()'
+```
+
+Observed red: `restricted base agent can pass readiness`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/tasks/start.yml.saved" roles/guest/tasks/start.yml
+```
+
+### M8. Copy the RPC policy into the seed defaults
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/defaults/main.yml')
+s = p.read_text()
+old = "guest_disposable_agent_rpcs: >-\n  {{ (lookup('ansible.builtin.file', guest_disposable_agent_policy_file)\n      | from_yaml).guest_access_close_agent_rpcs }}\n"
+assert s.count(old) == 1
+p.write_text(s.replace(old, 'guest_disposable_agent_rpcs: ["guest-sync-delimited", "guest-sync", "guest-ping", "guest-info", "guest-get-host-name", "guest-network-get-interfaces", "guest-shutdown", "guest-file-open", "guest-file-read", "guest-file-close"]\n', 1))
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_contract as t; t.test_disposable_seed()'
+```
+
+Observed red: `seed keeps an allowlist of its own`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/defaults/main.yml.saved" roles/guest/defaults/main.yml
+```
+
+### M9. Permit a widened or narrowed seed policy
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/tasks/main.yml')
+s = p.read_text()
+old = "      - >-\n        guest_disposable_agent_rpcs ==\n        (lookup('ansible.builtin.file', guest_disposable_agent_policy_file)\n         | from_yaml).guest_access_close_agent_rpcs\n"
+assert s.count(old) == 1
+p.write_text(s.replace(old, '', 1))
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_contract as t; t.check_allowlist_gate(t.close_role_agent_conf()[0])'
+```
+
+Observed red: `gate let these allowlists reach a seed: ['widened', 'narrowed']`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/tasks/main.yml.saved" roles/guest/tasks/main.yml
+```
+
+### M10. Duplicate write_files in the vault seed
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/templates/user-data.j2')
+s = p.read_text()
+old = 'runcmd:\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '{% if vault %}\nwrite_files: []\n{% endif %}\nruncmd:\n', 1))
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import vault_guest_contract as t; t.check_disposable_vault_seed()'
+```
+
+Observed red: `duplicate YAML key`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/templates/user-data.j2.saved" roles/guest/templates/user-data.j2
+```
+
+### M11. Omit the public Start inventory publisher
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('playbooks/vm-start.yml')
+s = p.read_text()
+old = '\n- name: Refresh the SSH identity of the new disposable boot as its owner\n  ansible.builtin.import_playbook: vm-guest-inventory.yml\n  when: guest_start_new_disposable_boot | default(false) | bool\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '', 1))
+PY
+```
+
+Check:
+
+```bash
+python tests/guest_inventory_contract.py
+```
+
+Observed red: `vm-start.yml:`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/playbooks/vm-start.yml.saved" playbooks/vm-start.yml
+```
+
+### M12. Prove only guest-exec, not the whole allowlist
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/tasks/start.yml')
+s = p.read_text()
+old = " and\n        ((guest_start_agent_info.stdout | from_json).get('return', {}).get('supported_commands', [])\n         | selectattr('enabled', 'equalto', true)\n         | map(attribute='name') | sort) == (guest_disposable_agent_rpcs | sort)\n"
+assert s.count(old) == 1
+p.write_text(s.replace(old, '\n', 1))
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_contract as t; t.test_disposable_start_proof()'
+```
+
+Observed red: `exec blocked elsewhere: guest-exec was tried`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/tasks/start.yml.saved" roles/guest/tasks/start.yml
+```
+
+### M13. Leave an unproved disposable boot running
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/tasks/start.yml')
+s = p.read_text()
+old = '        - name: Force-stop the unproved disposable boot\n          ansible.builtin.command:\n            argv:\n              - "{{ guest_virsh_bin }}"\n              - destroy\n              - "{{ guest_plan.name }}"\n          changed_when: true\n\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '', 1))
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_contract as t; t.test_disposable_start_proof()'
+```
+
+Observed red: `the open boot was left running`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/tasks/start.yml.saved" roles/guest/tasks/start.yml
+```
+
+### M14. Wait for a new disposable boot outside its proof
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/tasks/start.yml')
+s = p.read_text()
+old = '    - not (guest_start_new_disposable_boot | bool)\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '', 1))
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_contract as t; t.test_disposable_start_proof()'
+```
+
+Observed red: `waited on outside its proof`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/tasks/start.yml.saved" roles/guest/tasks/start.yml
+```
+
+### M15. Report an unproved boot stopped before it is
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/tasks/start.yml')
+s = p.read_text()
+old = '            guest_start_unproved_stopped: false\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '            guest_start_unproved_stopped: true\n', 1))
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_contract as t; t.test_disposable_start_proof()'
+```
+
+Observed red: `a boot that could not be stopped was reported stopped`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/tasks/start.yml.saved" roles/guest/tasks/start.yml
+```
+
+### M16. Accept a seed policy read from another file
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/tasks/main.yml')
+s = p.read_text()
+old = "      - >-\n        guest_disposable_agent_policy_file ==\n        guest_repository_root ~ '/roles/guest_access_close/defaults/main.yml'\n"
+assert s.count(old) == 1
+p.write_text(s.replace(old, '', 1))
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_contract as t; t.check_allowlist_gate(t.close_role_agent_conf()[0])'
+```
+
+Observed red: `reach a seed: ['redirected policy file']`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/tasks/main.yml.saved" roles/guest/tasks/main.yml
+```
+
+### M17. Accept an inventory override of the close policy
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/tasks/main.yml')
+s = p.read_text()
+old = '      - >-\n        guest_access_close_agent_rpcs is not defined or\n        guest_access_close_agent_rpcs == guest_disposable_agent_rpcs\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '', 1))
+PY
+```
+
+Check:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_contract as t; t.check_allowlist_gate(t.close_role_agent_conf()[0])'
+```
+
+Observed red: `reach a seed: ['inventory override widened', 'inventory override narrowed']`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/tasks/main.yml.saved" roles/guest/tasks/main.yml
+```
+
+### M18. Publish inventory from Reset
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('playbooks/vm-reset.yml')
+s = p.read_text()
+old = '    - guest\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '    - guest\n\n- name: Refresh the inventory\n  ansible.builtin.import_playbook: vm-guest-inventory.yml\n', 1))
+PY
+```
+
+Check:
+
+```bash
+python tests/guest_inventory_contract.py
+```
+
+Observed red: `vm-reset.yml imports a playbook`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/playbooks/vm-reset.yml.saved" playbooks/vm-reset.yml
+```
+
+### M19. Release the publication lock before the publisher runs
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/tasks/main.yml')
+s = p.read_text()
+old = '    - name: Hand the publication lock to the owner\'s inventory publisher\n      when:\n        - guest_identity_lock_wanted | bool\n        - guest_start_new_disposable_boot | default(false) | bool\n      ansible.builtin.set_fact:\n        guest_identity_lock_handover: "{{ guest_identity_lock_path }}"\n\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '', 1))
+PY
+```
+
+Check:
+
+```bash
+python tests/guest_inventory_contract.py
+```
+
+Observed red: `a power cycle ran while another start was still pinning`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/tasks/main.yml.saved" roles/guest/tasks/main.yml
+```
+
+### M20. Start a new boot while another is still being published
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('roles/guest/tasks/main.yml')
+s = p.read_text()
+old = '    - name: Refuse a new boot while the last one is still being published\n      when: guest_identity_lock_wanted | bool\n      ansible.builtin.assert:\n        that:\n          - guest_identity_lock_acquire.rc == 0\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '    - name: Refuse a new boot while the last one is still being published\n      when: guest_identity_lock_wanted | bool\n      ansible.builtin.assert:\n        that:\n          - true\n', 1))
+PY
+```
+
+Check:
+
+```bash
+python tests/guest_inventory_contract.py
+```
+
+Observed red: `a power cycle ran while another start was still pinning`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/roles/guest/tasks/main.yml.saved" roles/guest/tasks/main.yml
+```
+
+### M21. Leave the publication lock behind when publication fails
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('playbooks/vm-guest-inventory.yml')
+s = p.read_text()
+old = '  force_handlers: true\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '', 1))
+PY
+```
+
+Check:
+
+```bash
+python tests/guest_inventory_contract.py
+```
+
+Observed red: `left a lock behind`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/playbooks/vm-guest-inventory.yml.saved" playbooks/vm-guest-inventory.yml
+```
+
+### M22. Ignore a failed pin replacement
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('playbooks/vm-guest-inventory.yml')
+s = p.read_text()
+old = '        hash_host: false\n        state: present\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '        hash_host: false\n        state: present\n      failed_when: false\n', 1))
+PY
+```
+
+Check:
+
+```bash
+python tests/guest_inventory_contract.py
+```
+
+Observed red: `a start whose pin could not be replaced succeeded`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/playbooks/vm-guest-inventory.yml.saved" playbooks/vm-guest-inventory.yml
+```
+
+### M23. Publish on its own while a start holds the lock
+
+Break:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+p = Path('playbooks/vm-guest-inventory.yml')
+s = p.read_text()
+old = '        that:\n          - guest_inventory_lock_acquire.rc == 0\n'
+assert s.count(old) == 1
+p.write_text(s.replace(old, '        that:\n          - true\n', 1))
+PY
+```
+
+Check:
+
+```bash
+python tests/guest_inventory_contract.py
+```
+
+Observed red: `the publisher ran on its own while a start held the lock`. Restored check: green.
+
+Restore:
+
+```bash
+cp "$MUTATION_BACKUP/playbooks/vm-guest-inventory.yml.saved" playbooks/vm-guest-inventory.yml
+```
+
+## Shared disposable SSH pins and lock privilege
+
+`tests/guest_inventory_contract.py` now checks the three remaining pin and
+publication-lock failures. These are software fixtures: two Machine plans
+share one temporary owner home and runtime directory; libvirt replies are
+stubbed. Strict SSH uses the existing pipe to `sshd -i`, without a listening
+socket. A fixture copy of the installed `known_hosts` module pauses after
+building its replacement file and immediately before `atomic_move`. Its
+production task arguments, conditions, ordering and handlers are retained.
+The race runs managed Start against standalone publication, then reverses
+those entry paths. A refused contender retries only its inventory publisher.
+Both current keys must work and both stale keys must be rejected afterwards.
+
+Before each mutation, copy its input to a `.saved` file below the checkout.
+Change only the named parsed YAML tasks, run the focused check below, restore
+from that copy, and run the identical check again. Do not combine mutations.
+All four cases were observed red (exit 1) and restored green (exit 0).
+
+| Mutation | Input and break | Focused check | Observed red |
+| --- | --- | --- | --- |
+| Duplicate pins | In `playbooks/vm-guest-inventory.yml`, remove only `Refuse duplicate SSH pins for the selected address` | `check_duplicate_pins` | `plain: duplicate previous-boot pins were accepted` |
+| Shared database serialization | In the same playbook, remove `Acquire the owner's shared SSH pin database lock` and `Refuse a concurrent update of the owner's SSH pins`; its handler is then unnotified | `check_shared_known_hosts_publication` | `a shared database update was lost` |
+| Acquisition privilege | In `roles/guest/tasks/main.yml`, delete `become: false` only from `Acquire the owner's publication lock before the new boot` | `check_lock_privilege` | acquisition task `must explicitly declare become: false` |
+| Release privilege | In the same role, delete `become: false` only from `Release the publication lock unless the publisher now holds it` | `check_lock_privilege` | release task `must explicitly declare become: false` |
+
+For each table row, substitute its focused function name in this command:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_inventory_contract as t; t.check_duplicate_pins()'
+```
+
+The duplicate-pin check preloads two plain old entries, two hashed old entries
+and one of each, through managed and standalone publication. Each must fail at
+the duplicate assertion, retain the database bytes, publish no inventory and
+release acquired locks. The privilege check parses the actual lifecycle
+acquisition and release tasks, requiring explicit boolean false independently
+of the fixture play's unprivileged execution.
+
+## Refuse incompatible SSH pins before replacement
+
+`tests/guest_inventory_contract.py` also runs `check_replaceable_pins` against
+sole RSA and ECDSA pins and Ed25519 entries marked `@cert-authority` or
+`@revoked`, each in clear and hashed form. Each must refuse at the
+compatibility assertion, leave the database bytes unchanged, publish no
+inventory and release both acquired locks. The fixtures hash the host field
+before adding a marker, because `ssh-keygen -H` leaves marked entries clear.
+Two positive cases refresh ordinary Ed25519 pins, in clear and hashed form;
+strict SSH over a pipe accepts the current boot and rejects the old one.
+
+Before the mutation, copy `playbooks/vm-guest-inventory.yml` to a `.saved`
+file below the checkout. Remove only the parsed YAML task named
+`Refuse SSH pins that cannot be replaced safely`, keeping the duplicate
+assertion and both publication locks. Run:
+
+```bash
+python -c 'import sys; sys.path.insert(0,"tests"); import guest_inventory_contract as t; t.check_replaceable_pins()'
+```
+
+Restore the playbook from the saved copy and run the identical check again.
+
+Observed: removing the compatibility assertion exits 1 with
+`plain rsa: an incompatible previous-boot pin was accepted`; restoring it
+exits 0. The duplicate assertion remains in place during this mutation.
+
+## Qualify the selected v1 with a separate version-3 campaign
+
+These are software fixtures, never a hardware campaign. The v2 file must
+remain byte-for-byte unchanged. Run mutations in a disposable copy below the
+checkout containing `release/`, the two release tools,
+`tools/bootstrap_storage_guard.py`, the three release contracts,
+`tests/docs_contract.py`, `docs/release-evidence.md` and ADR 0063. No Git
+metadata or real campaign belongs in that copy. Before each break, copy the
+indicated input to a separate backup below the checkout. Restore by copying
+that backup, compare bytes and rerun the same check. Do not combine breaks.
+
+All V1–V40 cases below were observed red (exit 1) and restored green (exit 0).
+Scope and field expectations come from the handwritten version-specific
+oracles, never production typing. The exhaustive record matrix runs every
+boolean through strings `"true"`, `"false"`, 0 and 1 in both pass and fail
+records. The successful controls run both versions and both hardware profiles.
+Refused records preserve evidence bytes; refused seals create no receipt.
+
+Focused commands, from the disposable copy:
+
+```bash
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_scope_adr_plan_and_complete_storage_mapping(3)'
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_reviewed_evidence_classes_match_the_manifest_and_tool_typing(3)'
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_status_and_seal_refuse_an_edited_false_pass(3)'
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_record_cli_boolean_types_are_strict_and_refusals_preserve_bytes(2)'
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_mixed_versions_refuse_without_rewriting_or_receipts(2)'
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_campaign_inputs_refuse_duplicates_and_redirection(3)'
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_lease_template_is_the_selected_initial_template(3)'
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_complete_sanitized_evidence_seals_to_stable_hashes(3)'
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_probe_contract as t; t.test_probe_refuses_another_initial_lease_template()'
+python -B -c 'import sys; sys.path.insert(0,"tests"); import docs_contract as t; t.check_v3_release_runbook(t.ROOT)'
+```
+
+In the table, the check names refer to those exact functions and arguments.
+Every mutation changes only the specified input; expected red means a failed
+assertion at that boundary, not an unrelated crash.
+
+| ID | Input and exact break | Focused check | Red observed |
+| --- | --- | --- | --- |
+| V1 | Parse `release/acceptance.v3.yml`; remove only the gate with id `disposable-lifecycle`, preserving the remaining orders. | `test_scope_adr_plan_and_complete_storage_mapping(3)` | Plan creation refuses `schema_version 3 requires the reviewed v1 gate order`; the independent scope check turns red. |
+| V2 | Same file: remove only `gpu-lease`, preserving the remaining orders. | same as V1 | Same reviewed gate-order refusal. |
+| V3 | Same file: remove only `fedora_strict_ssh` from `server-ssh.required_evidence`. | `test_reviewed_evidence_classes_match_the_manifest_and_tool_typing(3)` | `server-ssh: reviewed classes ... differ from the manifest`. |
+| V4 | Same file: remove only `super_isolated` from `workstation-access.required_evidence`. | same as V3 | `workstation-access: reviewed classes ... differ`. |
+| V5 | Same file: remove only `no_guest_microphone` from `physical-audio.required_evidence`. | same as V3 | `physical-audio: reviewed classes ... differ`. |
+| V6 | Same file: insert historical `jellyfin-service` and `service-recovery` before publication, renumbering every gate in increments of 10. | same as V1 | Same reviewed gate-order refusal for extra service scope. |
+| V7 | `tools/release_acceptance.py`: remove `"gpu_less_ladder_unchanged",` only from `BOOL_FIELDS`. | same as V3 | `tool booleans differ ... missing=['gpu_less_ladder_unchanged']`. |
+| V8 | Same tool, in `validate_partial_evidence`: change `complete=status_value == "pass",` to `complete=False,`. Keep record's direct payload validation intact. | `test_status_and_seal_refuse_an_edited_false_pass(3)` | `status accepted an edited pass ... clean_worktrees=false`. Record still refuses false passes: a deliberate control. |
+| V9 | Same tool, immediately before `planned = plan["gates"][gate_index]` in `record_gate`: insert `payload = {key: True if value == "true" else value for key, value in payload.items()}`. | `test_record_cli_boolean_types_are_strict_and_refusals_preserve_bytes(2)` | `record pass coerced repository-software.clean_worktrees='true'`. |
+| V10 | Same tool, `validate_plan`: delete the explicit plan/manifest version require and replace `require(plan == expected, ...)` with `require(bool(expected), "canonical projection disabled")`. | `test_mixed_versions_refuse_without_rewriting_or_receipts(2)` | Scaffold accepts the v2 plan under v3; the refusal assertion turns red. |
+| V11 | `release/acceptance.v3.yml`: set only `allowed_storage_topologies.single-disk.fsroot` to `/wrong`. | same as V1 | Complete mapping differs from independent constants. |
+| V12 | `docs/release-evidence.md`: select `acceptance.v2.yml` only in the first real plan command. | `check_v3_release_runbook(t.ROOT)` | `release runbook command does not select v3`. |
+| V13 | `tools/release_acceptance.py`: delete only `require(key not in result, f"duplicate JSON key: {key}")`. | `test_campaign_inputs_refuse_duplicates_and_redirection(3)` | Repeated false/true observation is recorded instead of refused. |
+| V14 | Same tool: replace `absolute = path.absolute()` in `read_input` with `absolute = path.resolve()`. | same as V13 | A redirected plan is accepted instead of refused. |
+| V15 | Same tool: replace the `lease_template` require with `require(True, "lease_template unrestricted")`. | `test_lease_template_is_the_selected_initial_template(3)` | A pass on `workstation-dev` seals instead of refusing the wrong initial Template. |
+| V16 | Same tool: delete only `require(key not in result, f"duplicate mapping key: {key}")`. | same as V13 | Duplicate plan schema key is accepted instead of refused. |
+| V17 | `tools/release_probe.py`: delete `validate_gate_payload(gate, payload, complete=False, schema_version=manifest["schema_version"])`. | `test_probe_refuses_another_initial_lease_template()` | `probe accepted another initial lease Template`. |
+| V18 | Runbook: select v2 only in the fixture's `if python ... seal` pending-refusal command. | same as V12 | The conditional command is parsed and rejected for selecting v2. |
+| V19 | `tools/release_acceptance.py`: delete `validate_evidence(plan, evidence)` only in `seal`. | same as V8 | `seal accepted an edited pass ... clean_worktrees=false`; status refusal remains a control. |
+| V20 | Same tool, in `seal`, after validation and before hashing: insert `plan = {**plan, "schema_version": 2}`. | `test_complete_sanitized_evidence_seals_to_stable_hashes(3)` | Receipt version differs from the selected campaign version. |
+| V21 | `release/acceptance.v3.yml`: delete only `clean_after_dev_refused` from `vfio-trust-lifecycle.required_evidence`. | same as V3 | `vfio-trust-lifecycle: reviewed classes ... differ from the manifest`. |
+| V22 | Same gate: delete only `dev_after_dirty_refused`. | same as V3 | Same independent field-oracle refusal. |
+| V23 | Same gate: delete only `upward_after_lab_refused`. | same as V3 | Same independent field-oracle refusal. |
+| V24 | Same gate: delete only `unmapped_pci_refused`. | same as V3 | Same independent field-oracle refusal. |
+| V25 | Same manifest: delete only `lease_runs_same_host_boot` from `gpu-lease.required_evidence`. | same as V3 | `gpu-lease: reviewed classes ... differ from the manifest`. |
+| V26 | `tools/release_acceptance.py`: delete only the `require(stat.S_ISREG(os.fstat(handle.fileno()).st_mode), ...)` line in `read_input`. | same as V13 | The FIFO plan receives `release plan root must be a mapping` instead of the required `must be regular` diagnostic; the FIFO assertion turns red. |
+| V27 | `release/acceptance.v3.yml`: delete only `cross_domain_refused` from `network-isolation.required_evidence`. | same as V3 | `network-isolation: reviewed classes ... differ from the manifest`. |
+| V28 | Same gate: delete only `isolated_lab_refused`. | same as V3 | Same independent field-oracle refusal. |
+| V29 | Same gate: delete only `dns_control_reached`. | same as V3 | Same independent field-oracle refusal. |
+| V30 | Same gate: delete only `dev_resolver_refused`. | same as V3 | Same independent field-oracle refusal. |
+| V31 | Same gate: delete only `host_llmnr_refused`. | same as V3 | Same independent field-oracle refusal. |
+| V32 | `tools/release_acceptance.py`: replace `isinstance(value, str) and 1 <= len(value) <= 240` with `not isinstance(value, str) or 1 <= len(value) <= 240`, accepting non-text scalars while retaining string bounds. | `test_descriptive_fields_keep_the_versioned_text_contract(3)` | `v3 pass accepted description repository-software.exact_commits=False`. |
+| V33 | Same condition: change only the minimum length from 1 to 0. | same as V32 | The empty description is accepted and the matrix turns red. |
+| V34 | Same condition: change only the maximum length from 240 to 241. | same as V32 | The 241-character description is accepted and the matrix turns red. |
+| V35 | `tools/release_probe.py`: pass `schema_version=2` to `validate_gate_payload`. | `test_v3_probe_bounds_descriptive_text()` | `v3 probe accepted an oversized description`. |
+| V36 | `tools/release_acceptance.py`: pass `schema_version=2` only in the non-pending branch of `validate_partial_evidence`. | same as V32 | The v3 false descriptive value is accepted and the matrix turns red. |
+| V37 | Same tool: delete the `if manifest["schema_version"] == 3` block requiring `tuple(ids) == V3_GATE_IDS`. | `test_unsupported_versions_refuse_before_creating_a_plan(3)` | `relabeled v2 gates were accepted as schema_version 3`. |
+| V38 | `docs/release-evidence.md`: delete only `set -euo pipefail` from the rehearsal. | same as V12 | `rehearsal continued after a refused record`; the injected real record refusal reaches the subsequent marker. |
+| V39 | Same rehearsal: replace the record argv's `"--status", "pass"` with `"--status", "pending"`. | same as V12 | `release runbook fixture failed`; plain `bash -c` stops on the refused record. |
+| V40 | `tools/release_acceptance.py`: delete only `cross_domain_refused` from `BOOL_FIELDS`. | same as V3 | `tool booleans differ from the reviewed manifest booleans`. |
+
+V21–V26 were also observed red (exit 1) and restored green (exit 0), each
+after saving the input and comparing restored bytes. For V21–V25, delete
+the single YAML sequence line named in the table, keeping the other fields
+and their order. Each field is independently listed in the oracle and the
+production boolean set; the existing exhaustive CLI matrix also exercises
+its false-pass refusal at record/status/seal, false failed records, and
+string/integer refusal. V26 uses `os.mkfifo` without a writer and requires
+exit 2 with `must be regular`, no scaffold output and unchanged plan/evidence
+bytes. `O_NONBLOCK` keeps that refusal independent of a FIFO writer.
+
+V27–V40 were observed red (exit 1) and restored green (exit 0) after saving
+each input, restoring it by copy and comparing bytes. V27–V31 delete one
+YAML sequence line at a time, preserving all other fields. The exhaustive
+record/status/seal and probe matrices exercise each new network boolean:
+false cannot pass, failed records can retain false, and text/integer
+coercions refuse without evidence writes. V32–V36 cover the v3 text type,
+both length boundaries and propagation of the selected version; the same
+matrix verifies unchanged historical v2 scalar behavior. V37 proves a
+well-formed historical gate list cannot acquire the v3 label. V38–V39 run
+the pasted block under plain `bash -c`, including an invalid real record
+and a marker that must never run afterward. All V1–V26 checks were also
+rerun red and restored green with these changes.
+
+The additional exact focused commands, run in the disposable copy, are:
+
+```bash
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_descriptive_fields_keep_the_versioned_text_contract(3)'
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_record_status_and_seal_refuse_invalid_v3_descriptions(3)'
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_unsupported_versions_refuse_before_creating_a_plan(3)'
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_probe_contract as t; t.test_v3_probe_bounds_descriptive_text()'
+```
+
+For the parsed-YAML breaks V1–V6 and V11, this is the mutation command used
+inside the disposable copy; select one case by its id, then run its focused
+check above, restore from the saved file and rerun that check:
+
+```bash
+python - V1 <<'PY'
+import copy
+from pathlib import Path
+import sys
+import yaml
+
+path = Path("release/acceptance.v3.yml")
+manifest = yaml.safe_load(path.read_text())
+case = sys.argv[1]
+if case in ("V1", "V2"):
+    removed = {"V1": "disposable-lifecycle", "V2": "gpu-lease"}[case]
+    manifest["gates"] = [gate for gate in manifest["gates"] if gate["id"] != removed]
+elif case in ("V3", "V4", "V5"):
+    gate_id, field = {
+        "V3": ("server-ssh", "fedora_strict_ssh"),
+        "V4": ("workstation-access", "super_isolated"),
+        "V5": ("physical-audio", "no_guest_microphone"),
+    }[case]
+    next(gate for gate in manifest["gates"] if gate["id"] == gate_id)["required_evidence"].remove(field)
+elif case == "V6":
+    historical = yaml.safe_load(Path("release/acceptance.v2.yml").read_text())
+    services = [copy.deepcopy(gate) for gate in historical["gates"]
+                if gate["id"] in ("jellyfin-service", "service-recovery")]
+    manifest["gates"][-1:-1] = services
+    for index, gate in enumerate(manifest["gates"], start=1):
+        gate["order"] = index * 10
+elif case == "V11":
+    manifest["allowed_storage_topologies"]["single-disk"]["fsroot"] = "/wrong"
+else:
+    raise ValueError("select one parsed-YAML mutation")
+path.write_text(yaml.safe_dump(manifest, sort_keys=False))
+PY
+```
+
+Two deliberate control checks also stayed green under their mutations:
+V8's `test_record_refuses_a_false_pass_and_keeps_a_false_failure(3)` retains
+the incoming record guard, and V9's
+`test_boolean_fields_refuse_text_and_integers_in_pass_and_fail(2)` reads
+through status rather than record. Their corresponding read-path and new
+record CLI detectors were red as listed above. Both controls were green
+again after restoration; a control is not mutation coverage.
+
+Full restored checks:
+
+```bash
+python tests/release_acceptance_contract.py
+python tests/release_probe_contract.py
+python tests/release_idempotence_probe_contract.py
+python tests/docs_contract.py
+```
+
+### Guest runtime fixtures keep user-installed Ansible reachable
+
+`problems/guest-contract-lost-user-installed-ansible.md`.
+
+Red check for every row:
+
+```bash
+python tests/guest_runtime_environment_contract.py
+```
+
+The contract starts a fresh Python interpreter with a temporary user bin
+and Python user site. It executes `guest_contract.playbook_invocation()`
+and the selected recording launcher, verifies its real argv and isolated
+environment, then removes the launcher and requires a deliberate refusal.
+The launcher imports a module that exists only in that temporary user site;
+a system Ansible installation cannot satisfy either positive assertion.
+
+Each break below changes `playbook_invocation()` in
+`tests/guest_contract.py`. Replay one break at a time from a saved copy and
+restore it before the next. The observed runs used a private copy of this
+helper, the environment contract and `ansible.cfg`; the restored helper was
+also compared byte for byte with the original.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| `bare-command` | Replace `str(Path(executable).absolute())` in argv with `"ansible-playbook"`. | `guest fixture did not execute the caller's Ansible launcher` | Exit 0, contract OK. |
+| `lost-user-base` | Remove `PYTHONUSERBASE` from the child environment. | `No module named 'guest_fixture_dependency'` | Exit 0, contract OK. |
+| `missing-executable-guard` | Remove the assertion immediately after `shutil.which`. | `missing launcher did not produce a deliberate refusal` | Exit 0, contract OK. |
+| `caller-home` | Set child HOME to `tmp.parent`. | `guest fixture lost its private HOME` | Exit 0, contract OK. |
+| `caller-path` | Replace the fixed child PATH with `str(Path(executable).parent)`. | `guest fixture inherited the caller's PATH` | Exit 0, contract OK. |
+| `wrong-configuration` | Set `ANSIBLE_CONFIG` to `tmp / 'ansible.cfg'`. | `guest fixture lost its repository Ansible configuration` | Exit 0, contract OK. |
+| `shared-temporary-directory` | Set `ANSIBLE_LOCAL_TEMP` to `tmp.parent / 'ansible-local'`. | `guest fixture lost its private Ansible directories` | Exit 0, contract OK. |
+| `inherited-caller-settings` | Prepend the caller's environment to the child mapping. | `guest fixture inherited caller configuration` | Exit 0, contract OK. |
+
+All eight deliberate breaks exited 1 with the diagnostic listed, and each
+saved-copy restoration exited 0. The first test-first run on the original
+helper also failed `bare-command`; resolving only the executable then failed
+the user-site import, before preserving `PYTHONUSERBASE` made both pass.
+The full guest and inventory contracts continue to execute real Ansible and
+the strict SSH proofs with their existing hardware stubs.
+
+## Spheres are Machines
+
+[ADR 0064](../docs/adr/0064-spheres-are-machines.md) gives every Machine one
+drawing, `roles/host_desktop_common/files/quickshell/hyperlab/MachineSphere.qml`.
+`tests/machine_sphere_contract.py` executes it with the real `Theme.qml` and
+`Tokens.qml` under Qt's software rasteriser and reads the captured pixels,
+the runtime accessibility properties and the ADR's state table.
+
+Each break changes one file. Replay one at a time from a saved copy, run
+`python tests/machine_sphere_contract.py`, restore the copy and run it again.
+The ADR break edits `docs/adr/0064-spheres-are-machines.md`,
+`theme-text-near-clean` edits
+`roles/host_desktop_sway/files/palette/green/hyperlab-palette-quickshell.json`;
+every other break edits `MachineSphere.qml`.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| `hex-literal` | The rim's `ctx.strokeStyle = tone` becomes `"#5b8cff"`. | `colour literal in component` | Exit 0, contract OK. |
+| `colour-name` | The rim's `ctx.strokeStyle = tone` becomes `"white"`. | `literal outside the reviewed vocabulary (colour name?): ['white']` | Exit 0, contract OK. |
+| `external-host-grey` | The neutral tone `sphere.theme.textPrimary` becomes `sphere.theme.palette.dom_host`. | `neutral outline is not the appearance text tone: host/external/128: (139, 148, 158)` | Exit 0, contract OK. |
+| `external-domain-colour` | `tone` takes the domain colour whenever the domain is known (`sphere.knownDomain ?` for `sphere.classified ?`). | `external depends on the domain input at 12` | Exit 0, contract OK. |
+| `no-pause-notch` | Delete the two `ctx.clearRect` cuts of the paused drawing. | `missing pause notch: host/12` | Exit 0, contract OK. |
+| `no-disposable-ring` | `if (sphere.disposable)` becomes `if (false)`. | `missing disposable ring or GPU token: host/12` | Exit 0, contract OK. |
+| `no-gpu-token` | `if (sphere.gpuOwner)` becomes `if (false)`. | `missing disposable ring or GPU token: host/12` | Exit 0, contract OK. |
+| `off-lit` | `dim` ignores shut off: `sphere.paused ? 2.6 : 1` for `sphere.paused ? 2.6 : sphere.darkBody`. | `shut off must be a dark sphere: host/12` | Exit 0, contract OK. |
+| `frozen-transition` | The arc animation's `running:` becomes `false`. | `motion only while a transition is reported, never with reduced motion: host/starting/32` | Exit 0, contract OK. |
+| `no-accessible-name` | `Accessible.name:` becomes an ordinary property. | `accessible name or role: host/running/12` | Exit 0, contract OK. |
+| `theme-tinted` | Mix the domain colour with the theme `accent` at 0.9. | `rim is not the palette domain colour: host/running/128` | Exit 0, contract OK. |
+| `fail-open-table` | Drop `sphere.theme.provenanceAvailable &&` from `knownDomain`. | `unresolved identity became a filled sphere: dev (isHost False)` | Exit 0, contract OK. |
+| `glow-past-edge` | `orbitRatio` 0.43 becomes 0.49. | `drawing escaped the sphere's envelope: host/starting/32` | Exit 0, contract OK. |
+| `pointer-handler` | Add `MouseArea { anchors.fill: parent }`. | `a sphere presents confirmed input; it observes, acts and changes state on nothing` | Exit 0, contract OK. |
+| `off-unfilled` | The body fill skips shut off: `if (sphere.classified && sphere.drawnState !== "shut off")`. | `a dark sphere keeps a body above the ground: host/shut off/12` | Exit 0, contract OK. |
+| `off-near-ground` | `darkBody` 4.5 becomes 9, the darkening of the first version, which left a shut-off body almost on the ground. | `a dark sphere keeps a body above the ground: host/shut off/12` | Exit 0, contract OK. |
+| `theme-text-near-clean` | The green appearance's `text` `#dcf3e4` becomes `#72f2a5`, the clean colour. | `external drawn with the HOST grey or a domain colour: green/host/external: (114, 242, 165)` | Exit 0, contract OK. |
+| `dashes-solid` | Each dash `ctx.arc(cx, cy, orbit, angle, angle + Math.PI / 12)` becomes a full circle. | `the disposable ring is not dashed: host/64` | Exit 0, contract OK. |
+| `gpu-token-centred` | The token's `x = cx + orbit - side` becomes `cx - side / 2`. | `the GPU mark has all but vanished at 16 px: host` (the 16-pixel floor runs first; with that floor removed the 64-pixel placement check reports `the GPU token is not docked on the ring at the right: host/64`) | Exit 0, contract OK. |
+| `no-highlight` | The highlight's `if (sphere.lit \|\| sphere.paused)` becomes `if (sphere.paused)`. | `missing specular highlight: host/64` | Exit 0, contract OK. |
+| `host-grey-unflagged` | Drop `&& sphere.isHost === (sphere.domain === "host")` from `knownDomain`. | `unresolved identity became a filled sphere: host (isHost False)` | Exit 0, contract OK. |
+| `alias-dropped` | Delete the `"in shutdown"` → `"stopping"` line of `drawnState`. | `libvirt state 'in shutdown' does not draw 'stopping': host: dev-01, host, in shutdown` | Exit 0, contract OK. |
+| `case-fold-exact` | Drop `sphere.domain === sphere.domain.toLowerCase()` from `knownDomain`, the exact-match comparison of the first version. | `unresolved identity became a filled sphere: Host (isHost False)` | Exit 0, contract OK. |
+| `paused-undimmed` | `sphere.paused ? 2.6` becomes `sphere.paused ? 1`. | `paused must be a dimmed sphere: host/12` | Exit 0, contract OK. |
+| `gpu-token-vanishing` | The token's `side` becomes 0.8 px below 32 px. | `the GPU mark has all but vanished at 16 px: host` | Exit 0, contract OK. |
+| `adr-state-without-drawing` | Add the row `\| crashed \| dark sphere with a cross \|` to the ADR's state table. | `ADR states and drawn cases differ: ['crashed']` | Exit 0, contract OK. |
+
+All twenty-six breaks exited 1 with the diagnostic listed; each restored copy
+was byte-identical to the original and exited 0. `theme-tinted` is caught by
+the exact 128-pixel rim colour before the per-appearance comparison runs;
+that comparison independently refuses any accent-dependent sphere. The first
+test-first run refused the missing ADR before the component was rewritten.
+
+## Machines showcase with spheres
+`tests/machine_showcase_contract.py` executes the production view with the
+real Theme, Tokens, ShellState and selection coordinator. Its six registry
+Machines span four domains; the seventh domain is external. Runtime checks
+read sphere inputs, allocation and state words, accessibility, neutral
+external presentation, geometry, filtering, real Qt key events, the selected
+header and empty/unavailable states. The lexer rejects hexadecimal and named
+colour literals, including GTK-parsed colour names, and colour constructors.
+The optional render output contains native 1440×900 and 1920×1080 captures
+and the real GTK showcase built from the same fixture and palette.
+
+For each break, save the named file, change only the described behaviour,
+run `python tests/machine_showcase_contract.py`, restore the saved copy and
+run it again. The installation break instead runs
+`python tests/host_quickshell_shared_shell_contract.py`. Restored files were
+compared byte for byte. Most paths are under
+`roles/host_desktop_common/files/quickshell/hyperlab/`; the table names the
+other two explicitly.
+
+Two first experiments stayed green and led to more precise checks:
+
+| Experiment | Observed result | Explanation and correction |
+| --- | --- | --- |
+| Remove only MachineTile's local Enter activation. | Exit 0 before the exact-once assertion. | ShellCard already handled Enter. Both handlers together emitted twice; the tile now handles arrows only. The exact-once assertion failed on the duplicated version, and both missing and duplicated shared activation fail below. |
+| Add state to the resolver's QtObject roots, checking Theme as the negative case. | Exit 0. | Theme's production root is Scope, so this did not exercise QtObject. The negative check now also resolves the actual QtObject-based Icons; the same mutation fails below. |
+
+| Mutation | File | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- | --- |
+| `no-tile-sphere` | `MachineTile.qml` | Remove the MachineSphere block from MachineTile. | `MachineTile must contain one MachineSphere` | Exit 0, contract OK. |
+| `literal-colour` | `MachineTile.qml` | Give the tile the literal colour #5b8cff. | `colour literal in MachineTile.qml` | Exit 0, contract OK. |
+| `external-domain-wash` | `MachineStage.qml` | Fill an external tile with the DEV palette colour. | `external tile borrowed a domain colour or fill` | Exit 0, contract OK. |
+| `reversed-domains` | `MachineStage.qml` | Read the provenance order backwards. | `groups must follow palette order and omit empty domains` | Exit 0, contract OK. |
+| `empty-domain-drawn` | `MachineStage.qml` | Draw groups whose row count is zero. | `groups must follow palette order and omit empty domains` | Exit 0, contract OK. |
+| `no-gpu-fact` | `MachineTile.qml` | Bind the tile sphere GPU owner input to false. | `tile sphere lost confirmed Machine facts` | Exit 0, contract OK. |
+| `no-disposable-fact` | `MachineTile.qml` | Bind the tile sphere disposable input to false. | `tile sphere lost confirmed Machine facts` | Exit 0, contract OK. |
+| `no-allocation-line` | `MachineTile.qml` | Replace the allocation label with an empty string. | `tile lost state, name or allocation line` | Exit 0, contract OK. |
+| `no-passthrough-word` | `MachineTile.qml` | Remove the configured passthrough wording. | `tile lost passthrough configuration or ownership words` | Exit 0, contract OK. |
+| `no-wash` | `MachineTile.qml` | Use the plain raised surface for classified tiles. | `tile has no domain wash` | Exit 0, contract OK. |
+| `small-context-sphere` | `MachineContextPane.qml` | Make the context sphere the same size as the tile sphere. | `context header has no matching larger sphere` | Exit 0, contract OK. |
+| `no-arrow-navigation` | `MachineStage.qml` | Disconnect the tile navigation signal from the stage. | `Right did not move to the next tile` | Exit 0, contract OK. |
+| `no-shared-enter-activation` | `ShellCard.qml` | Remove the activation emission in ShellCard.activate(). | `Enter must activate a tile exactly once` | Exit 0, contract OK. |
+| `double-enter-activation` | `MachineTile.qml` | Add a second Return handler in MachineTile. | `Enter must activate a tile exactly once` | Exit 0, contract OK. |
+| `filter-disconnected` | `MachineStage.qml` | Make the search field always assign an empty query. | `filter no longer controls the drawn tiles` | Exit 0, contract OK. |
+| `empty-host-unreserved` | `MachineStage.qml` | Set the empty host sphere isHost input to false. | `empty registry has no host sphere` | Exit 0, contract OK. |
+| `duplicate-empty-create` | `MachineStage.qml` | Keep the header New Machine action visible for an empty registry. | `empty registry must offer one Create a Machine action` | Exit 0, contract OK. |
+| `no-accessible-name` | `MachineTile.qml` | Remove the tile accessible name and allocation description. | `tile has no accessible name or keyboard focus` | Exit 0, contract OK. |
+| `no-dense-sphere` | `MachineListRow.qml` | Remove the sphere from MachineListRow. | `dense rows lost their spheres` | Exit 0, contract OK. |
+| `lost-item-state` | `tests/host_quickshell_qml_wiring_contract.py` | Remove inherited Item.state recognition from the wiring resolver. | `QML wiring lost the inherited Item.state property` | Exit 0, contract OK. |
+| `tile-not-installed` | `group_vars/all/host-desktop.yml` | Remove MachineTile.qml from the installed surface file inventory. | `HyperLab shared shell contract: shared shell stage invariant changed: surface_files` | Exit 0, contract OK. |
+| `named-colour` | `MachineTile.qml` | Give the tile the named colour steelblue. | `named colour literal in MachineTile.qml` | Exit 0, contract OK. |
+| `external-invented-allocation` | `MachineStage.qml` | Replace the external unknown allocation with 8 GiB and 4 vCPU. | `external allocation must remain unknown when the projection omits it` | Exit 0, contract OK. |
+| `tile-width-escapes` | `MachineStage.qml` | Make each tile wider than the workspace. | `tile dimensions escape the reviewed range` | Exit 0, contract OK. |
+| `overlapping-tiles` | `MachineStage.qml` | Use a negative card gap in the managed Flow. | `Machine tiles overlap` | Exit 0, contract OK. |
+| `unavailable-looks-empty` | `MachineStage.qml` | Show the empty host view without requiring available inventory. | `unavailable inventory was presented as empty` | Exit 0, contract OK. |
+| `invented-allocation` | `MachineTile.qml` | Turn a missing memory value into 0 GiB. | `missing facts became a classified or plausible default` | Exit 0, contract OK. |
+| `state-on-qtobject-caught` | `tests/host_quickshell_qml_wiring_contract.py` | Give QtObject roots the Item.state property in the resolver. | `QML wiring gave a non-Item the Item.state property` | Exit 0, contract OK. |
+| `empty-extra-action` | `MachineStage.qml` | Keep the layout switch visible in an actually empty view. | `an empty view must expose only the creation action` | Exit 0, contract OK. |
+
+All twenty-nine deliberate breaks in the final table exited 1, followed by
+exit 0 after restoring the saved copy. The first showcase test refused the
+existing literal colour; the Item.state regression separately failed before
+the resolver correction. The Enter exact-once assertion also failed before
+the duplicate handler was removed. These checks establish software behaviour;
+Nitro keyboard focus, perceived state light and physical display acceptance
+remain open.
+
+### Rendered Machine projection boundary
+
+The cockpit contract parses the host-projection references in `MachineTile`
+and the forbidden QML object blocks and lifecycle call tokens in the tile and
+dense row. Image types include every name ending in Image and qualified QML
+names. The unused former component is removed from the deployment inventory.
+Run `python tests/host_quickshell_desktop_cockpit_contract.py` for each break
+below, except the inventory mutation, which runs
+`python tests/host_quickshell_shared_shell_contract.py`. Save each source before
+mutation and restore it before the next check.
+
+| Mutation | File | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- | --- |
+| `tile-screencopy` | `MachineTile.qml` | Add `ScreencopyView {}` inside the tile. | `machine module gained backend behavior: ScreencopyView` | Exit 0, contract OK. |
+| `tile-image` | `MachineTile.qml` | Add `Image {}` inside the tile. | `machine module gained backend behavior: Image` | Exit 0, contract OK. |
+| `tile-animated-image` | `MachineTile.qml` | Add `AnimatedImage {}` inside the tile. | `machine module gained backend behavior: AnimatedImage` | Exit 0, contract OK. |
+| `tile-border-image` | `MachineTile.qml` | Add `BorderImage {}` inside the tile. | `machine module gained backend behavior: BorderImage` | Exit 0, contract OK. |
+| `dense-icon-image` | `MachineListRow.qml` | Add `IconImage {}` inside the dense row. | `machine module gained backend behavior: IconImage` | Exit 0, contract OK. |
+| `tile-qualified-image` | `MachineTile.qml` | Add `QtQuick.Image {}` inside the tile. | `machine module gained backend behavior: Image` | Exit 0, contract OK. |
+| `dense-qualified-icon-image` | `MachineListRow.qml` | Add `Quickshell.IconImage {}` inside the dense row. | `machine module gained backend behavior: IconImage` | Exit 0, contract OK. |
+| `tile-custom-image` | `MachineTile.qml` | Add `GuestPreviewImage {}` inside the tile. | `machine module gained backend behavior: GuestPreviewImage` | Exit 0, contract OK. |
+| `tile-shutdown` | `MachineTile.qml` | Add a `shutdown ()` call. | `machine module gained backend behavior: shutdown(` | Exit 0, contract OK. |
+| `tile-destroy` | `MachineTile.qml` | Add a `tile.destroy ()` call. | `machine module gained backend behavior: destroy(` | Exit 0, contract OK. |
+| `dense-image` | `MachineListRow.qml` | Add `Image {}` inside the dense row. | `machine module gained backend behavior: Image` | Exit 0, contract OK. |
+| `tile-virsh` | `MachineTile.qml` | Add a string property containing the direct hypervisor command `virsh`. | `MachineTile.qml: forbidden virsh` | Exit 0, contract OK. |
+| `retired-module-inventory` | `group_vars/all/host-desktop.yml` | Reinsert MachineModule.qml into surface_files. | `shared shell stage invariant changed: surface_files` | Exit 0, contract OK. |
+
+All seven original breaks exited 1 with the listed diagnostic, then 0 after
+byte-identical restoration. Before removal, the cockpit contract refused the installed former
+component with `unused machine module is still deployed`.
+The BorderImage and IconImage mutations initially stayed green: exact-type
+matching had lost the former image-subtype refusal. After checking all Image
+suffixes, both fail with exit 1 and the listed diagnostic. Qualified and custom
+image variants also fail. The six original image/screen-copy/lifecycle breaks
+were replayed, along with the direct virsh refusal; each returned 0 after
+byte-identical restoration.
+
+### Showcase feedback, header facts and viewport geometry
+
+The executable showcase also selects the shut-off disposable LAB Machine after
+the running DEV GPU owner. It checks the exact 7% resting domain mix, real Qt
+pointer feedback and selection precedence, external column widths and sphere
+padding, a full external row followed by another row, and the complete focused
+LAB tile inside the scrolled viewport at both requested sizes.
+An additional navigation fixture temporarily adds a second SERVICES tile,
+so real Up/Down events can keep column 1 across DEV, SERVICES and LAB.
+The single SERVICES tile in the six-Machine fixture would reset focus to
+column 0 and could not distinguish nearest-column selection from first-tile
+selection. The six-Machine fixture is restored for scrolling and captures.
+
+Save each file, apply one break, run `python tests/machine_showcase_contract.py`,
+restore the saved copy and run again. QML paths below are under
+`roles/host_desktop_common/files/quickshell/hyperlab/`.
+
+| Mutation | File | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- | --- |
+| `header-disposable-fixed` | `MachineContextPane.qml` | Bind the header disposable input to false. | `context header must follow the selected disposable shut-off LAB Machine` | Exit 0, contract OK. |
+| `header-domain-fixed` | `MachineContextPane.qml` | Bind the header domain to dev. | `context header must follow the selected disposable shut-off LAB Machine` | Exit 0, contract OK. |
+| `header-state-fixed` | `MachineContextPane.qml` | Bind the header state to running. | `context header must follow the selected disposable shut-off LAB Machine` | Exit 0, contract OK. |
+| `wash-too-heavy` | `MachineTile.qml` | Increase the resting domain mix from 0.07 to 0.5. | `tile domain wash must remain the subtle seven-percent mix` | Exit 0, contract OK. |
+| `no-pointer-feedback` | `MachineTile.qml` | Disable the actionable hover/press colour branch. | `hover must lighten the Machine tile wash` | Exit 0, contract OK. |
+| `lost-hover-state` | `ShellCard.qml` | Expose hovered as false instead of the existing handler state. | `real pointer motion must hover the Machine tile` | Exit 0, contract OK. |
+| `lost-press-state` | `ShellCard.qml` | Expose pressed as false instead of the existing handler state. | `press must retain Machine tile wash feedback` | Exit 0, contract OK. |
+| `lost-selected-feedback` | `MachineTile.qml` | Disable selection's colour branch. | `selected tile feedback must take precedence over hover` | Exit 0, contract OK. |
+| `external-width-drift` | `MachineStage.qml` | Divide the external grid width independently instead of reusing cardWidth. | `external and managed grid tile widths must match` | Exit 0, contract OK. |
+| `external-inset-drift` | `MachineStage.qml` | Use spaceSm for the external sphere's horizontal inset. | `external sphere inset must align with managed grid tiles` | Exit 0, contract OK. |
+| `external-final-column-lost` | `MachineStage.qml` | Omit the external GridView's trailing cell gap from its width. | `external grid must fit the same full columns as managed tiles` | Exit 0, contract OK. |
+| `focus-follow-disabled` | `WorkspaceFrame.qml` | Redirect the body FocusFollow to chipStrip. | `arrow focus must scroll the complete LAB tile into the viewport` | Exit 0, contract OK. |
+| `no-column-affinity` | `MachineStage.qml` | Drop `Math.abs(point.x - origin.x)` from the focus distance. | `Down must keep the nearest second column across domain groups` | Exit 0, contract OK. |
+| `no-up-column-affinity` | `MachineStage.qml` | Use zero for the horizontal distance only for Up. | `Up must keep the nearest second column across domain groups` | Exit 0, contract OK. |
+
+All twelve original breaks exited 1 with the listed diagnostic, followed by
+exit 0 after byte-identical restoration. The pointer test first failed before the tile's
+hover/press fill was restored. The focused LAB tile starts below the viewport;
+an activeFocus flag alone cannot satisfy the visibility assertion.
+Removing column affinity initially stayed green because all vertical checks
+used column 0. Both new mutations now exit 1 at their respective column-1
+assertion, then 0 after byte-identical restoration; the restored contract
+passes both requested sizes without changing the production focus algorithm.
+
+
+## Terminal domain spheres
+
+`python tests/cli_domain_spheres_contract.py` runs the four real CLI views with
+isolated provider/registry inputs and terminal/pipe streams. Frozen UTF-8 byte
+digests pin the previous pipe output and terminal row bodies; the semantic
+palette is also shifted independently of appearance colours.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| `pipe-colour` | In `tools/hyperlabctl/hyperlabctl/cli.py`, replace the stdout TTY condition with true. | `plain output read product inventory` (the read sentinel now runs before frozen-byte checks) | Exit 0, contract OK. |
+| `machine-intent-identity` | In `commands/machine.py`, replace `identities.get(record["id"])` with `record["network_profile"]`. | `domain prefix: ('machine', 'list') row 5` | Exit 0, contract OK. |
+| `machine-membership-refusal` | In `commands/machine.py`, catch only `ContractError` during classification. | `unknown membership gained an identity: ('machine', 'list')` | Exit 0, contract OK. |
+| `plain-vm-inventory` | In `commands/vm.py`, replace `if args.color:` with `if True:`. | `plain output read product inventory` | Exit 0, contract OK. |
+| `plain-machine-inventory` | In `commands/machine.py`, replace `if args.color:` with `if True:`. | `plain output read product inventory` | Exit 0, contract OK. |
+| `json-colour-guard` | In `cli.py`, remove `not args.json` from the colour policy; run the CLI component suite. | `FAIL json_dispatch_colour -- expected False, got True` | Exit 0, component suite OK. |
+
+The [component mutation catalogue](../tools/hyperlabctl/MUTATIONS.md#terminal-domain-spheres)
+records all 33 breaks, including palette-only colour, RGB/indexed conversion,
+option/environment policy, neutral provenance, the four call sites and unsafe
+palette inputs. Every final break exited 1 and every restored check exited 0.
+The initial green duplicate-key and exact-key replays, their independent-refusal
+reason and the added isolating fixtures are recorded there as well.
+
+The plain-output read sentinel raises an assertion if VM or Machine list builds
+the additional product inventory on a pipe, suppressed terminal or JSON path.
+A separate sentinel forbids domain-palette reads on JSON. This catches extra
+reads even if their output would have kept every frozen byte unchanged. The
+Machine intent mutation now also proves that runtime drift cannot borrow the
+record's requested domain colour. See the
+[problem note](../problems/cli-machine-intent-colour.md).
+
+The additional `standalone-import` mutation adds a top-level package-relative
+import to `render.py`. The focused component suite fails on
+`test_status_renderers_still_support_loading_by_filename` with the original
+`ImportError`; its restored source passes. The existing desktop cockpit
+contract also passes without changes. See the
+[problem note](../problems/cli-render-standalone-import.md).
+
+
+## GPU prepare XML and reviewed QEMU arguments
+
+The checks run copied hook/helper artifacts in temporary directories, with
+only the fixed installed paths and the policy owner's fixture uid substituted.
+No live libvirt, GPU or trust state is used. All prepare cases, including the
+existing transaction races, supply representative XML. The reference-domain
+positive control is rendered by the real guest/VFIO planners and domain
+Jinja template in `tests/arch_dev_vfio_hardware_gate_contract.py`.
+
+Each of the following breaks was observed red (exit 1) and its restored
+predicted check green (exit 0). No mutation stayed green.
+
+| Case | Invariant broken | Observed red check |
+|---|---|---|
+| Q1 | Ignore an unmapped QEMU namespace extension | Bats renamed-namespace vfio-pci refusal |
+| Q2 | Accept trailing arguments after the reviewed four | XML contract extra argument accepted, state changed |
+| Q3 | Inspect only the literal `qemu` prefix | Bats renamed-namespace refusal |
+| Q4 | Match ordered hostdev text with no space around `=` | Bats structural PCI/hostdev interface refusal |
+| Q5 | Reject every command-line block | Real rendered Looking Glass XML refused |
+| Q6 | Ignore helper failure | Bats failed-helper refusal/state preservation |
+| Q7 | Treat malformed XML as success | Bats missing/malformed mapped XML refusal |
+| Q8 | Fall back to transport defaults on invalid policy | XML contract invalid/duplicate policy accepted |
+| Q9 | Ignore the opened policy inode's owner | XML contract wrong-owner policy accepted |
+| Q10 | Install the helper owned by an unprivileged user | Actual task parameter evaluation rejects ownership |
+| Q11 | Hard-code policy transport values | Actual policy render ignores changed host configuration |
+| Q12 | Ignore a second command-line block | XML contract duplicate block accepted |
+| Q13 | Allow a document type and entity substitution | XML contract document type accepted |
+| Q14 | Follow the transport policy symlink | XML contract redirected policy accepted |
+| Q15 | Ignore the domain XML's name | XML contract name mismatch accepted |
+| Q16 | Remove the XML input bound | XML contract oversized document accepted |
+| Q17 | Ignore the host-owned policy inside the helper | XML contract configured Looking Glass XML refused |
+| Q18 | Run the helper without Python isolation (`-I`) | XML contract shadow `json.py` imported, reviewed XML refused |
+
+The XML contract's argument-drift table also covers changed driver, path,
+size, share flag, device/backend ids and extra object properties. Its shape
+cases cover empty blocks, unknown attributes/children/text, environment
+nodes and orphan namespace elements. Refusals are checked both over existing
+trust bytes and before any state directory exists. The policy checks include
+missing, malformed, duplicate-key, unreadable, writable and redirected inputs;
+installation evaluates root ownership, modes and publication order. These
+are software proofs, not hardware acceptance or confinement of a hostile
+host owner.
+
+Replay from the repository root on an otherwise idle tree. Each source file
+is copied before it is changed and restored in `finally`, including its mode;
+no Git restoration is used. Each mutation runs only its predicted check,
+then the same check after restoration:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+root = Path.cwd()
+helper = Path('roles/gpu_handoff/files/xml-preflight.py')
+hook = Path('roles/gpu_handoff/files/qemu')
+tasks = Path('roles/gpu_handoff/tasks/main.yml')
+policy = Path('roles/gpu_handoff/templates/looking-glass.json.j2')
+contract = ['python', 'tests/gpu_handoff_xml_contract.py']
+mutations = [
+    ('Q1-ignore-unmapped-extension', helper,
+     [('require(not extensions,', 'require(True,')],
+     ['bats', '--filter', 'unmapped renamed', 'tests/hook.bats'], 'not ok 1'),
+    ('Q2-allow-extra-arguments', helper,
+     [('len(args) == 4', 'len(args) >= 4'),
+      ('[node.get("value") for node in args] == expected', '[node.get("value") for node in args][:4] == expected')],
+     contract, 'unreviewed QEMU command-line'),
+    ('Q3-literal-qemu-prefix', helper,
+     [('    if not mapped:\n', '    if b"<qemu:commandline" not in raw:\n        extensions = []\n    if not mapped:\n')],
+     ['bats', '--filter', 'unmapped renamed', 'tests/hook.bats'], 'not ok 1'),
+    ('Q4-ordered-hostdev-text', helper,
+     [('require(not any(node.tag == "hostdev" and node.get("type") == "pci"\n'
+       '                        or node.tag == "interface" and node.get("type") == "hostdev"\n'
+       '                        for node in root.iter()),',
+       '''require(re.search(rb"<hostdev[^>]*type=['\\\"]pci['\\\"]|<interface[^>]*type=['\\\"]hostdev['\\\"]", raw) is None,''')],
+     ['bats', '--filter', 'unmapped PCI and', 'tests/hook.bats'], 'not ok 1'),
+    ('Q5-reject-all-commandline', helper,
+     [('    blocks = root.findall', '    require(False, "unreviewed QEMU command-line")\n    blocks = root.findall')],
+     ['python', 'tests/arch_dev_vfio_hardware_gate_contract.py'], 'rendered Looking Glass XML refused'),
+    ('Q6-ignore-helper-failure', hook,
+     [('    echo "gpu-handoff: XML preflight failed: refusing" >&2\n    exit 1',
+       '    echo "gpu-handoff: XML preflight failed: refusing" >&2\n    :')],
+     ['bats', '--filter', 'missing or failed installed', 'tests/hook.bats'], 'not ok 1'),
+    ('Q7-ignore-malformed-xml', helper,
+     [('        raise Refusal("invalid domain XML: malformed document") from error', '        return')],
+     ['bats', '--filter', 'missing or malformed', 'tests/hook.bats'], 'not ok 1'),
+    ('Q8-ignore-invalid-policy', helper,
+     [('            raise Refusal(f"invalid Looking Glass policy: {error}") from error',
+       '            device, size = "/dev/kvmfr0", 67108864')],
+     contract, 'invalid Looking Glass policy'),
+    ('Q9-ignore-policy-owner', helper,
+     [(' and info.st_uid == POLICY_OWNER', '')], contract, 'unsafe Looking Glass policy'),
+    ('Q10-user-owned-install', tasks,
+     [('    dest: /etc/gpu-handoff/xml-preflight.py\n    owner: root',
+       '    dest: /etc/gpu-handoff/xml-preflight.py\n    owner: nobody')],
+     contract, 'AssertionError'),
+    ('Q11-hardcode-transport-limits', policy,
+     [(policy.read_text(), '{"device":"/dev/kvmfr0","size_bytes":67108864}\n')],
+     contract, 'transport policy is hard-coded'),
+    ('Q12-ignore-duplicate-block', helper,
+     [('len(blocks) == 1', 'len(blocks) >= 1'), (' and extensions == [block, *args]', '')],
+     contract, 'unreviewed QEMU command-line'),
+    ('Q13-allow-document-type', helper,
+     [('        raise Refusal("invalid domain XML: document types are not allowed")', '        return')],
+     contract, 'invalid domain XML'),
+    ('Q14-follow-policy-symlink', helper,
+     [('os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK', 'os.O_RDONLY | os.O_NONBLOCK')],
+     contract, 'Looking Glass policy'),
+    ('Q15-ignore-domain-name', helper,
+     [('require(len(names) == 1 and names[0].text == domain,', 'require(True,')],
+     contract, 'domain name mismatch'),
+    ('Q16-ignore-xml-size-bound', helper,
+     [('0 < len(raw) <= MAX_XML_BYTES', '0 < len(raw)'),
+      ('sys.stdin.buffer.read(MAX_XML_BYTES + 1)', 'sys.stdin.buffer.read()')],
+     contract, 'invalid domain XML'),
+    ('Q17-ignore-host-transport-policy', helper,
+     [('    expected = [', '    device, size = "/dev/kvmfr0", 67108864\n    expected = [')],
+     contract, 'configured Looking Glass XML refused'),
+    ('Q18-unisolated-helper', hook,
+     [('/usr/bin/python3 -I "${XML_PREFLIGHT}"', '/usr/bin/python3 "${XML_PREFLIGHT}"')],
+     contract, 'isolated helper refused reviewed XML'),
+]
+with tempfile.TemporaryDirectory(prefix="gpu-xml-mutations-") as temporary:
+    for name, path, edits, command, reason in mutations:
+        backup = Path(temporary) / (name + "-" + path.name)
+        shutil.copy2(path, backup)
+        mutated = path.read_text()
+        for old, new in edits:
+            assert mutated.count(old) == 1, (name, old)
+            mutated = mutated.replace(old, new, 1)
+        try:
+            path.write_text(mutated)
+            red = subprocess.run(command, text=True, capture_output=True, check=False, timeout=60)
+            assert red.returncode != 0 and reason in red.stdout + red.stderr, (name, red)
+        finally:
+            shutil.copy2(backup, path)
+        green = subprocess.run(command, text=True, capture_output=True, check=False, timeout=60)
+        assert green.returncode == 0, (name, green)
+        print(f"{name}: red; restored green")
+PY
+```
+
+## Palette output variant names
+
+The Quickshell writer deliberately includes the current variant in its top-level
+JSON `name`. Colour masking and banner normalization left that value intact,
+so committed fragments failed structural parity. `verify_output.py` now replaces
+only the generated top-level `name` line for that file's own variant. The
+comparison marker is unquoted, so an incorrect JSON string value of `"V"`
+cannot impersonate the normalized name. Coverage reporting, colour masking and
+stray-colour rejection retain their existing behaviour.
+
+`python tests/palette_verify_output_contract.py` copies the committed fragments
+to a temporary directory and invokes the real verifier. Unchanged output must
+print `OUTPUT: OK`; a wrong name or an extra key in one variant must fail with
+`different structure`. Other string fields, nested names and other formats
+remain subject to parity, and an out-of-palette colour still fails. The contract
+is discovered by the existing `tests/*_contract.py` verification loop.
+
+Save `tools/palette/verify_output.py` before each following break, make only the
+listed edit, run the selected test, then copy back the saved source and rerun
+that same test. Each command has the form:
+
+```bash
+python tests/palette_verify_output_contract.py PaletteVerifyOutputContract.TEST
+```
+
+| Mutation | Break in `tools/palette/verify_output.py` | TEST | Observed red / restored green |
+| --- | --- | --- | --- |
+| `remove-normalization` | Delete the Quickshell filename-guarded name-normalization block. | `test_committed_output_passes` | Exit 1, unchanged output reports Quickshell `different structure`; exit 0 after restoration. |
+| `all-variant-names` | Replace the own-variant replacement with a loop over `variants`, replacing each `name` rather than only `variant`. | `test_wrong_variant_name_fails` | Exit 1, another variant's name was accepted; exit 0 after restoration. |
+| `quoted-marker` | Change the replacement line's unquoted `V` to `"V"`. | `test_wrong_variant_name_fails` | Exit 1, the literal name `V` was accepted; exit 0 after restoration. |
+| `all-formats` | Replace `if filename == "hyperlab-palette-quickshell.json":` with `if True:`. | `test_other_formats_are_not_normalized` | Exit 1, differing names in Rasi were accepted; exit 0 after restoration. |
+| `nested-names` | Replace the normalization with `shape = shape.replace(f'"name": "{variant}"', '"name": V')`. | `test_nested_names_are_not_normalized` | Exit 1, differing nested names were accepted; exit 0 after restoration. |
+| `discard-structure` | Replace `shapes.append(shape)` with `shapes.append("" if filename == "hyperlab-palette-quickshell.json" else shape)`. | `test_extra_key_in_one_variant_fails` | Exit 1, an extra JSON key was accepted; exit 0 after restoration. |
+| `ignore-stray-colours` | Replace `if stray:` with `if False:`. | `test_stray_colour_still_fails` | Exit 1, an out-of-palette colour was accepted; exit 0 after restoration. |
+
+Every listed mutation was observed red and the same check green after
+byte-identical restoration. No mutation stayed green. Before the implementation,
+the complete seven-test contract failed only on unchanged committed output;
+after restoration all seven tests passed.
+
+## The bar core follows focus
+
+[ADR 0064](../docs/adr/0064-spheres-are-machines.md) makes the core of the
+product glyph in the host bar a trust indicator. `tests/bar_core_focus_contract.py`
+runs Sway and Hyprland focus fixtures through the real compositor adapter,
+the real `ShellState` in the runtime harness, the real provenance resolver
+and the real bar, then reads the captured pixels of the core and the focus
+sphere, the words and the accessible name. Every fixture window carries a
+title that names another Machine.
+
+Each break changes one file. Replay one at a time from a saved copy, run
+`python tests/bar_core_focus_contract.py`, restore the copy and run it again.
+`resolver-reads-title` edits `tools/surface_provenance.py`; every other break
+edits a file in `roles/host_desktop_common/files/quickshell/hyperlab/`.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| `title-mapping` | `ShellState.focusedMachineFor()` first maps any inventory name found in `state.focusPayload.title` to that Machine. | `the focus mapping reads state.focusPayload` | Exit 0, contract OK. |
+| `title-kept` | `applyFocusPayload()` keeps the adapter's `title` in `focusPayload`. | `sway: "the focused window title entered shell state"` | Exit 0, contract OK. |
+| `resolver-reads-title` | `resolve()` refuses any surface with a non-empty `title`. | `sway/host: the resolver answer follows the title 'dev-01'` | Exit 0, contract OK. |
+| `unknown-host-grey` | `HyperLabBar.qml` draws an unplaced focus as a filled core in `provenanceColor("host")` (`coreHollow: false`). | `sway: "a surface still being resolved kept the previous answer"` | Exit 0, contract OK. |
+| `unknown-hollow-grey` | The hollow Unknown outline takes `provenanceColor("host")` instead of `textPrimary`. | `sway/unmapped: Unknown is drawn in the host colour: (138, 147, 157)` | Exit 0, contract OK. |
+| `unknown-keeps-domain` | The hollow Unknown outline keeps the last proven `coreFill`. | `sway/unmapped: Unknown is drawn in the dirty colour: (253, 156, 68)` | Exit 0, contract OK. |
+| `words-without-domain` | `focusedMachine.words` becomes the Machine name alone. | `sway: "an unconfirmed Machine state was drawn, or its domain was lost"` | Exit 0, contract OK. |
+| `coloured-words` | `ProvenanceBadge.qml` draws a Machine's words in its domain colour. | `sway/dev: the focus words carry a colour; the sphere and the core do` | Exit 0, contract OK. |
+| `fade-ignores-reduced-motion` | Delete the `bar.tokens.reducedMotion` branch of `followCore()`. | none: exit 0 (see below) | Exit 0, contract OK. |
+| `fade-fixed-duration` | Delete that branch and set the fade's `duration` to `180` instead of `motionExpand`. | `sway: "reduced motion still faded the core"` | Exit 0, contract OK. |
+| `no-fade` | `followCore()` sets `coreLevel` to 1 instead of starting the fade. | `sway: "a new core colour did not fade in"` | Exit 0, contract OK. |
+| `contradiction-ignored` | The inventory row that names the Machine in another domain is ignored (`if (false)`). | `sway: "the inventory named another domain and the bar still chose one"` | Exit 0, contract OK. |
+| `unresolved-is-host` | `focusedMachineFor()` answers host for an `unresolved` provenance. | `sway/unmapped: the bar placed focus on host` | Exit 0, contract OK. |
+| `palette-unchecked` | Remove `theme.provenanceAvailable` from the bar's presentation answer. | `sway: "an incomplete palette left the core and the focus item disagreeing"` | Exit 0, contract OK. |
+| `item-reads-shell-answer` | Pass `shellState.focusedMachine` directly to the focus item, bypassing the bar's palette check. | `sway: "an incomplete palette left the core and the focus item disagreeing"` | Exit 0, contract OK. |
+
+Fourteen breaks exited 1 with the diagnostic listed; each restored copy was
+byte-identical to the original, and the contract exited 0 after the
+restorations. `fade-ignores-reduced-motion` stays green and is equivalent,
+not missed: `motionExpand` is already 0 under reduced motion, and a
+zero-duration animation lands at once, so the explicit branch is a second
+guard. `fade-fixed-duration` removes both guards and is refused.
+`unknown-host-grey` is refused by the first focus event, before the pixel
+checks, because the core is not hollow while the new surface resolves.
+The palette cases remove each `dom_*` key under both host and Machine focus,
+check the core, words and accessible name before and after a resolver answer,
+and restore the palette without another focus event. The pre-correction bar
+failed with the incomplete-palette diagnostic above. Both palette mutations
+exited 1, and each byte-identical restoration exited 0.
+
+The inventory-state fixtures also reuse the registered dev viewer with
+`crashed` and `unknown`. The core keeps the proven dev colour while the
+sphere is an empty neutral outline with a visible state word. Inventory-only
+updates and recovery to running need no new focus or resolver answer.
+Replay each break below in `ProvenanceBadge.qml`, run the same contract,
+restore the saved copy and rerun it.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| `unsupported-state-word-removed` | Remove the `stateWords` suffix from the visible `words` binding. | `sway: "an unsupported Machine state has no visible state word"` | Exit 0, contract OK. |
+| `crashed-normalized-to-running` | Pass `running` to the sphere when `machineState` is `crashed`. | `sway: "an unsupported Machine state was normalized or drawn as supported"` | Exit 0, contract OK. |
+| `unconfirmed-state-word-removed` | Replace the `state not confirmed` fallback in `stateWords` with an empty string. | `sway: "an unconfirmed Machine state was drawn, or its domain was lost"` | Exit 0, contract OK. |
+
+All three breaks exited 1. Each saved copy was restored byte-identically,
+and the contract exited 0 after each restoration. The expanded contract
+failed on the missing state word before the badge correction.
+
+### Painted focus words, unresolved marker and narrow geometry
+
+The focus fixtures include a registered services Machine with a 31-character
+name, rendered with crashed, unlisted and stale inventory. The domain/state
+label must report `truncated === false`; its painted width and height must fit
+inside the badge. Only the name may elide to the right. The unregistered
+Looking Glass client keeps `Unknown` and adds a visible `unresolved` marker;
+every pending resolver request lacks that marker.
+
+Each of the ten states runs at 1440 and 800 logical pixels under both
+compositors. Real item bounds must remain inside the rail and pairwise
+separate for identity, workspaces, clock, focus, GPU, system and settings.
+The stale-source case also keeps the longer stale GPU and unavailable
+workspace readouts. The render option saves all forty captures and their
+runtime geometry records.
+
+The long-name cases also use five occupied workspaces, with active workspace
+2 and urgent workspace 5 retained. The unlisted and stale-inventory cases at
+800 pixels now fold to three visible chips and a counted `+2`; every occupied
+workspace is either visible or counted. The clock, focus domain/state words
+and required readouts remain separate under both compositor fixtures.
+
+Save each file, make one break, run `python tests/bar_core_focus_contract.py`,
+restore the saved copy and rerun the same check. QML paths are under
+`roles/host_desktop_common/files/quickshell/hyperlab/`.
+
+| Mutation | File | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- | --- |
+| `domain-recombined` | `ProvenanceBadge.qml` | Hide the name label and restore the combined `badge.words` label with bounded width and `ElideMiddle`. | `the painted domain/state words are truncated or escape the focus badge` | Exit 0, contract OK. |
+| `unresolved-marker-hidden` | `ProvenanceBadge.qml` | Make the unresolved marker invisible. | `Unknown has no distinct unresolved warning, or shows it for another state` | Exit 0, contract OK. |
+| `pending-marked-unresolved` | `ProvenanceBadge.qml` | Show the marker while provenance is resolving too. | `a pending request shows the unresolved warning` | Exit 0, contract OK. |
+| `approximate-clock-centre` | `HyperLabBar.qml` | Restore the approximate clock centre based on right-group width and a fixed 40-pixel left reserve. | `sway-800/long-unlisted: provenance-badge overlaps rail-clock on the 800-pixel rail` | Exit 0, contract OK. |
+| `narrow-gaps-retained` | `HyperLabBar.qml` | Keep the wide inter-control gaps on narrow rails. | `sway-800/stale: rail-clock overlaps rail-workspaces on the 800-pixel rail` | Exit 0, contract OK. |
+
+All five breaks exited 1 with the listed diagnostic, followed by exit 0 after
+each byte-identical restoration. Before correction, the expanded contract
+failed separately on the truncated painted label, absent unresolved marker
+and narrow overlap. These are software checks; display legibility and real
+compositor timing remain hardware acceptance.
+
+An additional capacity mutation exercises the crowded-workspace cases:
+
+| Mutation | File | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- | --- |
+| `fixed-workspace-capacity` | `HyperLabBar.qml` | Replace the measured `maximumSlots` binding with `bar.wideRail ? 9 : (bar.mediumRail ? 6 : 4)`. | `sway-800/long-unlisted: rail-clock overlaps rail-workspaces on the 800-pixel rail` | Exit 0, contract OK. |
+
+This break exited 1; its byte-identical restoration exited 0. Before the
+capacity correction, the expanded five-workspace test failed with the same
+diagnostic. The four captures for long-unlisted and long-stale-inventory at
+800 pixels pass the pairwise geometry check under Sway and Hyprland.
+
+The geometry is measured only in the fonts `Tokens.qml` names
+([problem](../problems/bar-geometry-measured-in-fallback-fonts.md)). Save
+`Tokens.qml`, make one break, run `python tests/bar_core_focus_contract.py`,
+restore the saved copy and rerun it.
+
+| Mutation | File | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- | --- |
+| `sans-font-substituted` | `Tokens.qml` | `fontSans` names `Inter`, which is not installed. | `sway: "the shell fonts named by Tokens.fontSans and Tokens.fontMono are not installed; the rail geometry would be measured in fallback fonts"` | Exit 0, contract OK. |
+| `mono-font-substituted` | `Tokens.qml` | `fontMono` names `JetBrains Mono`, the unpatched family, which is not installed. | the same font refusal | Exit 0, contract OK. |
+
+Both breaks exited 1 and each byte-identical restoration exited 0. The
+environment was also broken without editing a file: a local `FONTCONFIG_FILE`
+that rejects Adwaita Sans and JetBrainsMono Nerd Font. Before the refusal
+existed, that file reproduced the CI diagnostic
+`sway-800/stale: rail-clock overlaps rail-workspaces on the 800-pixel rail`.
+With Noto as the only fallback, or with only Adwaita Sans kept, it exited 0.
+With the refusal, all three fallback sets exit 1 with the font refusal. A
+file that loads Ubuntu's `fonts-adwaita-sans` 49.0 and the pinned Nerd Fonts
+v3.5.1 archive exits 0, with item bounds identical to the host's.
+
+## The wiring contract and inherited Item.state
+
+`tests/host_quickshell_qml_wiring_contract.py` recognises `state` through
+local inheritance chains ending at `Item`, `Rectangle`, `Text` or `Canvas`
+([ADR 0065](../docs/adr/0065-qml-inherited-item-state.md)). A component need
+not bind it on its root. `GpuBadge` inherits it through `ShellControl`;
+QtObject-based components such as `Icons` do not. Other vocabulary names,
+including `icons`, still need a declaration. Runtime contracts check the
+actual sphere state values separately.
+
+The table preserves the earlier component-specific rule's results as
+historical and records a replay under ADR 0065. The three accepted changes
+are valid inherited-property assignments, not missed wiring defects. Replay
+one change at a time from a saved copy, run
+`python tests/host_quickshell_qml_wiring_contract.py`, restore the copy and
+run it again. Every change edits a file in
+`roles/host_desktop_common/files/quickshell/hyperlab/`.
+
+| Mutation | Change | Historical result before ADR 0065 | Current observed result | After restoration |
+| --- | --- | --- | --- | --- |
+| `icons-to-sphere` | `ProvenanceBadge.qml` assigns `icons: badge.icons` to its `MachineSphere`. | Exit 1, stray `icons` on MachineSphere. | Exit 1: `ProvenanceBadge.qml assigns ['icons'] to MachineSphere, which declares no such property`. | Exit 0, contract OK. |
+| `sphere-root-unbound` | Delete `state: ""` from the root of `MachineSphere.qml`. | Exit 1, undeclared `state` on MachineSphere. | Exit 0, `OK (56 components)`; Item.state is inherited without a root binding. | Exit 0, contract OK. |
+| `state-to-gpu-badge` | `HyperLabBar.qml` assigns `state: "x"` to its `GpuBadge`. | Exit 1, undeclared `state` on GpuBadge. | Exit 0, `OK (56 components)`; GpuBadge inherits Item.state. | Exit 0, contract OK. |
+| `unreviewed-root-state` | Bind `state: ""` on `GpuBadge.qml`'s root and assign `state: "x"` to the badge in `HyperLabBar.qml` (two files). | Exit 1 under the component-specific rule. | Exit 0, `OK (56 components)`; the root binding does not change inheritance. | Exit 0, contract OK. |
+| `state-to-qtobject` | `shell.qml` assigns `state: "x"` to its QtObject-based `Icons`. | Not run. | Exit 1: `shell.qml assigns ['state'] to Icons, which declares no such property`. | Exit 0, contract OK. |
+
+All five current results match ADR 0065; each byte-identical restoration
+exited 0. Historically, a broad rule that counted every root binding also
+accepted `unreviewed-root-state`; the later component-specific rule refused
+it. Neither historical rule describes today's inherited-property boundary.
+Before the original Item.state correction, the unmodified tree itself
+failed with an undeclared-state diagnostic on MachineSphere.
+
+## Obsolete render hardware input
+
+`python tests/contract_mutations.py -k obsolete_render_input` discovers four
+independent regressions. Each inserts the old argument
+`--extra-vars '{"hardware_profiles":{"nitro-3060":{"vfio_ids":["10de:2520","10de:228e"]}}}'`
+immediately after the render command in a temporary repository copy. The
+static contract inspects `verify.sh`, the parsed CI `run` blocks and the
+review package. Only this obsolete input name is forbidden; the actual
+`host_profiles` data and render fixtures are unchanged.
+
+Before the guard existed, all four regressions failed because the mutated
+input produced no static errors. Adding the guard made the original
+entrypoints fail with all three document-specific obsolete-input diagnostics.
+Removing the four arguments made the static baseline and all four discovered
+regressions pass.
+
+For each replay below, save the clean entrypoint, insert only the old
+argument at the named site in a temporary copy, run
+`python tests/static_contract.py`, restore the saved bytes and run the same
+command again. The standalone script or extracted command block also passed
+`bash -n` in every mutated case; no mutated render command was executed.
+
+| Discovered regression | Site | Observed red diagnostic (exit 1) | After byte-identical restoration |
+| --- | --- | --- | --- |
+| `test_obsolete_render_input_in_local_terminal_branch` | `verify.sh`, the `if ansible-playbook` command | `verify.sh must not pass obsolete hardware_profiles render input` | Exit 0, `static contract: OK`. |
+| `test_obsolete_render_input_in_local_captured_branch` | `verify.sh`, the `run ansible-playbook` command | `verify.sh must not pass obsolete hardware_profiles render input` | Exit 0, `static contract: OK`. |
+| `test_obsolete_render_input_in_ci` | `.github/workflows/ci.yml`, `render_invariants.run` | `.github/workflows/ci.yml must not pass obsolete hardware_profiles render input` | Exit 0, `static contract: OK`. |
+| `test_obsolete_render_input_in_review_command` | `docs/independent-review-package.md`, fenced render command | `docs/independent-review-package.md must not pass obsolete hardware_profiles render input` | Exit 0, `static contract: OK`. |
+
+Each discovered regression requires exactly the listed diagnostic, so an
+unrelated failure cannot satisfy it. The existing render-selection contract
+initially failed because its exact argv oracle still required the removed
+argument. Removing that obsolete expectation restored its green baseline
+while retaining exact argv, credential, selection and failure assertions.
+The existing missing-privileged-tag mutation also needed its expected
+diagnostic updated to the new exact command line. The complete
+`python tests/contract_mutations.py` then passed all 67 cases.
+
+## Repository origins under the Doppiari organisation
+
+The repositories moved from the user `importriri` to the organisation
+`Doppiari`. The v3 campaign manifest names `Doppiari/hyperlab-ansible` and
+`Doppiari/arch-bootstrap` as reviewed origins; the historical v2 manifest
+keeps the previous owner `importriri`. GitHub's redirect from the old address is not
+accepted as an origin. `tests/release_acceptance_contract.py` holds the
+expected owner per version in a handwritten `REPOSITORY_OWNER` oracle,
+derives every fixture origin from the manifest `remote` in both the
+`https://github.com/<owner>/<repo>.git` and `git@github.com:<owner>/<repo>.git`
+forms, and runs a real `repository-proof` that must accept the versioned
+owner and refuse the other owner for each repository and each form.
+
+Save the named input to a backup outside the tracked tree before each break,
+make only that edit, run the focused check, copy the backup back, compare
+bytes and rerun the same check:
+
+```bash
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_repository_proof_accepts_only_the_versioned_owner(3)'
+python -B -c 'import sys; sys.path.insert(0,"tests"); import release_acceptance_contract as t; t.test_repository_proof_binds_clean_exact_checkouts_and_hashes_logs(3)'
+```
+
+| ID | Input and exact break | Focused check | Red observed |
+| --- | --- | --- | --- |
+| D1 | `release/acceptance.v3.yml`: set only the owner of `repositories.hyperlab_ansible.remote` back to `importriri`. | `test_repository_proof_accepts_only_the_versioned_owner(3)` | `v3 hyperlab_ansible remote is not Doppiari/hyperlab-ansible`. |
+| D2 | Same file: set only the owner of `repositories.arch_bootstrap.remote` back to `importriri`. | same as D1 | `v3 arch_bootstrap remote is not Doppiari/arch-bootstrap`. |
+| D3 | `tools/release_acceptance.py`: replace `contract["remote"] in remote.removesuffix(".git"),` in the origin require with `True,`. | same as D1 | `v3 accepted hyperlab_ansible origin`, followed by the previous owner's HTTPS origin. |
+| D4 | `tests/release_acceptance_contract.py`: in the clean-checkout proof, replace the derived `https_origin(manifest_remote(version, "hyperlab_ansible"))` with a string literal holding the previous owner's HTTPS origin of `hyperlab-ansible`. | `test_repository_proof_binds_clean_exact_checkouts_and_hashes_logs(3)` | `hyperlab_ansible origin differs from Doppiari/hyperlab-ansible`. |
+
+D1–D4 were each observed red (exit 1) and green (exit 0) after
+byte-identical restoration. No mutation stayed green. Before the manifest
+change the new owner check failed on the unchanged v3 manifest with the D1
+diagnostic, and the v2 runs passed throughout. The origin check is a
+case-sensitive substring of the origin URL, so a lower-case
+`doppiari/...` origin is refused; this section does not change that rule.

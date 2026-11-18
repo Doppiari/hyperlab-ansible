@@ -23,9 +23,10 @@ python3 tests/schema_mutations.py
 python3 tests/contract_mutations.py
 python3 tools/hyperlabctl/tests/run.py
 bats tests/*.bats
-ansible-playbook -i inventory.ini tests/render.yml --extra-vars '{"hardware_profiles":{"nitro-3060":{"vfio_ids":["10de:2520","10de:228e"]}}}'
+ansible-playbook -i inventory.ini tests/render.yml
 ```
 
+The render fixtures read `host_profiles` from `group_vars/all/hardware.yml`.
 `tests/render.yml` has one task tagged `privileged` (`nft -c`) that needs
 sudo; without it, add `--skip-tags privileged`. The QML contracts run
 offscreen with `QT_QPA_PLATFORM=offscreen`; `HYPERLAB_RENDER_OUT=<dir>`

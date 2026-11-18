@@ -13,10 +13,13 @@ a text search cannot:
   1. every required property of a HyperLab component is assigned wherever
      that component is instantiated;
   2. a property name that belongs to the HyperLab vocabulary is only ever
-     assigned to a component that actually declares it.
+     assigned to a component that declares or inherits it. ADR 0065 recognises
+     Item.state through local chains ending at Item, Rectangle, Text or Canvas,
+     without requiring a root binding. QtObject roots do not inherit state.
 
-It deliberately says nothing about Qt's own properties: this is a contract
-about HyperLab's own wiring, not a QML type checker.
+Apart from this inherited state and the documented root inputs in QT_INPUTS,
+it says nothing about Qt's own properties: this checks HyperLab wiring,
+not all QML types. Runtime contracts separately check the supplied values.
 """
 
 from __future__ import annotations
@@ -32,6 +35,11 @@ VIEW_PROVIDED = {"modelData", "index"}
 
 # Assigned by Quickshell's Variants from its model.
 VARIANT_PROVIDED = {"modelData"}
+
+# Root bindings for documented Qt inputs supplement local declarations.
+# MachineSphere uses Item.state (ADR 0064); resolve() also recognises that
+# inherited property (ADR 0065), even without a root binding or this entry.
+QT_INPUTS: dict[str, set[str]] = {"MachineSphere": {"state"}}
 
 PROPERTY_DECLARATION = re.compile(
     r"^[ \t]*(?:(required)[ \t]+)?(?:readonly[ \t]+)?property[ \t]+"
@@ -116,6 +124,11 @@ def components() -> dict[str, dict[str, object]]:
             if item[0] == "required"
         }
 
+        # A reviewed Qt input counts as declared while the root binds it.
+        declared |= QT_INPUTS.get(name, set()) & assignments(
+            root_body(source, match.end())
+        )
+
         found[name] = {
             "base": match.group(1),
             "declared": declared,
@@ -125,6 +138,22 @@ def components() -> dict[str, dict[str, object]]:
         }
 
     return found
+
+
+def root_body(source: str, start: int) -> str:
+    """The body of the object whose opening brace ends at `start`."""
+    depth = 1
+    index = start
+
+    while index < len(source) and depth:
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+        index += 1
+
+    require(depth == 0, "unbalanced root object")
+    return source[start:index - 1]
 
 
 def resolve(name: str, catalogue: dict[str, dict[str, object]], key: str):
@@ -137,6 +166,13 @@ def resolve(name: str, catalogue: dict[str, dict[str, object]], key: str):
         seen.add(current)
         collected |= catalogue[current][key]
         current = catalogue[current]["base"]
+
+    # MachineSphere uses Item.state without redeclaring it. StateChip's
+    # required state puts that Qt property in the injection vocabulary;
+    # recognise its actual owner instead of rejecting valid Item bindings.
+    # QtObject-based components must still reject the same assignment.
+    if key == "declared" and current in {"Item", "Rectangle", "Text", "Canvas"}:
+        collected.add("state")
 
     return collected
 
@@ -222,8 +258,8 @@ def main() -> int:
     require(bool(catalogue), "no HyperLab QML components found")
 
     # The wiring vocabulary is the set of properties HyperLab components
-    # actually require. Optional properties and Qt's own property names are
-    # deliberately out of scope: this contract is about injection, not types.
+    # actually require. Optional properties and Qt-only names outside this
+    # vocabulary are out of scope: this checks injection, not all QML types.
     vocabulary: set[str] = set()
     for entry in catalogue.values():
         vocabulary |= entry["required"]

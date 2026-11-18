@@ -39,7 +39,7 @@ multi-user computer, or anyone who needs the guarantees of Qubes OS (see
   functions match a reviewed profile.
 - Enough memory and disk for the Machines you plan to run. The first
   workstation image needs a 100 GiB disk and 4 GiB of memory per Machine;
-  the [setup guide](https://github.com/importriri/arch-hypervisor-lab/blob/main/SETUP.md)
+  the [setup guide](https://github.com/Doppiari/arch-hypervisor-lab/blob/main/SETUP.md)
   explains how to budget the rest.
 
 Two laptop profiles are reviewed: `nitro-3060` (Acer Nitro 5, RTX 3060
@@ -54,9 +54,9 @@ supported because its GPU has the same marketing name as a reviewed one.
 
 | Repository | Role |
 | --- | --- |
-| [`arch-bootstrap`](https://github.com/importriri/arch-bootstrap) | Installs the encrypted Arch Linux host from the live medium and writes the storage hand-off file. |
+| [`arch-bootstrap`](https://github.com/Doppiari/arch-bootstrap) | Installs the encrypted Arch Linux host from the live medium and writes the storage hand-off file. |
 | `hyperlab-ansible` (this repository) | Turns that host into the virtualization workstation and owns every image, Template and Machine operation. |
-| [`arch-hypervisor-lab`](https://github.com/importriri/arch-hypervisor-lab) | Holds the setup guide, troubleshooting, the hardware compatibility record and sanitized evidence. |
+| [`arch-hypervisor-lab`](https://github.com/Doppiari/arch-hypervisor-lab) | Holds the setup guide, troubleshooting, the hardware compatibility record and sanitized evidence. |
 
 None of them certifies another. A green CI run in any of them is a software
 result, not a hardware one.
@@ -64,13 +64,13 @@ result, not a hardware one.
 ## Where to start
 
 Follow the setup guide in `arch-hypervisor-lab`,
-[`SETUP.md`](https://github.com/importriri/arch-hypervisor-lab/blob/main/SETUP.md).
+[`SETUP.md`](https://github.com/Doppiari/arch-hypervisor-lab/blob/main/SETUP.md).
 It goes from an authenticated upstream Arch Linux live medium through
 `arch-bootstrap` and stage 2, and marks the places where the current route
 stops. Its
-[troubleshooting page](https://github.com/importriri/arch-hypervisor-lab/blob/main/TROUBLESHOOTING.md)
+[troubleshooting page](https://github.com/Doppiari/arch-hypervisor-lab/blob/main/TROUBLESHOOTING.md)
 starts from symptoms, and its
-[FAQ](https://github.com/importriri/arch-hypervisor-lab/blob/main/FAQ.md)
+[FAQ](https://github.com/Doppiari/arch-hypervisor-lab/blob/main/FAQ.md)
 answers the common questions about hardware, erasure and security.
 
 ## What can be installed today
@@ -116,7 +116,7 @@ What this route does not give you:
 
 The intended main way to install v1 is a project installer ISO. It does not
 exist. Its design is a
-[proposal in `arch-bootstrap`](https://github.com/importriri/arch-bootstrap/blob/main/docs/adr/0001-iso-build-and-distribution.md)
+[proposal in `arch-bootstrap`](https://github.com/Doppiari/arch-bootstrap/blob/main/docs/adr/0001-iso-build-and-distribution.md)
 that has not been accepted; no profile, build, image, signature or download
 exists. Until one does, the upstream Arch Linux medium with `arch-bootstrap`
 and Ansible is the only route, and it is a development and preparation
@@ -132,7 +132,7 @@ them is accepted on hardware as part of a frozen release.
 | --- | --- |
 | Reference workstation (`arch-dev-vfio`) | Repeated runs of its playbook with `changed=0` and the Guest Workspace Shell seen by the maintainer on the Nitro on 2026-10-03, unpublished. Pre-login display recovery, input isolation and the physical audio check are open. |
 | SSH server Templates | `server-fedora` is ready on the sealed Fedora 44 image; `server-debian` is a draft. Neither has been reached over SSH on hardware. (An Arch server, `srv-01`, was, as the maintainer observed without publishing it, but `server-arch` is not one of the two v1 server Templates.) |
-| Plan and Intent | Software-verified on `main`: the creation plan reports what a Template allows, and staged intent publishes a Machine record only after its definition is written. A refused intent leaves no new files only when cleanup succeeds; otherwise it reports "cleanup incomplete" and names what stays. Process death can leave files that keep the name taken. The decisions behind it are [ADR 0017](adr/0017-shell-machine-creation.md) and [ADR 0053](adr/0053-withdraw-machine-intent.md), both accepted by the operator on 2026-11-05; ADR 0053 describes the recovery limits. The separate Plan/Intent transaction remediation and Nitro refusal tests remain open. |
+| Plan and Intent | Software-verified on `main`: the creation plan reports what a Template allows, and staged intent publishes a Machine record only after its definition is written. A refused intent leaves no new files only when cleanup succeeds; otherwise it reports "cleanup incomplete" and names what stays. Process death can leave files that keep the name taken. The decisions behind it are [ADR 0017](adr/0017-shell-machine-creation.md) and [ADR 0053](adr/0053-withdraw-machine-intent.md), both accepted by the operator on 2026-11-05; ADR 0053 describes the recovery limits. The separate Plan/Intent transaction remediation is software-verified; Nitro refusal tests remain open. |
 | Create view | Built in the shell and software-verified offscreen. No Machine has been created from the shell on hardware. |
 | Provisioning | The runner and its checks are software-verified against inert test playbooks, within the limits [ADR 0017](adr/0017-shell-machine-creation.md) lists. A failed provisioning step retains the Machine record, its definition and any libvirt domain already defined. A real provisioning run from the shell has not been observed. |
 | Disposable Machines | The disk that discards every write at stop is software-verified. Closing the guest agent again and re-pinning the SSH host key after each later start are not built ([ADR 0018](adr/0018-disposable-discards-on-stop.md)). No disposable Machine has been tried on hardware. |
@@ -149,7 +149,7 @@ those gates stay is part of the undecided v1 order.
 - No frozen pair of `arch-bootstrap` and `hyperlab-ansible` commits, and no
   accepted v1 release manifest.
 - Both full pipelines are pending: the
-  [compatibility record](https://github.com/importriri/arch-hypervisor-lab/blob/main/hardware/compatibility.yml)
+  [compatibility record](https://github.com/Doppiari/arch-hypervisor-lab/blob/main/hardware/compatibility.yml)
   marks the Nitro and the Predator `pipeline-pending`. Their earlier results
   are single components, not a reproducible installation.
 - The Hyprland session and the Create view are outside `lab.yml`, so the
@@ -187,7 +187,7 @@ those gates stay is part of the undecided v1 order.
   Stop if `ARCH_ESP` or `ARCH_ROOT` appears outside the primary target
   (even on the optional VM disk), or `ARCH_VM` appears outside the primary
   target and optional VM disk; see the
-  [bootstrap threat model](https://github.com/importriri/arch-bootstrap/blob/main/docs/threat-model.md#partition-labels-are-global).
+  [bootstrap threat model](https://github.com/Doppiari/arch-bootstrap/blob/main/docs/threat-model.md#partition-labels-are-global).
 - **Back up first, and keep backing up.** Machine snapshots and Machine
   backups are not built. Only offline service backup and restore
   playbooks exist, and their hardware campaign is incomplete. No general

@@ -6,9 +6,10 @@ import time
 from pathlib import Path
 
 from .. import document as doc
-from ..errors import ContractError, Unavailable
+from ..errors import ContractError, HyperlabError, Unavailable
 from ..inventory import domain_detail
 from ..registry import target_choices
+from ..render import DomainSpheres
 from .base import Command
 from .open import _ssh_argv, _wait_for_ssh_ready
 
@@ -1564,11 +1565,22 @@ class VmCommand(Command):
         if args.json:
             print(json.dumps(domains, indent=2))
             return 0
+        spheres = DomainSpheres(ctx.config.repo_root, args.color, ctx.environ)
+        identities = {}
+        if args.color:
+            from .machine import build_product_inventory
+
+            try:
+                identities = {row["name"]: row["provenance"]
+                              for row in build_product_inventory(ctx)["machines"]}
+            except HyperlabError:
+                # Unreadable membership cannot turn a raw observation into an identity.
+                identities = {}
         for domain in domains:
             note = ""
             if domain["blocked"]:
                 note = "  blocked: short %d MB" % domain["blocked"]["short_mb"]
-            print("%-26s %-10s %8s %s%s" % (
+            print(spheres.prefix(identities.get(domain["name"])) + "%-26s %-10s %8s %s%s" % (
                 domain["name"], domain["state"],
                 "%s MB" % domain["memory_mb"] if domain["memory_mb"] else "-",
                 domain["network"] or "-", note))

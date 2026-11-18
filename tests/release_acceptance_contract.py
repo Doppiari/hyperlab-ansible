@@ -18,7 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import release_acceptance  # noqa: E402
 
-MANIFEST = ROOT / "release/acceptance.v2.yml"
+MANIFESTS = {version: ROOT / f"release/acceptance.v{version}.yml" for version in (2, 3)}
+ADR = ROOT / "docs/adr/0063-v1-acceptance-campaign.md"
 TOOL = ROOT / "tools/release_acceptance.py"
 ANSIBLE_SHA = "a" * 40
 BOOTSTRAP_SHA = "b" * 40
@@ -115,12 +116,266 @@ REVIEWED_EVIDENCE: dict[str, dict[str, tuple[str, ...]]] = {
         "descriptive": ("exact_commit_matrix", "known_limits"),
     },
 }
+REVIEWED_V3_EVIDENCE: dict[str, dict[str, tuple[str, ...]]] = {
+    "repository-software": {
+        "booleans": ("clean_worktrees",),
+        "hashes": ("verify_sha256",),
+        "descriptive": ("exact_commits",),
+    },
+    "bootstrap-dry-run": {
+        "booleans": ("no_writes_observed",),
+        "hashes": ("dry_run_sha256",),
+        "descriptive": (
+            "selected_primary_disk",
+            "selected_vm_disk",
+        ),
+    },
+    "bootstrap-clean-install": {
+        "booleans": (
+            "booted_linux_hardened_twice",
+            "network_ready",
+        ),
+        "hashes": ("install_log_sha256",),
+        "descriptive": ("secure_boot_state",),
+    },
+    "storage-handoff": {
+        "booleans": (
+            "nocow",
+            "hyperlab_device_match",
+        ),
+        "hashes": ("contract_sha256",),
+        "descriptive": (
+            "topology",
+            "mapper",
+            "fsroot",
+            "fstype",
+        ),
+    },
+    "host-idempotence": {
+        "booleans": ("second_apply_changed_zero",),
+        "hashes": (
+            "check_mode_sha256",
+            "first_apply_sha256",
+            "second_apply_sha256",
+        ),
+        "descriptive": (),
+    },
+    "network-isolation": {
+        "booleans": (
+            "cross_domain_refused",
+            "isolated_lab_refused",
+            "dns_control_reached",
+            "dev_resolver_refused",
+            "host_llmnr_refused",
+        ),
+        "hashes": (),
+        "descriptive": (
+            "persistent_network_hashes",
+            "active_networks",
+            "cross_domain_refusals",
+            "isolated_lab_refusals",
+        ),
+    },
+    "standard-vm-lifecycle": {
+        "booleans": (),
+        "hashes": (
+            "create_sha256",
+            "validate_sha256",
+            "start_sha256",
+            "shutdown_sha256",
+        ),
+        "descriptive": ("destroy_confirmation",),
+    },
+    "vfio-clean-baseline": {
+        "booleans": (
+            "clean_gpu_observed",
+            "clean_stopped_before_dev",
+        ),
+        "hashes": ("clean_start_sha256",),
+        "descriptive": (
+            "pci_binding",
+            "iommu_group",
+        ),
+    },
+    "server-ssh": {
+        "booleans": (
+            "debian_strict_ssh",
+            "fedora_strict_ssh",
+            "debian_agent_restricted",
+            "fedora_agent_restricted",
+        ),
+        "hashes": (
+            "debian_ssh_sha256",
+            "fedora_ssh_sha256",
+        ),
+        "descriptive": (),
+    },
+    "shell-creation": {
+        "booleans": (
+            "server_permanent_created_from_shell",
+            "workstation_permanent_created_from_shell",
+            "server_durable_operation",
+            "workstation_durable_operation",
+            "operation_survives_window_close",
+            "secrets_confined_to_terminal",
+            "duplicate_creation_refused",
+            "refused_creation_leaves_no_record",
+            "withdraw_live_domain_refused",
+        ),
+        "hashes": ("creation_log_sha256",),
+        "descriptive": (),
+    },
+    "disposable-lifecycle": {
+        "booleans": (
+            "normal_stop_writes_discarded",
+            "normal_stop_overlay_removed",
+            "normal_boot_agent_restricted",
+            "normal_boot_pin_refreshed",
+            "normal_boot_strict_ssh",
+            "forced_stop_writes_discarded",
+            "forced_stop_overlay_removed",
+            "forced_boot_agent_restricted",
+            "forced_boot_pin_refreshed",
+            "forced_boot_strict_ssh",
+            "power_cycle_writes_discarded",
+            "power_cycle_overlay_removed",
+            "power_cycle_agent_restricted",
+            "power_cycle_pin_refreshed",
+            "power_cycle_strict_ssh",
+            "sealed_base_unchanged",
+        ),
+        "hashes": ("disposable_log_sha256",),
+        "descriptive": (),
+    },
+    "looking-glass": {
+        "booleans": ("spice_socket_private",),
+        "hashes": ("visual_proof_sha256",),
+        "descriptive": (
+            "host_build",
+            "guest_build",
+            "kvmfr_identity",
+            "spice_socket_path",
+        ),
+    },
+    "workstation-access": {
+        "booleans": (
+            "primary_prelogin_recovery",
+            "primary_handoff_to_looking_glass",
+            "keyboard_captured",
+            "pointer_captured",
+            "rightctrl_releases_both",
+            "super_isolated",
+            "guest_shortcuts_work",
+            "guest_lock_unlock",
+            "client_reconnect_preserves_session",
+            "logout_returns_to_login",
+            "host_frame_windowed",
+            "host_frame_fullscreen",
+        ),
+        "hashes": ("input_log_sha256",),
+        "descriptive": (),
+    },
+    "physical-audio": {
+        "booleans": (
+            "guest_audio_audible",
+            "no_clipping",
+            "host_volume_capped",
+            "no_guest_microphone",
+        ),
+        "hashes": ("audio_log_sha256",),
+        "descriptive": (),
+    },
+    "gpu-lease": {
+        "booleans": (
+            "default_boot_without_gpu",
+            "first_gpu_run",
+            "gpu_less_run",
+            "second_gpu_run",
+            "lease_runs_same_host_boot",
+            "gpu_less_ladder_unchanged",
+            "gpu_runs_looking_glass",
+            "gpu_less_spice",
+            "host_owned_lease",
+        ),
+        "hashes": ("lease_log_sha256",),
+        "descriptive": ("lease_template",),
+    },
+    "showcase": {
+        "booleans": (
+            "complete_storyboard",
+            "shell_creation_visible",
+            "real_lease_visible",
+            "looking_glass_desks_visible",
+            "host_provenance_visible",
+            "manual_frame_privacy_review",
+            "captions_match_observations",
+        ),
+        "hashes": ("recording_sha256",),
+        "descriptive": (),
+    },
+    "vfio-trust-lifecycle": {
+        "booleans": (
+            "exclusive_owner",
+            "clean_after_dev_refused",
+            "dev_after_dirty_refused",
+            "upward_after_lab_refused",
+            "unmapped_pci_refused",
+            "reboot_resets_trust",
+        ),
+        "hashes": (),
+        "descriptive": (
+            "pci_binding",
+            "iommu_group",
+            "downward_trust_transitions",
+        ),
+    },
+    "session-recovery": {
+        "booleans": (
+            "guest_reboot",
+            "guest_agent_reconnected",
+            "host_reboot",
+            "cold_start",
+            "encrypted_storage_ready",
+            "primary_recovered",
+            "input_recovered",
+            "audio_recovered",
+            "sway_recovery",
+            "console_recovery",
+            "disposable_crash_writes_discarded",
+            "disposable_crash_overlay_not_reused",
+            "disposable_crash_agent_restricted",
+            "disposable_crash_pin_refreshed",
+            "guest_profile_changed_zero",
+        ),
+        "hashes": ("recovery_log_sha256",),
+        "descriptive": (),
+    },
+    "sanitized-publication": {
+        "booleans": ("no_sensitive_patterns",),
+        "hashes": ("publication_bundle_sha256",),
+        "descriptive": (
+            "exact_commit_matrix",
+            "known_limits",
+        ),
+    },
+}
+REVIEWED_BY_VERSION = {2: REVIEWED_EVIDENCE, 3: REVIEWED_V3_EVIDENCE}
 REVIEWED_BOOLEANS = frozenset(
     field
-    for classes in REVIEWED_EVIDENCE.values()
+    for oracle in REVIEWED_BY_VERSION.values()
+    for classes in oracle.values()
     for field in classes["booleans"]
 )
 NOT_BOOLEAN = ("true", "false", 0, 1)
+
+# The GitHub owner each campaign version expects, written by hand. The
+# historical v2 campaign ran before the repositories moved to the Doppiari
+# organisation; v3 qualifies the transferred repositories.
+REPOSITORY_OWNER = {2: "importriri", 3: "Doppiari"}
+REPOSITORY_NAME = {
+    "hyperlab_ansible": "hyperlab-ansible",
+    "arch_bootstrap": "arch-bootstrap",
+}
 
 
 def run(*args: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
@@ -138,12 +393,13 @@ def plan(
     profile: str = "nitro-3060",
     ansible_sha: str = ANSIBLE_SHA,
     bootstrap_sha: str = BOOTSTRAP_SHA,
+    version: int = 2,
 ) -> dict[str, Any]:
     result = run(
         sys.executable,
         str(TOOL),
         "--manifest",
-        str(MANIFEST),
+        str(MANIFESTS[version]),
         "plan",
         "--profile",
         profile,
@@ -163,6 +419,8 @@ def scalar_for(field: str) -> Any:
         return hashlib.sha256(field.encode()).hexdigest()
     if field in REVIEWED_BOOLEANS:
         return True
+    if field == "lease_template":
+        return "workstation-dev-standard"
     if field == "topology":
         return "dedicated-disk"
     if field == "mapper":
@@ -176,7 +434,7 @@ def scalar_for(field: str) -> Any:
 
 def evidence_for(release_plan: dict[str, Any]) -> dict[str, Any]:
     return {
-        "schema_version": 2,
+        "schema_version": release_plan["schema_version"],
         "campaign_id": release_plan["campaign_id"],
         "profile": release_plan["profile"],
         "repositories": {
@@ -226,7 +484,7 @@ def seal(
             sys.executable,
             str(TOOL),
             "--manifest",
-            str(MANIFEST),
+            str(MANIFESTS[release_plan["schema_version"]]),
             "seal",
             "--plan",
             str(path),
@@ -245,7 +503,7 @@ def scaffold_files(
         sys.executable,
         str(TOOL),
         "--manifest",
-        str(MANIFEST),
+        str(MANIFESTS[release_plan["schema_version"]]),
         "scaffold",
         "--plan",
         str(plan_path),
@@ -271,7 +529,7 @@ def record(
         sys.executable,
         str(TOOL),
         "--manifest",
-        str(MANIFEST),
+        str(MANIFESTS[json.loads(plan_path.read_text())["schema_version"]]),
         "record",
         "--plan",
         str(plan_path),
@@ -295,7 +553,7 @@ def status_of(
         sys.executable,
         str(TOOL),
         "--manifest",
-        str(MANIFEST),
+        str(MANIFESTS[json.loads(plan_path.read_text())["schema_version"]]),
         "status",
         "--plan",
         str(plan_path),
@@ -313,7 +571,7 @@ def seal_file(
         sys.executable,
         str(TOOL),
         "--manifest",
-        str(MANIFEST),
+        str(MANIFESTS[json.loads(plan_path.read_text())["schema_version"]]),
         "seal",
         "--plan",
         str(plan_path),
@@ -350,9 +608,12 @@ def boolean_cases(
     cases = [
         (index, gate, field)
         for index, gate in enumerate(release_plan["gates"])
-        for field in REVIEWED_EVIDENCE[gate["id"]]["booleans"]
+        for field in REVIEWED_BY_VERSION[release_plan["schema_version"]][gate["id"]]["booleans"]
     ]
-    assert len(cases) == len(REVIEWED_BOOLEANS) == 17
+    assert len(cases) == sum(
+        len(classes["booleans"])
+        for classes in REVIEWED_BY_VERSION[release_plan["schema_version"]].values()
+    )
     return cases
 
 
@@ -398,11 +659,82 @@ def init_fake_repo(
     ).stdout.strip()
 
 
-def test_plan_is_deterministic_and_orders_nitro_before_predator() -> None:
-    first = plan()
-    assert first == plan()
+def manifest_remote(version: int, repository: str) -> str:
+    manifest = yaml.safe_load(MANIFESTS[version].read_text(encoding="utf-8"))
+    remote = manifest["repositories"][repository]["remote"]
+    assert isinstance(remote, str), f"v{version} {repository} remote is not text"
+    return remote
+
+
+def https_origin(remote: str) -> str:
+    return f"https://github.com/{remote}.git"
+
+
+def ssh_origin(remote: str) -> str:
+    return f"git@github.com:{remote}.git"
+
+
+def repository_proof(
+    version: int,
+    root: Path,
+    origins: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    shas = {
+        name: init_fake_repo(root / name, "main", origins[name], f"{name} pass")
+        for name in REPOSITORY_NAME
+    }
+    release_plan = plan(
+        ansible_sha=shas["hyperlab_ansible"],
+        bootstrap_sha=shas["arch_bootstrap"],
+        version=version,
+    )
+    plan_path = root / "plan.json"
+    write_plan(plan_path, release_plan)
+    return run(
+        sys.executable,
+        str(TOOL),
+        "--manifest",
+        str(MANIFESTS[version]),
+        "repository-proof",
+        "--plan",
+        str(plan_path),
+        "--ansible-repo",
+        str(root / "hyperlab_ansible"),
+        "--bootstrap-repo",
+        str(root / "arch_bootstrap"),
+    )
+
+
+def test_repository_proof_accepts_only_the_versioned_owner(version: int = 2) -> None:
+    owner = REPOSITORY_OWNER[version]
+    other = REPOSITORY_OWNER[5 - version]
+    for repository, name in REPOSITORY_NAME.items():
+        assert manifest_remote(version, repository) == f"{owner}/{name}", (
+            f"v{version} {repository} remote is not {owner}/{name}"
+        )
+    expected = {
+        repository: https_origin(f"{owner}/{name}")
+        for repository, name in REPOSITORY_NAME.items()
+    }
+    with tempfile.TemporaryDirectory() as td:
+        accepted = repository_proof(version, Path(td), expected)
+        assert accepted.returncode == 0, accepted.stderr
+    for repository, name in REPOSITORY_NAME.items():
+        for form in (https_origin, ssh_origin):
+            origins = {**expected, repository: form(f"{other}/{name}")}
+            with tempfile.TemporaryDirectory() as td:
+                refused = repository_proof(version, Path(td), origins)
+            assert refused.returncode == 2, (
+                f"v{version} accepted {repository} origin {origins[repository]}"
+            )
+            assert f"{repository} origin differs from {owner}/{name}" in refused.stderr
+
+
+def test_plan_is_deterministic_and_orders_nitro_before_predator(version: int = 2) -> None:
+    first = plan(version=version)
+    assert first == plan(version=version)
     assert first["profile_order"] == 1
-    assert plan("predator-3070")["profile_order"] == 2
+    assert plan("predator-3070", version=version)["profile_order"] == 2
     orders = [gate["order"] for gate in first["gates"]]
     assert orders == sorted(orders)
     assert len(orders) == len(set(orders))
@@ -432,7 +764,7 @@ def test_plan_is_deterministic_and_orders_nitro_before_predator() -> None:
     ]
 
 
-def test_invalid_profile_commit_and_campaign_are_refused() -> None:
+def test_invalid_profile_commit_and_campaign_are_refused(version: int = 2) -> None:
     cases = [
         (
             [
@@ -479,7 +811,7 @@ def test_invalid_profile_commit_and_campaign_are_refused() -> None:
             sys.executable,
             str(TOOL),
             "--manifest",
-            str(MANIFEST),
+            str(MANIFESTS[version]),
             "plan",
             *arguments,
         )
@@ -487,11 +819,12 @@ def test_invalid_profile_commit_and_campaign_are_refused() -> None:
         assert message in result.stderr
 
 
-def test_scaffold_and_record_enforce_gate_order() -> None:
-    release_plan = plan()
+def test_scaffold_and_record_enforce_gate_order(version: int = 2) -> None:
+    release_plan = plan(version=version)
     with tempfile.TemporaryDirectory() as td:
         plan_path, evidence_path = scaffold_files(Path(td), release_plan)
         evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        assert evidence["schema_version"] == version
         assert evidence["storage"] is None
         assert evidence["gates"][0]["status"] == "pending"
         assert evidence_path.stat().st_mode & 0o777 == 0o600
@@ -507,8 +840,8 @@ def test_scaffold_and_record_enforce_gate_order() -> None:
         assert status["passed"] == 1
 
 
-def test_storage_record_derives_the_top_level_contract() -> None:
-    release_plan = plan()
+def test_storage_record_derives_the_top_level_contract(version: int = 2) -> None:
+    release_plan = plan(version=version)
     with tempfile.TemporaryDirectory() as td:
         plan_path, evidence_path = scaffold_files(Path(td), release_plan)
         for gate in release_plan["gates"][:4]:
@@ -526,7 +859,7 @@ def test_storage_record_derives_the_top_level_contract() -> None:
         }
 
 
-def test_repository_proof_binds_clean_exact_checkouts_and_hashes_logs() -> None:
+def test_repository_proof_binds_clean_exact_checkouts_and_hashes_logs(version: int = 2) -> None:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         ansible = root / "ansible"
@@ -534,18 +867,19 @@ def test_repository_proof_binds_clean_exact_checkouts_and_hashes_logs() -> None:
         ansible_sha = init_fake_repo(
             ansible,
             "main",
-            "https://github.com/importriri/hyperlab-ansible.git",
+            https_origin(manifest_remote(version, "hyperlab_ansible")),
             "ansible verification pass",
         )
         bootstrap_sha = init_fake_repo(
             bootstrap,
             "main",
-            "git@github.com:importriri/arch-bootstrap.git",
+            ssh_origin(manifest_remote(version, "arch_bootstrap")),
             "bootstrap verification pass",
         )
         release_plan = plan(
             ansible_sha=ansible_sha,
             bootstrap_sha=bootstrap_sha,
+            version=version,
         )
         plan_path = root / "plan.json"
         write_plan(plan_path, release_plan)
@@ -554,7 +888,7 @@ def test_repository_proof_binds_clean_exact_checkouts_and_hashes_logs() -> None:
             sys.executable,
             str(TOOL),
             "--manifest",
-            str(MANIFEST),
+            str(MANIFESTS[version]),
             "repository-proof",
             "--plan",
             str(plan_path),
@@ -585,7 +919,7 @@ def test_repository_proof_binds_clean_exact_checkouts_and_hashes_logs() -> None:
             sys.executable,
             str(TOOL),
             "--manifest",
-            str(MANIFEST),
+            str(MANIFESTS[version]),
             "repository-proof",
             "--plan",
             str(plan_path),
@@ -598,14 +932,15 @@ def test_repository_proof_binds_clean_exact_checkouts_and_hashes_logs() -> None:
         assert "worktree is not clean" in dirty.stderr
 
 
-def test_complete_sanitized_evidence_seals_to_stable_hashes() -> None:
-    release_plan = plan()
+def test_complete_sanitized_evidence_seals_to_stable_hashes(version: int = 2) -> None:
+    release_plan = plan(version=version)
     evidence = evidence_for(release_plan)
     first = seal(release_plan, evidence)
     second = seal(release_plan, evidence)
     assert first.returncode == 0, first.stderr
     assert json.loads(first.stdout) == json.loads(second.stdout)
     receipt = json.loads(first.stdout)
+    assert receipt["schema_version"] == version
     assert receipt["result"] == "pass"
     assert receipt["gate_count"] == len(release_plan["gates"])
     assert receipt["storage_topology"] == "dedicated-disk"
@@ -613,18 +948,18 @@ def test_complete_sanitized_evidence_seals_to_stable_hashes() -> None:
     assert len(receipt["evidence_sha256"]) == 64
 
 
-def test_tampered_plan_is_refused_before_evidence_is_read() -> None:
-    release_plan = plan()
+def test_tampered_plan_is_refused_before_evidence_is_read(version: int = 2) -> None:
+    release_plan = plan(version=version)
     release_plan["repositories"]["arch_bootstrap"]["required_branch"] = (
         "review/old-release-line"
     )
-    result = seal(release_plan, evidence_for(plan()))
+    result = seal(release_plan, evidence_for(plan(version=version)))
     assert result.returncode == 2
     assert "canonical manifest projection" in result.stderr
 
 
-def test_gate_failures_missing_fields_and_commit_drift_are_refused() -> None:
-    release_plan = plan()
+def test_gate_failures_missing_fields_and_commit_drift_are_refused(version: int = 2) -> None:
+    release_plan = plan(version=version)
     baseline = evidence_for(release_plan)
     mutations: list[tuple[dict[str, Any], str]] = []
 
@@ -650,8 +985,8 @@ def test_gate_failures_missing_fields_and_commit_drift_are_refused() -> None:
         assert message in result.stderr
 
 
-def test_sensitive_patterns_and_raw_nested_evidence_are_refused() -> None:
-    release_plan = plan()
+def test_sensitive_patterns_and_raw_nested_evidence_are_refused(version: int = 2) -> None:
+    release_plan = plan(version=version)
     baseline = evidence_for(release_plan)
 
     secret = copy.deepcopy(baseline)
@@ -669,9 +1004,12 @@ def test_sensitive_patterns_and_raw_nested_evidence_are_refused() -> None:
     assert "must be one scalar" in result.stderr
 
 
-def test_manifest_covers_every_required_final_boundary() -> None:
-    manifest = yaml.safe_load(MANIFEST.read_text(encoding="utf-8"))
+def test_manifest_covers_every_required_final_boundary(version: int = 2) -> None:
+    manifest = yaml.safe_load(MANIFESTS[version].read_text(encoding="utf-8"))
     gate_ids = [gate["id"] for gate in manifest["gates"]]
+    assert gate_ids == list(REVIEWED_BY_VERSION[version])
+    if version == 3:
+        return
     assert gate_ids == [
         "repository-software",
         "bootstrap-dry-run",
@@ -700,11 +1038,11 @@ def test_manifest_covers_every_required_final_boundary() -> None:
     )
 
 
-def test_reviewed_evidence_classes_match_the_manifest_and_tool_typing() -> None:
-    manifest = yaml.safe_load(MANIFEST.read_text(encoding="utf-8"))
-    assert [gate["id"] for gate in manifest["gates"]] == list(REVIEWED_EVIDENCE)
+def test_reviewed_evidence_classes_match_the_manifest_and_tool_typing(version: int = 2) -> None:
+    manifest = yaml.safe_load(MANIFESTS[version].read_text(encoding="utf-8"))
+    assert [gate["id"] for gate in manifest["gates"]] == list(REVIEWED_BY_VERSION[version])
     for gate in manifest["gates"]:
-        classes = REVIEWED_EVIDENCE[gate["id"]]
+        classes = REVIEWED_BY_VERSION[version][gate["id"]]
         listed = [field for fields in classes.values() for field in fields]
         assert len(listed) == len(set(listed)), f"{gate['id']}: a field has two classes"
         assert set(listed) == set(gate["required_evidence"]), (
@@ -726,8 +1064,8 @@ def test_reviewed_evidence_classes_match_the_manifest_and_tool_typing() -> None:
     assert "loopback_spice" not in release_acceptance.BOOL_FIELDS
 
 
-def test_record_refuses_a_false_pass_and_keeps_a_false_failure() -> None:
-    release_plan = plan()
+def test_record_refuses_a_false_pass_and_keeps_a_false_failure(version: int = 2) -> None:
+    release_plan = plan(version=version)
     cases = boolean_cases(release_plan)
     with tempfile.TemporaryDirectory() as td:
         plan_path, evidence_path = scaffold_files(Path(td), release_plan)
@@ -780,8 +1118,8 @@ def test_record_refuses_a_false_pass_and_keeps_a_false_failure() -> None:
         ).read_bytes()
 
 
-def test_status_and_seal_refuse_an_edited_false_pass() -> None:
-    release_plan = plan()
+def test_status_and_seal_refuse_an_edited_false_pass(version: int = 2) -> None:
+    release_plan = plan(version=version)
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         plan_path = root / "plan.json"
@@ -810,8 +1148,8 @@ def test_status_and_seal_refuse_an_edited_false_pass() -> None:
             assert evidence_path.read_bytes() == before
 
 
-def test_pending_and_failed_campaigns_are_never_ready_to_seal() -> None:
-    release_plan = plan()
+def test_pending_and_failed_campaigns_are_never_ready_to_seal(version: int = 2) -> None:
+    release_plan = plan(version=version)
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         plan_path, evidence_path = scaffold_files(root, release_plan)
@@ -845,8 +1183,8 @@ def test_pending_and_failed_campaigns_are_never_ready_to_seal() -> None:
             assert not receipt.exists(), "a refused seal wrote a receipt"
 
 
-def test_boolean_fields_refuse_text_and_integers_in_pass_and_fail() -> None:
-    release_plan = plan()
+def test_boolean_fields_refuse_text_and_integers_in_pass_and_fail(version: int = 2) -> None:
+    release_plan = plan(version=version)
     for index, gate, field in boolean_cases(release_plan):
         for value in NOT_BOOLEAN:
             for status_value in ("pass", "fail"):
@@ -868,6 +1206,267 @@ def test_boolean_fields_refuse_text_and_integers_in_pass_and_fail() -> None:
                     )
 
 
+def test_scope_adr_plan_and_complete_storage_mapping(version: int = 2) -> None:
+    manifest = yaml.safe_load(MANIFESTS[version].read_text(encoding="utf-8"))
+    expected_storage = {
+        "single-disk": {"mapper": "/dev/mapper/cryptroot", "fsroot": "/@vm", "subvolume": "@vm"},
+        "dedicated-disk": {"mapper": "/dev/mapper/cryptvm", "fsroot": "/", "subvolume": None},
+    }
+    assert manifest["allowed_storage_topologies"] == expected_storage
+    assert manifest["allowed_storage_topologies"] == yaml.safe_load(
+        MANIFESTS[5 - version].read_text(encoding="utf-8")
+    )["allowed_storage_topologies"]
+    release_plan = plan(version=version)
+    assert release_plan["schema_version"] == version
+    assert [gate["id"] for gate in release_plan["gates"]] == list(REVIEWED_BY_VERSION[version])
+    assert release_plan["gates"] == manifest["gates"]
+    assert hashlib.sha256(MANIFESTS[2].read_bytes()).hexdigest() == (
+        "e35e177a17bbd07a7647fec501e95d848c93752cd189284d040cfcf376f92351"
+    ), "the historical v2 manifest changed"
+    if version == 3:
+        rows = [line.split("|")[1:-1] for line in ADR.read_text().splitlines() if line.startswith("| ")]
+        gates = [(int(row[0].strip()), row[1].strip().strip("`"))
+                 for row in rows if row[0].strip().isdigit()]
+        assert gates == [(10 * (index + 1), gate) for index, gate in enumerate(REVIEWED_V3_EVIDENCE)]
+        assert "Status: Proposed" in ADR.read_text().splitlines()[2:3]
+
+
+def test_record_cli_boolean_types_are_strict_and_refusals_preserve_bytes(version: int = 2) -> None:
+    release_plan = plan(version=version)
+    with tempfile.TemporaryDirectory() as td:
+        plan_path, evidence_path = scaffold_files(Path(td), release_plan)
+        for gate in release_plan["gates"]:
+            for field in REVIEWED_BY_VERSION[version][gate["id"]]["booleans"]:
+                for value in NOT_BOOLEAN:
+                    for status_value in ("pass", "fail"):
+                        payload = valid_payload(gate)
+                        payload[field] = value
+                        before = evidence_path.read_bytes()
+                        refused = record(plan_path, evidence_path, gate, status=status_value, payload=payload)
+                        assert refused.returncode == 2, (
+                            f"record {status_value} coerced {gate['id']}.{field}={value!r}"
+                        )
+                        assert f"field {field} must be boolean" in refused.stderr, refused.stderr
+                        assert evidence_path.read_bytes() == before
+            assert record(plan_path, evidence_path, gate).returncode == 0
+
+
+def test_both_profiles_record_all_gates_and_seal_deterministically(version: int = 2) -> None:
+    for profile in ("nitro-3060", "predator-3070"):
+        release_plan = plan(profile, version=version)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            plan_path, evidence_path = scaffold_files(root, release_plan)
+            pending = json.loads(evidence_path.read_text())
+            assert pending["schema_version"] == version
+            assert all(gate["status"] == "pending" for gate in pending["gates"])
+            assert all(value is None for gate in pending["gates"] for value in gate["evidence"].values())
+            for gate in release_plan["gates"]:
+                passed = record(plan_path, evidence_path, gate)
+                assert passed.returncode == 0, passed.stderr
+            report = json.loads(status_of(plan_path, evidence_path).stdout)
+            assert report["passed"] == report["total"] == len(REVIEWED_BY_VERSION[version])
+            assert report["ready_to_seal"] is True
+            for filename in ("first.json", "second.json"):
+                sealed = seal_file(plan_path, evidence_path, root / filename)
+                assert sealed.returncode == 0, sealed.stderr
+            receipt = json.loads((root / "first.json").read_text())
+            assert receipt["schema_version"] == version
+            assert receipt["gate_ids"] == list(REVIEWED_BY_VERSION[version])
+            assert (root / "first.json").read_bytes() == (root / "second.json").read_bytes()
+            before = evidence_path.read_bytes()
+            changed = record(plan_path, evidence_path, release_plan["gates"][0], status="fail")
+            assert changed.returncode == 2 and "immutable" in changed.stderr
+            assert evidence_path.read_bytes() == before
+
+
+def test_mixed_versions_refuse_without_rewriting_or_receipts(version: int = 2) -> None:
+    release_plan = plan(version=version)
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        plan_path, evidence_path = scaffold_files(root, release_plan)
+        plan_bytes, evidence_bytes = plan_path.read_bytes(), evidence_path.read_bytes()
+        for operation in ("scaffold", "repository-proof", "record", "status", "seal"):
+            output = root / f"{operation}.json"
+            options = {
+                "scaffold": ["--output", str(output)],
+                "repository-proof": ["--ansible-repo", str(root), "--bootstrap-repo", str(root)],
+                "record": ["--evidence", str(evidence_path), "--gate", "repository-software",
+                           "--status", "pass", "--summary", "Synthetic"],
+                "status": ["--evidence", str(evidence_path)],
+                "seal": ["--evidence", str(evidence_path), "--output", str(output)],
+            }[operation]
+            result = run(sys.executable, str(TOOL), "--manifest", str(MANIFESTS[5 - version]),
+                         operation, "--plan", str(plan_path), *options, stdin="{}")
+            assert result.returncode == 2, result.stderr
+            assert "schema_version" in result.stderr or "canonical manifest projection" in result.stderr
+            assert not output.exists()
+            assert plan_path.read_bytes() == plan_bytes
+            assert evidence_path.read_bytes() == evidence_bytes
+        # Even a plan-shaped evidence file with only its version changed is refused.
+        for invalid in (5 - version, 0, 1, 4, float(version), True):
+            evidence = evidence_for(release_plan)
+            evidence["schema_version"] = invalid
+            evidence_path.write_text(json.dumps(evidence))
+            before = evidence_path.read_bytes()
+            assert status_of(plan_path, evidence_path).returncode == 2
+            output = root / "mixed.receipt.json"
+            refused = seal_file(plan_path, evidence_path, output)
+            assert refused.returncode == 2 and "schema_version" in refused.stderr
+            assert not output.exists() and evidence_path.read_bytes() == before
+        for invalid in (5 - version, 0, 1, 4, float(version), True):
+            invalid_plan = copy.deepcopy(release_plan)
+            invalid_plan["schema_version"] = invalid
+            write_plan(plan_path, invalid_plan)
+            before = plan_path.read_bytes()
+            output = root / "invalid-scaffold.json"
+            refused = run(sys.executable, str(TOOL), "--manifest", str(MANIFESTS[version]),
+                          "scaffold", "--plan", str(plan_path), "--output", str(output))
+            assert refused.returncode == 2 and "schema_version" in refused.stderr
+            assert not output.exists() and plan_path.read_bytes() == before
+
+
+def test_unsupported_versions_refuse_before_creating_a_plan(version: int = 2) -> None:
+    manifest = yaml.safe_load(MANIFESTS[version].read_text())
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        for invalid in (0, 1, 4, "3", float(version), True, None):
+            manifest["schema_version"] = invalid
+            path = root / "manifest.yml"
+            path.write_text(yaml.safe_dump(manifest))
+            output = root / "plan.json"
+            before = path.read_bytes()
+            refused = run(sys.executable, str(TOOL), "--manifest", str(path), "plan",
+                          "--profile", "nitro-3060", "--campaign-id", "synthetic-version",
+                          "--ansible-sha", ANSIBLE_SHA, "--bootstrap-sha", BOOTSTRAP_SHA,
+                          "--output", str(output))
+            assert refused.returncode == 2 and "schema_version" in refused.stderr
+            assert not output.exists() and path.read_bytes() == before
+
+        historical = yaml.safe_load(MANIFESTS[2].read_text())
+        historical["schema_version"] = 3
+        path.write_text(yaml.safe_dump(historical))
+        before = path.read_bytes()
+        refused = run(sys.executable, str(TOOL), "--manifest", str(path), "plan",
+                      "--profile", "nitro-3060", "--campaign-id", "synthetic-version",
+                      "--ansible-sha", ANSIBLE_SHA, "--bootstrap-sha", BOOTSTRAP_SHA,
+                      "--output", str(output))
+        assert refused.returncode == 2, "relabeled v2 gates were accepted as schema_version 3"
+        assert "schema_version 3 requires the reviewed v1 gate order" in refused.stderr
+        assert not output.exists() and path.read_bytes() == before
+
+
+def test_descriptive_fields_keep_the_versioned_text_contract(version: int = 2) -> None:
+    release_plan = plan(version=version)
+    for index, gate in enumerate(release_plan["gates"]):
+        for field in REVIEWED_BY_VERSION[version][gate["id"]]["descriptive"]:
+            if field == "lease_template":
+                continue  # Its exact Template identity has a separate contract.
+            for value in (False, True, "", 0, 1, 1.5, "x" * 241, "x" * 240):
+                evidence = failed_at(release_plan, index)
+                evidence["gates"][index]["evidence"][field] = value
+                for status_value in ("pass", "fail"):
+                    evidence["gates"][index]["status"] = status_value
+                    try:
+                        release_acceptance.validate_partial_evidence(release_plan, evidence)
+                    except release_acceptance.AcceptanceError as exc:
+                        assert version == 3 and value != "x" * 240, str(exc)
+                        assert f"field {field} must contain 1-240 characters of text" in str(exc)
+                    else:
+                        assert version == 2 or value == "x" * 240, (
+                            f"v3 {status_value} accepted description {gate['id']}.{field}={value!r}"
+                        )
+
+
+def test_record_status_and_seal_refuse_invalid_v3_descriptions(version: int = 2) -> None:
+    if version == 2:
+        return  # The preceding matrix preserves historical scalar behavior.
+    release_plan = plan(version=version)
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        plan_path, evidence_path = scaffold_files(root, release_plan)
+        for index, gate in enumerate(release_plan["gates"]):
+            field = {"vfio-trust-lifecycle": "downward_trust_transitions",
+                     "sanitized-publication": "known_limits"}.get(gate["id"])
+            if field is None:
+                continue
+            for value in (False, "", 0, "x" * 241):
+                payload = valid_payload(gate)
+                payload[field] = value
+                evidence = failed_at(release_plan, index)
+                evidence_path.write_text(json.dumps(evidence))
+                before = evidence_path.read_bytes()
+                for status_value in ("pass", "fail"):
+                    refused = record(plan_path, evidence_path, gate, status=status_value, payload=payload)
+                    assert refused.returncode == 2, f"record accepted {field}={value!r}"
+                    assert f"field {field} must contain 1-240 characters of text" in refused.stderr
+                    assert evidence_path.read_bytes() == before
+
+                edited = evidence_for(release_plan)
+                edited["gates"][index]["evidence"][field] = value
+                evidence_path.write_text(json.dumps(edited))
+                before = evidence_path.read_bytes()
+                receipt = root / "must-not-exist.json"
+                for refused in (status_of(plan_path, evidence_path), seal_file(plan_path, evidence_path, receipt)):
+                    assert refused.returncode == 2, f"read path accepted {field}={value!r}"
+                    assert f"field {field} must contain 1-240 characters of text" in refused.stderr
+                    assert not receipt.exists() and evidence_path.read_bytes() == before
+
+
+def test_campaign_inputs_refuse_duplicates_and_redirection(version: int = 2) -> None:
+    release_plan = plan(version=version)
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        plan_path, evidence_path = scaffold_files(root, release_plan)
+        before = evidence_path.read_bytes()
+        duplicate = '{"clean_worktrees":false,"clean_worktrees":true,"verify_sha256":"' + "a" * 64 + '","exact_commits":"synthetic"}'
+        refused = run(sys.executable, str(TOOL), "--manifest", str(MANIFESTS[version]), "record",
+                      "--plan", str(plan_path), "--evidence", str(evidence_path),
+                      "--gate", "repository-software", "--status", "pass", "--summary", "Synthetic",
+                      stdin=duplicate)
+        assert refused.returncode == 2 and "duplicate" in refused.stderr
+        assert evidence_path.read_bytes() == before
+        original = plan_path.read_bytes()
+        for bad in (original.decode().replace(f'"schema_version": {version}',
+                    f'"schema_version": {version}, "schema_version": {version}'),):
+            plan_path.write_text(bad)
+            output = root / "duplicate.json"
+            refused = run(sys.executable, str(TOOL), "--manifest", str(MANIFESTS[version]),
+                          "scaffold", "--plan", str(plan_path), "--output", str(output))
+            assert refused.returncode == 2 and "duplicate" in refused.stderr
+            assert not output.exists()
+        plan_path.write_bytes(original)
+        link = root / "link.json"
+        link.symlink_to(plan_path)
+        redirected = root / "redirected"
+        redirected.symlink_to(root, target_is_directory=True)
+        for input_path in (link, redirected / "plan.json"):
+            output = root / "redirected.json"
+            refused = run(sys.executable, str(TOOL), "--manifest", str(MANIFESTS[version]),
+                          "scaffold", "--plan", str(input_path), "--output", str(output))
+            assert refused.returncode == 2 and "redirected" in refused.stderr
+            assert not output.exists()
+        fifo = root / "plan.fifo"
+        os.mkfifo(fifo)
+        output = root / "fifo.json"
+        refused = run(sys.executable, str(TOOL), "--manifest", str(MANIFESTS[version]),
+                      "scaffold", "--plan", str(fifo), "--output", str(output))
+        assert refused.returncode == 2 and "must be regular" in refused.stderr, refused.stderr
+        assert not output.exists()
+        assert plan_path.read_bytes() == original and evidence_path.read_bytes() == before
+
+
+def test_lease_template_is_the_selected_initial_template(version: int = 2) -> None:
+    if version == 2:
+        return
+    release_plan = plan(version=version)
+    evidence = evidence_for(release_plan)
+    gate = next(gate for gate in evidence["gates"] if gate["id"] == "gpu-lease")
+    gate["evidence"]["lease_template"] = "workstation-dev"
+    refused = seal(release_plan, evidence)
+    assert refused.returncode == 2 and "workstation-dev-standard" in refused.stderr
+
+
 def main() -> int:
     tests = [
         value
@@ -875,9 +1474,10 @@ def main() -> int:
         if name.startswith("test_") and callable(value)
     ]
     for test in tests:
-        test()
-        print(f"ok: {test.__name__}")
-    print(f"release acceptance contract: OK ({len(tests)} tests)")
+        for version in (2, 3):
+            test(version)
+            print(f"ok: v{version} {test.__name__}")
+    print(f"release acceptance contract: OK ({len(tests)} tests, both versions)")
     return 0
 
 

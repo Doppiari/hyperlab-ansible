@@ -673,8 +673,11 @@ The CI workflow (`.github/workflows/ci.yml`) runs on GitHub-hosted Ubuntu
 runners: `actions/checkout@v4`, `actions/upload-artifact@v4`, Ubuntu packages
 (`shellcheck`, `bats`, `nftables`, `lua5.4`, `poppler-utils`, `pkg-config`,
 `libpipewire-0.3-dev`, `libglib2.0-dev`, `pciutils`, `qmlscene-qt6` and four
-`qml6-module-*` packages), and `pip install --user ansible ansible-lint ruff`
-and `pip install pyyaml`, all unpinned. `verify.sh` uses the same tools
+`qml6-module-*` packages, `fontconfig`, `fonts-adwaita-sans`), and
+`pip install --user ansible ansible-lint ruff` and `pip install pyyaml`, all
+unpinned. It also downloads the Nerd Fonts v3.5.1 `JetBrainsMono.tar.xz`
+release archive, pinned by SHA-256, so the offscreen bar contract measures
+in the shell's own fonts. `verify.sh` uses the same tools
 locally. They test the repository and are not part of anything it installs
 or distributes; the Qt version matters only for the byte-stable wallpaper
 renders in section 1.

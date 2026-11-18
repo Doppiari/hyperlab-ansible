@@ -40,6 +40,35 @@ registry does not expose.
 `preflight.yml` must have selected a hardware profile before hardware-dependent
 sections can be complete.
 
+`vm list`, `machine list`, `net list` and `trust` prefix terminal rows with a
+domain-coloured `●`, or a plain `○` when the identity is external or
+unclassified. The existing words, columns and order stay in place. In `vm list`
+and `machine list` the dot uses the same confirmed product provenance as
+`machine inventory`. An external domain, drifting runtime or failed identity
+read stays neutral, even with a GPU gate or a trust-network attachment. A
+Machine without a created or readable runtime also stays neutral. `vm list`'s
+network column still reports attachment; `machine list`'s words still report
+the recorded intent. Reading those records must succeed to list them at all.
+
+`--color=auto` is the default: stdout must be a terminal, `NO_COLOR` must be
+unset (even an empty value suppresses colour), and `TERM` must differ from
+`dumb`. `--color=always` overrides those environment suppressors on a terminal;
+`--color=never` and the legacy `--no-color` suppress both dots and colour.
+The last colour option wins, before or after the command. Pipes and `--json`
+always retain their previous bytes, including with `--color=always`.
+This policy also applies to every command's status colours, including `status`,
+`doctor`, `logs` and `image`; `NO_COLOR` and `TERM=dumb` suppress those tones in
+automatic mode too.
+
+Domain colours come only from the selected checkout's
+`tools/palette/palette.yml`, independently of the appearance theme. A missing,
+unreadable, redirected, duplicated or incomplete palette refuses decorated
+text output; plain output does not need that file. `COLORTERM=truecolor` or
+`24bit` selects 24-bit ANSI; other terminals use the nearest fixed xterm
+256-colour cube or grey entry by squared RGB distance, with the lowest index
+breaking ties. Theme-controlled ANSI slots 0–15 never carry domain identity.
+See [ADR 0066](../../docs/adr/0066-terminal-domain-spheres.md).
+
 `machine create` records intent only; it does not define or start a VM. The
 Machine registry lives below `$XDG_STATE_HOME/hyperlab/machines` and is the
 only source of product membership. A libvirt domain without a Machine record is
@@ -116,6 +145,7 @@ Run the isolated component suite and the repository integration contract:
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python tools/hyperlabctl/tests/run.py
 python tests/hyperlabctl_contract.py
+python tests/cli_domain_spheres_contract.py
 ```
 
 The repository verifier discovers the integration contract automatically. Keep

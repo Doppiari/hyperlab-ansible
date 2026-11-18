@@ -3,10 +3,11 @@
 import io
 import json
 from contextlib import redirect_stdout
+from unittest.mock import patch
 
 import world
 from harness import check, equals
-from hyperlabctl.cli import main
+from hyperlabctl.cli import _normalize_global_options, build_parser, main
 
 RUNNING_VFIO = [{"name": "win11clean-valley", "state": "running",
                  "memory_mb": 6144, "vfio": True}]
@@ -106,3 +107,21 @@ def test_vm_list_json_flag_is_accepted_in_shell_surface_order():
     code, output = _run(["vm", "list", "--json"], world.build(domains=WITHIN_BUDGET, trust=None))
     equals("vm_trailing_json_exit", code, 0)
     equals("vm_trailing_json_name", json.loads(output)[0]["name"], "debian-dev")
+
+
+def test_global_colour_modes_keep_order_and_the_legacy_alias():
+    parser = build_parser()
+    for options, expected in (([], "auto"), (["--color=always"], "always"),
+                              (["--color", "never"], "never"),
+                              (["--no-color"], "never"),
+                              (["--color=always", "--no-color"], "never")):
+        args = parser.parse_args(_normalize_global_options(["vm", "list", *options]))
+        equals("parsed_colour_%s" % options, args.color, expected)
+
+
+def test_json_dispatch_disables_colour_even_with_a_terminal_and_always():
+    with (patch("hyperlabctl.cli.sys.stdout.isatty", return_value=True),
+          patch("hyperlabctl.commands.vm.VmCommand.run", autospec=True, return_value=0) as run):
+        code = main(["vm", "list", "--json", "--color=always"], ctx=world.build())
+    equals("json_dispatch_exit", code, 0)
+    equals("json_dispatch_colour", run.call_args.args[1].color, False)

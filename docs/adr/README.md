@@ -39,12 +39,14 @@ entered the pipeline.
 17. [`0017-shell-machine-creation.md`](0017-shell-machine-creation.md) —
     accepted: the shell creates a Machine through the reviewed bridge and one
     durable operation; the password and the become prompt stay in its
-    terminal (operator's decision, 2026-11-05).
+    terminal (operator's decision, 2026-11-05). Host-session libvirt authority
+    is already root-equivalent; that prompt does not confine it.
 18. [`0018-disposable-discards-on-stop.md`](0018-disposable-discards-on-stop.md)
     — accepted: a disposable Machine's disk is a libvirt transient disk, so
     every stop discards its writes (operator's decision, 2026-11-05).
-    Protected access and the host-key pin at every later boot are not built;
-    Nitro evidence remains open (see the record's Limits).
+    A proposed amendment restores the agent restriction and refreshes
+    the strict SSH pin on every managed disposable boot; software-verified,
+    with Nitro evidence still open (see the record's Limits).
 19. [`0019-gpu-lease.md`](0019-gpu-lease.md) — accepted: a GPU-capable
     Machine chooses at each start whether this run owns the GPU; initially
     `workstation-dev-standard` only, default without the dedicated NVIDIA
@@ -152,7 +154,8 @@ entered the pipeline.
     the record last; a record is withdrawn only by its digest, under the
     registry lock, and never while a projection or a domain follows from it.
     Operator's decision, 2026-11-05; unpublished source in the record.
-    Transaction remediation and Nitro refusal evidence remain open.
+    Transaction remediation is software-verified; Nitro refusal tests and
+    manual-recovery limits remain open.
 
 54. [`0054-private-machine-diagnostics.md`](0054-private-machine-diagnostics.md) —
     proposed, software built: supervise one private diagnostics collection
@@ -192,6 +195,25 @@ entered the pipeline.
     — proposed: coordinate CLI, shell and session names while retaining
     durable state; execute the decided GPL-3.0-or-later switch separately
     and transfer the existing repositories to Doppiari before the final guard.
+
+63. [`0063-v1-acceptance-campaign.md`](0063-v1-acceptance-campaign.md)
+    — proposed: a separate version-3 campaign for the selected v1, retaining
+    the historical v2 contract and pending hardware observations.
+
+64. [`0064-spheres-are-machines.md`](0064-spheres-are-machines.md)
+    — accepted operator decision: every Machine is a sphere in its domain
+    colour, the host the grey symbol; state is shape and light; the bar
+    core follows the focused Machine; one component draws every sphere.
+    Its component choices (themed neutral outline, reserved HOST grey,
+    libvirt state words) are proposed.
+
+65. [`0065-qml-inherited-item-state.md`](0065-qml-inherited-item-state.md)
+    — proposed: recognise Item.state in the structural wiring resolver,
+    retaining the refusal of that property on QtObject-based components.
+
+66. [`0066-terminal-domain-spheres.md`](0066-terminal-domain-spheres.md)
+    — proposed: palette-owned domain dots on terminal list rows, with
+    unchanged pipe bytes and existing product provenance.
 
 The pre-VM baseline that led to these decisions remains available as
 [`../historical-audit-m0.md`](../historical-audit-m0.md); it is archival evidence,
@@ -626,6 +648,8 @@ remain.
   - Built: built — content-generation checkpoints, pinned shell pause and busy
     cgroup refusal, exact post-exec observer validation and resident recovery
     retirement, with clock-step, launch-race, retry and idempotence checks.
+    Inert-process fixtures cover asynchronous stopping and require the actual
+    paused busy-child refusal, with bounded retries only after resume.
   - Activation: default — after the copies in `host_desktop_common` and
     `host_desktop_sway` and after the Hyprland unit copy in
     `playbooks/v1-host.yml`. Only existing presentation processes are refreshed.
@@ -634,7 +658,8 @@ remain.
     [`recovery tasks`](../../roles/host_desktop_sway/tasks/main.yml),
     [`shell_reload_after_apply_contract.py`](../../tests/shell_reload_after_apply_contract.py)
   - Prerequisites: the operator's decision; installed Nitro apply/readback
-    and unchanged second pass, then Predator replay.
+    and unchanged second pass, measurement of incomplete-stop refusals and
+    thread counts across repeated shell changes, then Predator replay.
 
 - [ADR 0062](0062-sfere-namespace-and-release-transition.md)
   - Decision: proposed migration policy and candidate internal names;
@@ -648,3 +673,42 @@ remain.
     asset resolution, code migrations and the licence switch. Ordered namespace
     implementation and refusal checks precede the final guard and installed-host
     acceptance; asset-rights resolution remains a separate publication gate.
+
+- [ADR 0063](0063-v1-acceptance-campaign.md)
+  - Decision: proposed.
+  - Built: built — version-3 manifest, version-bound runner, typed probes,
+    independent field oracle and executable synthetic runbook rehearsal.
+  - Activation: on request — explicit manifest selection creates a pending
+    local campaign; nothing installs, observes or publishes automatically.
+  - Source: [`acceptance.v3.yml`](../../release/acceptance.v3.yml),
+    [`release_acceptance.py`](../../tools/release_acceptance.py),
+    [`release_probe.py`](../../tools/release_probe.py),
+    [`release_acceptance_contract.py`](../../tests/release_acceptance_contract.py)
+  - Prerequisites: the operator's decision, frozen public automation commits,
+    Debian image, disposable access acceptance, dual-shape workstation image,
+    reviewed clean/dirty/lab and unmapped PCI fixtures,
+    real lease controls, complete recording/privacy review and portable
+    Predator checks; every physical campaign observation remains pending.
+
+- [ADR 0065](0065-qml-inherited-item-state.md)
+  - Decision: proposed.
+  - Built: built — the structural wiring resolver recognises inherited
+    Item.state and checks both Item and QtObject component boundaries.
+  - Activation: on request — the discovered QML wiring and showcase
+    contracts execute during the repository verification battery.
+  - Source: [`host_quickshell_qml_wiring_contract.py`](../../tests/host_quickshell_qml_wiring_contract.py),
+    [`machine_showcase_contract.py`](../../tests/machine_showcase_contract.py)
+  - Prerequisites: acceptance of the structural resolver correction;
+    software checks do not establish physical showcase acceptance.
+
+- [ADR 0066](0066-terminal-domain-spheres.md)
+  - Decision: proposed.
+  - Built: built — shared palette reader and terminal dots for four CLI views,
+    with byte-preserving plain output and confirmed product provenance in both
+    VM and Machine lists.
+  - Activation: default — decorated text only on a terminal under colour policy.
+  - Source: [`render.py`](../../tools/hyperlabctl/hyperlabctl/render.py),
+    [`cli.py`](../../tools/hyperlabctl/hyperlabctl/cli.py),
+    [`cli_domain_spheres_contract.py`](../../tests/cli_domain_spheres_contract.py)
+  - Prerequisites: operator review of the proposed terminal presentation choices
+    and the four-command terminal/pipe check on Nitro.

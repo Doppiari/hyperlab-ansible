@@ -26,6 +26,8 @@ Rectangle {
     default property alias body: contentArea.data
 
     readonly property bool actionable: card.interactive && card.enabled
+    readonly property bool hovered: hover.hovered
+    readonly property bool pressed: press.pressed
 
     signal activated()
 

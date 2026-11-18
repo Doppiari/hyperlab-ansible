@@ -1,9 +1,94 @@
 """Renderers. Each one reads the document and writes nothing back."""
 
+from __future__ import annotations
+
 import json
+from collections.abc import Mapping
+from pathlib import Path
+import re
+import stat
 
 COLORS = {"ok": "\033[32m", "warn": "\033[33m", "error": "\033[31m",
           "dim": "\033[90m", "off": "\033[0m"}
+
+
+def _nearest_256(rgb: tuple[int, int, int]) -> int:
+    """Nearest fixed xterm cube/grey by RGB distance, then lowest index.
+
+    Slots 0-15 belong to the terminal theme and cannot carry identity.
+    """
+    steps = (0, 95, 135, 175, 215, 255)
+    colours = [(red, green, blue) for red in steps for green in steps for blue in steps]
+    colours.extend((grey, grey, grey) for grey in range(8, 239, 10))
+    return 16 + min(range(len(colours)), key=lambda index: sum(
+        (channel - target) ** 2 for channel, target in zip(colours[index], rgb)))
+
+
+def _domain_palette(root: Path | None) -> dict[str, tuple[int, int, int]]:
+    """Read semantic identity only; refuse ambiguous or redirected YAML."""
+    import yaml
+
+    # Status consumers can also load this module directly by filename.
+    from .errors import ContractError
+
+    class UniqueLoader(yaml.SafeLoader):
+        def construct_mapping(self, node, deep=False):
+            result = {}
+            for key_node, value_node in node.value:
+                key = self.construct_object(key_node, deep=deep)
+                if key in result:
+                    raise ValueError("duplicate key")
+                result[key] = self.construct_object(value_node, deep=deep)
+            return result
+
+    try:
+        if root is None:
+            raise ValueError("no checkout")
+        path = Path(root).absolute() / "tools/palette/palette.yml"
+        if any(parent.is_symlink() for parent in (path, *path.parents)):
+            raise ValueError("redirected input")
+        mode = path.stat().st_mode
+        if not stat.S_ISREG(mode) or not mode & 0o444:
+            raise ValueError("unreadable input")
+        raw = path.read_text(encoding="utf-8")
+        if any(isinstance(event, yaml.AliasEvent) for event in yaml.parse(raw)):
+            raise ValueError("aliased input")
+        palette = yaml.load(raw, Loader=UniqueLoader)
+        domains = palette["domains"]
+        names = ("host", "clean", "dev", "services", "dirty", "lab")
+        if set(domains) != {"dom_" + name for name in names}:
+            raise ValueError("incomplete domain table")
+        result = {}
+        for name in names:
+            value = domains["dom_" + name]
+            if not isinstance(value, str) or re.fullmatch(r"#[0-9a-fA-F]{6}", value) is None:
+                raise ValueError("invalid domain colour")
+            result[name] = tuple(int(value[start:start + 2], 16) for start in (1, 3, 5))
+        return result
+    except (OSError, UnicodeError, ValueError, TypeError, KeyError, yaml.YAMLError) as exc:
+        raise ContractError("invalid domain palette input") from exc
+
+
+class DomainSpheres:
+    """An optional prefix, leaving the existing row body untouched."""
+
+    def __init__(self, root: Path | None, enabled: bool, environ: Mapping[str, str]) -> None:
+        self.enabled = enabled
+        self.colours = _domain_palette(root) if enabled else {}
+        self.truecolor = environ.get("COLORTERM", "").lower() in {"truecolor", "24bit"}
+
+    def prefix(self, domain: str | None) -> str:
+        if not self.enabled:
+            return ""
+        # These commands list guests, networks and ladder rungs, never the host.
+        if domain == "host" or domain not in self.colours:
+            return "○ "
+        rgb = self.colours[domain]
+        if self.truecolor:
+            opening = "\033[38;2;%d;%d;%dm" % rgb
+        else:
+            opening = "\033[38;5;%dm" % _nearest_256(rgb)
+        return opening + "●" + COLORS["off"] + " "
 
 
 def paint(text, tone, enabled):

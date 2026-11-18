@@ -78,6 +78,14 @@ def _normalize_global_options(argv):
                 index += 1
         elif token.startswith("--repo="):
             globals_.append(token)
+        elif token == "--color":
+            if index + 1 >= len(argv):
+                rest.append(token)
+            else:
+                globals_.extend((token, argv[index + 1]))
+                index += 1
+        elif token.startswith("--color="):
+            globals_.append(token)
         else:
             rest.append(token)
         index += 1
@@ -93,7 +101,9 @@ def build_parser():
     parser.add_argument("--version", action=_ProductVersion, nargs=0,
                         help="show program's version number and exit")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
-    parser.add_argument("--no-color", dest="color", action="store_false", default=None,
+    parser.add_argument("--color", choices=("auto", "always", "never"), default="auto",
+                        help="terminal colour (pipes always stay plain)")
+    parser.add_argument("--no-color", dest="color", action="store_const", const="never",
                         help="never emit colour")
     parser.add_argument("--repo", metavar="PATH", help="repository checkout to read")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -109,11 +119,11 @@ def main(argv=None, ctx=None):
     try:
         parser = build_parser()
         args = parser.parse_args(_normalize_global_options(list(argv)))
-        if args.color is None:
-            args.color = sys.stdout.isatty()
-
         if ctx is None:
             ctx = Context(Config(repo_root=args.repo), Runner())
+        args.color = (sys.stdout.isatty() and not args.json and args.color != "never"
+                      and (args.color == "always" or (
+                          "NO_COLOR" not in ctx.environ and ctx.environ.get("TERM") != "dumb")))
         return args._command.run(args, ctx)
     except HyperlabError as exc:
         print("hyperlabctl: %s" % exc, file=sys.stderr)

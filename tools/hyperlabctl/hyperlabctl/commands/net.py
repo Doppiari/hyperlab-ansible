@@ -2,7 +2,7 @@ import json
 
 from .. import document as doc
 from ..errors import Unavailable
-from ..render import paint
+from ..render import DomainSpheres, paint
 from .base import Command
 
 
@@ -40,9 +40,10 @@ class NetCommand(Command):
         if args.json:
             print(json.dumps(rows, indent=2))
             return 0
+        spheres = DomainSpheres(ctx.config.repo_root, args.color, ctx.environ)
         for row in rows:
             colour = {"active": "ok", "inactive": "warn", "missing": "error"}[row["state"]]
-            print("%-12s %-9s %-16s %-9s %s" % (
+            print(spheres.prefix(row["name"]) + "%-12s %-9s %-16s %-9s %s" % (
                 row["name"], paint(row["state"], colour, args.color),
                 row["subnet"] or "-", row["forward"] or "-",
                 "trust %s" % row["trust"] if row["trust"] is not None else ""))

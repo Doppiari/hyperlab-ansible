@@ -95,6 +95,19 @@ outside this set, or an incomplete `dom_*` table, resolves to neutral text —
 never to a borrowed colour. Diagnostics reports an incomplete table rather than
 letting the shell quietly invent one.
 
+A Machine is drawn as a sphere in its domain colour
+([ADR 0064](adr/0064-spheres-are-machines.md)), by the one shell component
+`MachineSphere.qml`. Its colours come only from `provenanceColor()` and the
+appearance text tone, so a theme or scheme never changes a classified sphere,
+the host grey or the bar core. The exception is the neutral outline of an
+external or unclassified Machine: it is the appearance text tone, so its
+shade follows the theme, and under every appearance it must stay at least
+48 levels in some channel from the HOST grey and every domain colour, or
+`tests/machine_sphere_contract.py` refuses the theme (a proposed component
+choice of the ADR). Inside a sphere that outline is solid, because a dashed
+ring there means disposable; the 8-pixel provenance marker keeps its dashed
+outline.
+
 The focused host-owned provenance drives Trust-mode keyboard RGB. On the Nitro
 four-zone backend every zone carries the same canonical identity colour. A
 host-native or unclassified surface returns the keyboard to the neutral host
@@ -366,7 +379,8 @@ shell — rail, desktop, launcher, panel, OSD — by changing the palette alone.
 
 Theme palette and trust palette remain separate. `provenanceColor()` is the
 only path to a trust colour and it is used only by provenance indicators
-(machine beacons, ladder rings, the rail badge under an explicit host claim).
+(machine beacons, Machine spheres, ladder rings, the rail badge under an
+explicit host claim).
 Switching a theme never changes what a provenance colour means, and the
 shell backdrop and lock surface carry no trust colour at all.
 
