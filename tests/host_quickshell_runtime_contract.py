@@ -172,7 +172,7 @@ def adapt_state(source: str) -> str:
     )
     source = re.sub(r"(?m)^\s+(themeStateFile|keyboardStateFile"
                     r"|wallpaperModeStateFile|rgbModeStateFile|reducedMotionStateFile"
-                    r"|paletteFile)\.reload\(\);\n", "", source)
+                    r"|ambientMotionStateFile|paletteFile)\.reload\(\);\n", "", source)
     source = re.sub(
         r"    Component\.onCompleted: \{[^}]*\}\n", "", source
     )
@@ -205,6 +205,10 @@ def adapt_state(source: str) -> str:
                         + "; property bool running: false; property real startedAt: 0 }\n")
         source = source.replace("    id: state\n", "    id: state\n" + sources + process + nitro + features + """
     QtObject { id: networksDeadline; function restart() {} function stop() {} }
+    // The ambient-motion setting file: a write is recorded, never performed.
+    QtObject { id: ambientMotionStateFile; property var writes: []
+        function setText(text) { writes = writes.concat([text]); } }
+    readonly property var ambientMotionFixtureWrites: ambientMotionStateFile.writes
     readonly property var networkFixtureLaunches: networksProcess.launches
     readonly property var networkFixtureSignals: networksProcess.signals
     function networkFixtureComplete(raw, code) { networksProcess.complete(raw, code); }
@@ -1040,11 +1044,12 @@ def run(
 
 NETWORK_ROWS = [
     {"name": "fixture-up", "state": "active", "subnet": "192.0.2.0/26",
-     "forward": "nat", "trust": 3},
+     "forward": "nat", "trust": 3, "gateway": "192.0.2.1",
+     "dhcp": {"start": "192.0.2.10", "end": "192.0.2.50"}},
     {"name": "fixture-down", "state": "inactive", "subnet": None,
-     "forward": None, "trust": None},
+     "forward": None, "trust": None, "gateway": False, "dhcp": False},
     {"name": "fixture-absent", "state": "missing", "subnet": "198.51.100.0/24",
-     "forward": "isolated", "trust": 0},
+     "forward": "isolated", "trust": 0, "gateway": None, "dhcp": None},
 ]
 
 NETWORKS_DISABLED = r"""
@@ -1152,6 +1157,11 @@ NETWORKS = r"""
                   "missing network normalized to active");
             check(!Object.prototype.hasOwnProperty.call(sharedState.networksRows[0], "trust"),
                   "numeric network trust published for presentation");
+            check(sharedState.networksRows[0].gateway === rows[0].gateway
+                  && JSON.stringify(sharedState.networksRows[0].dhcp) === JSON.stringify(rows[0].dhcp)
+                  && sharedState.networksRows[1].gateway === false && sharedState.networksRows[1].dhcp === false
+                  && sharedState.networksRows[2].gateway === null && sharedState.networksRows[2].dhcp === null,
+                  "network gateway or DHCP changed between the CLI and presentation");
             // Allow repeaters and layout to settle before inspecting real labels.
             settleTimer.callback = function() {
                 const sidebarTab = find(workspaceSurface, "section-networks");
@@ -1222,6 +1232,14 @@ NETWORKS_FAILURES = r"""
                               JSON.stringify([rows[0], Object.assign({}, rows[1], {name: "../bad"})]),
                               JSON.stringify([rows[0], Object.assign({}, rows[1], {subnet: 3})]),
                               JSON.stringify([rows[0], Object.assign({}, rows[1], {forward: false})]),
+                              JSON.stringify([rows[0], Object.assign({}, rows[1], {gateway: undefined})]),
+                              JSON.stringify([rows[0], Object.assign({}, rows[1], {dhcp: undefined})]),
+                              JSON.stringify([rows[0], Object.assign({}, rows[1], {gateway: "gw;rm"})]),
+                              JSON.stringify([rows[0], Object.assign({}, rows[1], {gateway: true})]),
+                              JSON.stringify([rows[0], Object.assign({}, rows[1], {dhcp: "on"})]),
+                              JSON.stringify([rows[0], Object.assign({}, rows[1], {dhcp: {start: "10.0.0.2"}})]),
+                              JSON.stringify([rows[0], Object.assign({}, rows[1],
+                                  {dhcp: {start: "10.0.0.2", end: "10.0.0.9", hosts: 3}})]),
                               JSON.stringify([rows[0], {name: "bad", state: "active"}]),
                               JSON.stringify([Object.assign({}, rows[0], {subnet: "bad\nvalue"})]),
                               JSON.stringify([Object.assign({}, rows[0], {subnet: ""})]),
@@ -3492,6 +3510,31 @@ PANEL_OPEN = """
             check(systemPanel.visible, "the system panel is not visible");
 """
 
+AMBIENT_MOTION = r"""
+            check(sharedState.ambientMotion, "ambient motion is not on before its file is read");
+            for (const [raw, on] of [[null, true], ["0", false], ["false\n", false], ["1\n", true],
+                                     ["true", true], [" 0 ", false], ["", false], ["yes", false],
+                                     ["on", false]]) {
+                sharedState.applyAmbientMotion(raw);
+                check(sharedState.ambientMotion === on, "ambient-motion file content read wrongly");
+            }
+            sharedState.applyAmbientMotion(null);
+            sharedSurfaces.openSystemPanel("");
+            const row = find(systemPanel, "system-ambient-motion");
+            check(row !== null && row.visible && row.value === "On", "Ambient motion row missing or wrong");
+            if (row) row.activated();
+            check(JSON.stringify(sharedState.ambientMotionFixtureWrites) === JSON.stringify(["0\n"]),
+                  "turning ambient motion off did not write 0");
+            check(sharedState.ambientMotion && row.value === "On",
+                  "the row showed a value before the file was read back");
+            sharedState.applyAmbientMotion("0\n");
+            check(row.value === "Off", "the row does not show the setting read back");
+            row.activated();
+            check(JSON.stringify(sharedState.ambientMotionFixtureWrites) === JSON.stringify(["0\n", "1\n"]),
+                  "turning ambient motion on did not write 1");
+            check(sharedActions.invoked.length === 0, "the ambient motion row invoked a host action");
+"""
+
 CONFIRM_OPEN = """
             sharedSurfaces.openWorkspace("machines");
             sharedSurfaces.selectMachine("fixture-001", 1);
@@ -3710,6 +3753,7 @@ def main() -> int:
             ("launcher-open", 1920, 1080, populated, LAUNCHER_OPEN),
             ("applications", 1920, 1080, populated, APPLICATIONS),
             ("system-panel", 1920, 1080, populated, PANEL_OPEN),
+            ("ambient-motion", 1920, 1080, populated, AMBIENT_MOTION),
             ("confirmation-open", 1920, 1080, populated, CONFIRM_OPEN),
             ("machines-dense", 1920, 1080, machines(24), SELECTION),
             ("workbench", 1920, 1080, populated,

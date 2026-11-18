@@ -399,6 +399,21 @@ PanelWindow {
                     }
                 }
 
+                // The seal's atmosphere, never its state. The row writes the
+                // setting file; the value shown is the one read back.
+                PanelRow {
+                    objectName: "system-ambient-motion"
+                    width: parent.width
+                    tokens: panel.tokens
+                    theme: panel.theme
+                    glyph: panel.icons.isolation
+                    title: "Ambient motion"
+                    value: panel.shellState.ambientMotion ? "On" : "Off"
+                    hint: "toggle"
+                    interactive: true
+                    onActivated: panel.shellState.setAmbientMotion(!panel.shellState.ambientMotion)
+                }
+
                 ShellDivider {
                     width: parent.width
                     vertical: false

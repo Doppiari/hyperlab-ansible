@@ -149,7 +149,8 @@ Sfere
     Workbench              Golden Image candidates, never product Machines
     USB devices            blocked devices, allowed once or always
   Launcher                 Destinations · Machines · Commands
-  System panel             quick adjustments, on the summoning output
+  System panel             quick adjustments (Ambient motion among them),
+                           on the summoning output
   OSD                      transient confirmed host feedback
   Confirmation             one target-bound dialog, inside the workspace
   Lock                     hyprlock / swaylock, in the product language
@@ -614,7 +615,12 @@ When enabled, **Networks** shows every declared network from
 `hyperlabctl --json net list`: name, **Configured subnet**, **Configured
 forwarding**, and **Libvirt observation** (`active`, `inactive` or `missing`).
 Null configuration values read Unknown. Inactive and missing networks stay
-in the list; the CLI's numeric trust field is discarded. Configuration is
+in the list; the CLI's numeric trust field is discarded. Each row also
+carries the live definition's `gateway` and `dhcp` range, which `net list`
+reads with `virsh net-dumpxml` (never from `group_vars`): a value, `false`
+when the definition declares none, `null` when it could not be read. The
+Sfere seal shows them; a missing key or a value of another type refuses the
+whole answer. Configuration is
 intent, and an active libvirt network does not prove firewall rules, DNS
 separation, reachability, a VPN, a host trust claim or a GPU lease. Network
 isolation still needs its separate [flow checks](network-flows.md) and
@@ -1034,8 +1040,13 @@ between them invents a margin, a radius or a hue.
 - **Motion** hover 100, workspace 140, entry 160, exit 120, expand 180 ms,
   OutCubic. Reduced motion is a real host setting read from
   `~/.config/hyperlab/reduced-motion`, and every duration collapses to zero
-  when it is on. There are no ambient loops and no animation that implies
-  progress.
+  when it is on. There is no animation that implies progress. The only
+  ambient loop is the Sfere seal's atmosphere (its turning rings, dust and
+  light rays), which never carries state: the **Ambient motion** row of the
+  System panel writes `~/.config/hyperlab/ambient-motion` (`1` on, `0`
+  off), and the shell reads it back like reduced motion. An absent file
+  means on; `0` or `false` off, `1` or `true` on; any other content, or a
+  file that cannot be read, off.
 - **Breakpoints** are capacities, not monitor models: ≥1600 full, 1100–1599
   compact navigation, 760–1099 one region at a time, <760 single column.
 

@@ -278,8 +278,9 @@ def main() -> int:
         theme_qml.count("watchChanges: true") == 0,
         "Theme.qml returned to filesystem watcher reloads",
     )
-    # Session appearance still has only its two reviewed watchers. The
-    # root-owned feature document is a separate, explicitly watched input.
+    # Session state has only its three reviewed watchers (keyboard, reduced
+    # motion and the Sfere seal's ambient motion). The root-owned feature
+    # document is a separate, explicitly watched input.
     file_views = re.findall(r"(?ms)^    FileView \{\n(.*?)^    \}", state_qml)
     watched = [
         re.search(r"(?m)^        id: (\w+)$", block).group(1)
@@ -288,8 +289,9 @@ def main() -> int:
     ]
     require(
         len(re.findall(r"\bwatchChanges\s*:", state_qml)) == len(watched)
-        and len(watched) == 3
-        and set(watched) == {"keyboardStateFile", "reducedMotionStateFile", "featuresFile"},
+        and len(watched) == 4
+        and set(watched) == {"keyboardStateFile", "reducedMotionStateFile",
+                             "ambientMotionStateFile", "featuresFile"},
         "session FileView watcher policy changed",
     )
 

@@ -95,6 +95,11 @@ Scope {
     // shell. Absent means motion is enabled.
     property bool reducedMotion: false
 
+    // The Sfere seal's atmosphere (its turning rings, dust and light rays),
+    // which never carries state. Absent means on; 0 or false means off, 1 or
+    // true on; any other content, or a file that cannot be read, means off.
+    property bool ambientMotion: true
+
     // ------------------------------------------------------- source health
 
     property string trustSourceState: "loading"
@@ -216,6 +221,33 @@ Scope {
         return out;
     }
 
+    // ---------------------------------------------------------------- seal
+
+    // The three sources the Sfere seal draws, and whether each is fresh: an
+    // answer that is not older than twice the slow poll. A failed, missing,
+    // stale or switched-off source is not fresh. "at" is its last success.
+    readonly property int sealFreshSeconds: state.slowPollSeconds * 2
+
+    function sealSource(name, declared, observedAt) {
+        const value = String(declared);
+        const age = (state.observationNow - observedAt) / 1000;
+
+        return {
+            "name": name,
+            "state": value,
+            "at": observedAt,
+            "fresh": value === "ok" && observedAt > 0 && age <= state.sealFreshSeconds
+        };
+    }
+
+    readonly property var sealSources: [
+        state.sealSource("Network inventory",
+            state.networksViewEnabled ? state.networksSourceState : "off",
+            state.networksObservedAt),
+        state.sealSource("Machine inventory", state.machinesSourceState, state.machinesObservedAt),
+        state.sealSource("GPU ownership", state.gpuSourceState, state.gpuObservedAt)
+    ]
+
     // ------------------------------------------------------------ networks
 
     property bool networksViewEnabled: false
@@ -293,6 +325,27 @@ Scope {
         return true;
     }
 
+    // An address as libvirt writes it in a network definition.
+    function validAddress(value) {
+        return typeof value === "string" && value.length > 0 && value.length <= 64
+            && /^[0-9A-Fa-f.:]+$/.test(value);
+    }
+
+    // A gateway is an address, false when the definition declares none, or
+    // null when it was not read. DHCP is a range object the same way.
+    function validGateway(value) {
+        return value === null || value === false || state.validAddress(value);
+    }
+
+    function validDhcp(value) {
+        if (value === null || value === false)
+            return true;
+
+        return typeof value === "object" && !Array.isArray(value)
+            && Object.keys(value).length === 2
+            && state.validAddress(value.start) && state.validAddress(value.end);
+    }
+
     function validNetworks(parsed) {
         if (!Array.isArray(parsed) || parsed.length > 512)
             return null;
@@ -309,12 +362,17 @@ Scope {
                     && row.subnet.length > 0 && row.subnet.length <= 128
                     && !/[\x00-\x1f\x7f]/.test(row.subnet)))
                 || !(row.forward === null || (typeof row.forward === "string"
-                    && /^[a-z][a-z0-9-]{0,31}$/.test(row.forward))))
+                    && /^[a-z][a-z0-9-]{0,31}$/.test(row.forward)))
+                || !state.validGateway(row.gateway)
+                || !state.validDhcp(row.dhcp))
                 return null;
 
             names.push(row.name);
             rows.push({"name": row.name, "state": row.state,
-                       "subnet": row.subnet, "forward": row.forward});
+                       "subnet": row.subnet, "forward": row.forward,
+                       "gateway": row.gateway,
+                       "dhcp": row.dhcp === null || row.dhcp === false ? row.dhcp
+                           : {"start": row.dhcp.start, "end": row.dhcp.end}});
         }
         return rows;
     }
@@ -2644,6 +2702,24 @@ Scope {
         state.reducedMotion = candidate === "1" || candidate === "true";
     }
 
+    // null is an absent file.
+    function applyAmbientMotion(raw) {
+        if (raw === null) {
+            state.ambientMotion = true;
+            return;
+        }
+
+        const candidate = String(raw).trim();
+
+        state.ambientMotion = candidate === "1" || candidate === "true";
+    }
+
+    // The System panel's toggle. The setting is the file: the watcher reads
+    // it back, so the shell shows what was written, not what was asked.
+    function setAmbientMotion(enabled) {
+        ambientMotionStateFile.setText(enabled === true ? "1\n" : "0\n");
+    }
+
     // ------------------------------------------------------------ refresh
 
     // A poll that never returns is a failure, not a pending answer: past
@@ -2689,6 +2765,7 @@ Scope {
         wallpaperModeStateFile.reload();
         rgbModeStateFile.reload();
         reducedMotionStateFile.reload();
+        ambientMotionStateFile.reload();
     }
 
     // A completed session action publishes its result through the same state
@@ -2880,6 +2957,40 @@ Scope {
 
         onTextChanged: {
             state.applyReducedMotion(this.text());
+        }
+    }
+
+    // The seal's ambient motion, read like reduced motion. Only the System
+    // panel's toggle writes it, through setAmbientMotion.
+    FileView {
+        id: ambientMotionStateFile
+
+        path:
+            Quickshell.env("HOME")
+            + "/.config/hyperlab/"
+            + "ambient-motion"
+
+        printErrors: false
+        watchChanges: true
+        atomicWrites: true
+
+        onFileChanged: reload()
+
+        onLoadFailed: error => {
+            if (error === FileViewError.FileNotFound) {
+                state.applyAmbientMotion(null);
+                return;
+            }
+
+            state.applyAmbientMotion("");
+            console.warn(
+                state.productName + " ambient-motion state read failed: "
+                + FileViewError.toString(error)
+            );
+        }
+
+        onTextChanged: {
+            state.applyAmbientMotion(this.text());
         }
     }
 
