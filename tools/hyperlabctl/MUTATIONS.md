@@ -43,6 +43,9 @@ green with the reason, not quietly dropped.
 | 35 | `commands/panic.py` | a link the operator had set down is recorded | red | `panic_restored_links` |
 | 36 | `commands/panic.py` | restore resumes a recorded domain the stop did not pause | red, after a test was added | `panic_unpaused_stays_paused` |
 | 37 | `commands/panic.py` | the record is written 0644 | red | `panic_file_mode` |
+| 38 | `commands/net.py` | a definition that names another network is accepted | red, after a test was added | `lab_gateway_unknown` expected None, got '10.10.3.1' |
+| 39 | `commands/net.py` | the gateway is copied from `group_vars` instead of `net-dumpxml` | red, after a test was added | `lab_gateway` expected '10.10.4.1', got None |
+| 40 | `commands/net.py` | an unparseable definition reads as declaring no gateway or DHCP | red, after a test was added | `services_gateway_unknown` expected None, got False |
 
 
 ## Cockpit/M3 integration mutations

@@ -1,4 +1,5 @@
 import json
+import xml.etree.ElementTree as ET
 
 from .. import document as doc
 from ..errors import Unavailable
@@ -35,8 +36,10 @@ class NetCommand(Command):
             name = entry["name"]
             state = ("missing" if name in section["missing"]
                      else "inactive" if name in section["inactive"] else "active")
+            gateway, dhcp = (None, None) if state == "missing" else _addressing(ctx, name)
             rows.append({"name": name, "state": state, "subnet": entry.get("subnet"),
-                         "forward": entry.get("forward"), "trust": trust.get(name)})
+                         "forward": entry.get("forward"), "trust": trust.get(name),
+                         "gateway": gateway, "dhcp": dhcp})
         if args.json:
             print(json.dumps(rows, indent=2))
             return 0
@@ -57,3 +60,30 @@ class NetCommand(Command):
             return 2
         print(result.stdout.strip() or "%s: ok" % args.network)
         return 0
+
+
+def _addressing(ctx, name):
+    """The gateway and DHCP range of the live libvirt definition, read only.
+
+    Each is a value, False when the definition declares none, or None when
+    the definition could not be read: a failed or unparseable dumpxml, or
+    one that names another network. Nothing is taken from group_vars.
+    """
+    result = ctx.virsh("net-dumpxml", name)
+    if not result.ok:
+        return None, None
+    try:
+        root = ET.fromstring(result.stdout)
+    except ET.ParseError:
+        return None, None
+    if root.tag != "network" or root.findtext("name") != name:
+        return None, None
+    address = next((node for node in root.findall("ip")
+                    if node.get("family", "ipv4") == "ipv4"), None)
+    if address is None:
+        return False, False
+    gateway = address.get("address") or False
+    span = address.find("dhcp/range")
+    if span is None or not span.get("start") or not span.get("end"):
+        return gateway, False
+    return gateway, {"start": span.get("start"), "end": span.get("end")}

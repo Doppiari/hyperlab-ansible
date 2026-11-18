@@ -16,7 +16,7 @@ registry does not expose.
 | `hyperlabctl doctor` | contract problems with concrete remedies |
 | `hyperlabctl doctor --hardware [--profile NAME]` | whether this computer can run HyperLab, read without privilege, and a host profile proposal to review |
 | `hyperlabctl vm list` | managed/unmanaged domain state |
-| `hyperlabctl net list` | five trust-domain networks |
+| `hyperlabctl net list` | five trust-domain networks; with `--json`, each live definition's gateway and DHCP range, read with `virsh net-dumpxml` |
 | `hyperlabctl image list` | image manifests and sealed-base state |
 | `hyperlabctl machine templates` | product Templates and whether each is ready |
 | `hyperlabctl machine list` | persistent product Machine records |

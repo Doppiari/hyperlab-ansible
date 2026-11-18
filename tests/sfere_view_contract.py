@@ -12,6 +12,7 @@ import shutil
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import jinja2
 import yaml
 
 import host_quickshell_runtime_contract as runtime
@@ -30,10 +31,24 @@ def require(condition: bool, message: str) -> None:
         raise SystemExit("Sfere view contract: " + message)
 
 
+def definitions() -> dict[str, str]:
+    """Each declared network rendered by the role's own libvirt template."""
+    config = yaml.safe_load((ROOT / "group_vars/all/networks.yml").read_text())
+    leases = yaml.safe_load((ROOT / "group_vars/all/services.yml").read_text())["service_dhcp_leases"]
+    environment = jinja2.Environment(undefined=jinja2.StrictUndefined)
+    environment.filters["regex_replace"] = lambda value, pattern, replacement: re.sub(pattern, replacement, value)
+    template = environment.from_string((ROOT / "roles/network_domains/templates/net.xml.j2").read_text())
+    return {entry["name"]: template.render(item=entry, service_dhcp_leases=leases)
+            for entry in config["network_domains"]}
+
+
 def network_rows() -> list[dict]:
     """The real net list formatter, with a declared and active network fixture."""
     config = yaml.safe_load((ROOT / "group_vars/all/networks.yml").read_text())
-    ctx = SimpleNamespace(config=SimpleNamespace(var=lambda key, default: config.get(key, default)))
+    xml = definitions()
+    ctx = SimpleNamespace(config=SimpleNamespace(var=lambda key, default: config.get(key, default)),
+                          virsh=lambda verb, name: SimpleNamespace(ok=verb == "net-dumpxml" and name in xml,
+                                                                    stdout=xml.get(name, "")))
     with patch("hyperlabctl.commands.net.doc.build", return_value={
         "networks": {"missing": [], "inactive": []}
     }), redirect_stdout(io.StringIO()) as out:

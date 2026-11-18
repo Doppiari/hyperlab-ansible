@@ -36,6 +36,90 @@ def test_net_list_marks_an_inactive_domain_and_keeps_its_trust():
     equals("lab_trust", rows["lab"]["trust"], 0)
 
 
+VIRSH = ["/usr/bin/virsh", "-c", "qemu:///system", "-q"]
+
+NETWORK_XML = """<network>
+  <name>{name}</name>
+  <bridge name="virbr-{name}" stp="on" delay="0"/>
+  {forward}
+  <ip family="ipv6" address="fd00::1" prefix="64"/>
+  <ip address="{gateway}" netmask="255.255.255.0">
+    <dhcp>
+      <range start="{prefix}.100" end="{prefix}.199"/>
+    </dhcp>
+  </ip>
+</network>
+"""
+
+
+def _definitions(ctx, names=("clean", "dirty", "dev", "lab", "services")):
+    numbers = {"clean": 1, "dirty": 2, "dev": 3, "lab": 4, "services": 5}
+    for name in names:
+        prefix = "10.10.%d" % numbers[name]
+        ctx.runner.register(VIRSH + ["net-dumpxml", name], NETWORK_XML.format(
+            name=name, gateway=prefix + ".1", prefix=prefix,
+            forward="" if name == "lab" else '<forward mode="nat"/>'))
+    return ctx
+
+
+def test_net_list_reads_gateway_and_dhcp_from_the_live_definition():
+    ctx = _definitions(world.build(trust=None))
+    _, output = _run(["--json", "net", "list"], ctx)
+    rows = {row["name"]: row for row in json.loads(output)}
+    equals("lab_gateway", rows["lab"]["gateway"], "10.10.4.1")
+    equals("lab_dhcp", rows["lab"]["dhcp"], {"start": "10.10.4.100", "end": "10.10.4.199"})
+    equals("dev_gateway", rows["dev"]["gateway"], "10.10.3.1")
+    equals("every_row_keys", {tuple(sorted(row)) for row in rows.values()},
+           {("dhcp", "forward", "gateway", "name", "state", "subnet", "trust")})
+    reads = [call[len(VIRSH):] for call in ctx.runner.calls if tuple(call[:len(VIRSH)]) == tuple(VIRSH)]
+    check("net_list_reads_only", all(call[0] in ("net-list", "net-dumpxml") for call in reads), reads)
+    equals("dumpxml_once_per_network", sorted(call[1] for call in reads if call[0] == "net-dumpxml"),
+           ["clean", "dev", "dirty", "lab", "services"])
+
+
+def test_net_list_says_none_when_the_definition_declares_none():
+    ctx = _definitions(world.build(trust=None), names=("clean", "dirty", "dev", "services"))
+    ctx.runner.register(VIRSH + ["net-dumpxml", "lab"],
+                        "<network><name>lab</name><ip address='10.10.4.1'/></network>\n")
+    ctx.runner.register(VIRSH + ["net-dumpxml", "dev"],
+                        "<network><name>dev</name><ip family='ipv6' address='fd00::1'/></network>\n")
+    _, output = _run(["--json", "net", "list"], ctx)
+    rows = {row["name"]: row for row in json.loads(output)}
+    equals("no_dhcp_is_false", rows["lab"]["dhcp"], False)
+    equals("gateway_without_dhcp", rows["lab"]["gateway"], "10.10.4.1")
+    equals("no_ipv4_gateway_is_false", rows["dev"]["gateway"], False)
+    equals("no_ipv4_dhcp_is_false", rows["dev"]["dhcp"], False)
+
+
+def test_net_list_never_guesses_an_unread_definition():
+    ctx = _definitions(world.build(trust=None, networks_active=["clean", "dev", "dirty", "services"]),
+                       names=("clean", "dirty"))
+    ctx.runner.register(VIRSH + ["net-dumpxml", "dev"], (1, "", "error: failed to get network 'dev'"))
+    ctx.runner.register(VIRSH + ["net-dumpxml", "services"], "<network><ip address='10.10.5.1'>")
+    ctx.runner.register(VIRSH + ["net-dumpxml", "lab"],
+                        "<network><name>dev</name><ip address='10.10.3.1'/></network>\n")
+    _, output = _run(["--json", "net", "list"], ctx)
+    rows = {row["name"]: row for row in json.loads(output)}
+    for name in ("dev", "services", "lab"):
+        equals(name + "_gateway_unknown", rows[name]["gateway"], None)
+        equals(name + "_dhcp_unknown", rows[name]["dhcp"], None)
+    equals("clean_still_read", rows["clean"]["gateway"], "10.10.1.1")
+
+
+def test_net_list_reads_no_definition_for_a_missing_network():
+    ctx = world.build(trust=None)
+    ctx.runner.register(VIRSH + ["net-list", "--all", "--name"], "clean\n")
+    ctx.runner.register(VIRSH + ["net-list", "--name"], "clean\n")
+    _definitions(ctx, names=("clean",))
+    _, output = _run(["--json", "net", "list"], ctx)
+    rows = {row["name"]: row for row in json.loads(output)}
+    equals("missing_state", rows["lab"]["state"], "missing")
+    equals("missing_gateway", rows["lab"]["gateway"], None)
+    equals("missing_dhcp", rows["lab"]["dhcp"], None)
+    check("no_dumpxml_for_missing",
+          not any(call[-2:] == ("net-dumpxml", "lab") for call in ctx.runner.calls))
+
+
 def test_net_start_calls_net_start_not_define():
     ctx = world.build(trust=None)
     ctx.runner.register(["/usr/bin/virsh", "-c", "qemu:///system", "-q", "net-start", "lab"],
