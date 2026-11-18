@@ -214,11 +214,12 @@ Validate exception-manifest names as typed metadata, not arbitrary prose;
 do not exempt the manifest or guard source wholesale. Never exempt an entire
 docs, tests or ADR tree. Parse structured inputs and argv to distinguish
 preserved policy identifiers from obsolete callers. Refuse missing,
-duplicate, redirected, stale or overly broad exception records. Planned mutations inject old
-command/config/unit/CI references, new old-named paths, unexpected history
-text, missing and duplicate exceptions and a forbidden state symlink;
-all must fail their relevant checks, while approved history and preserved
-state remain positive controls. These are planned checks, not built code.
+duplicate, redirected, stale or overly broad exception records. Planned
+mutations inject old command/config/unit/CI references, new old-named paths,
+unexpected history text, missing and duplicate exceptions and a forbidden
+state symlink; all must fail their relevant checks, while approved history
+and preserved state remain positive controls. These are planned checks, not
+built code.
 
 ## Rejected alternatives
 
