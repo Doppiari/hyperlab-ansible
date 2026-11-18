@@ -1133,6 +1133,80 @@ only when its caller reports a state the bridge, GPU ownership or inventory
 confirmed. The arcs and ring of the product symbol still carry no claim; its
 core in the host bar does (below).
 
+### Network spheres
+
+A network is a glass sphere with an energy core: the sphere of the Sfere
+seal. `NetworkSphere.qml` draws one; no view uses it yet (the seal is the
+next step). Its inputs:
+
+| Property | Meaning |
+| --- | --- |
+| `colour` | the network's palette colour, required; the component names no colour |
+| `character` | the core's texture: 0 host (silver), 1 calm (clean), 2 swirling (dev), 3 banded (services), 4 flickering (dirty), 5 lattice (lab) |
+| `lit` | 0..1, how much runs inside; anything else reads as 0 or 1 |
+| `selected` | a brighter rim |
+| `lightDirection` | where the light comes from, x right and y up; upper left by default |
+| `time` | the caller's clock in seconds; the component runs no timer |
+| `turn` | a fixed turn of the engraving, so neighbours differ |
+| `forceStill` | draw the still form |
+| `textureScale` | 0.5 renders the shader into a half-size layer; any other value is full size |
+
+The item is a square about 2.4 sphere radii wide, so the halo fits. It draws
+a glass rim with fresnel and iridescence, engraved latitude and longitude, a
+specular highlight toward the light, a soft halo that fades to nothing at
+the item's edge, and the core: bright and moving with `time` when lit,
+desaturated, dim and still when dark. A dark sphere ignores `time`
+altogether, core and engraving, so a parent can pass one clock to every
+sphere.
+
+`textureScale` 0.5 is a hook for crowded views, not a default. Measured on
+Mesa llvmpipe (6 lit spheres of 144 pixels, `time` advanced at 30 per
+second for 60 s): 10.4 s of CPU at full size, 15.2 s with the half-size
+layer, because Qt rendered two frames for every change once a layer was
+enabled (3637 frames instead of 1820; the same with a `ShaderEffectSource`
+and with either render loop). Measure on the GPU before a view uses it.
+
+Where Qt renders through RHI the sphere runs `shaders/sphere.frag.qsb` in a
+`ShaderEffect`. The shader source is `shaders/sphere.frag`, Vulkan-style GLSL
+440 with one std140 uniform block: `qt_Matrix`, `qt_Opacity`, `time`, `lit`,
+`character`, `turn`, `selected`, `radiusShare`, `pixelRadius` (for the
+antialiased edge, since GLSL 100 es has no derivatives), `colour` and
+`light`. The engraving's turn is not called `rotation`: a `ShaderEffect`
+property of that name would be `Item.rotation` and turn the whole item.
+Every tint derives from `colour`; the only other constants are white light,
+the luminance weights of the dark core and the iridescence phase.
+
+`tools/build-shaders.sh` compiles every shader and records
+`shaders/SHADERS.sha256` ([ADR 0068](adr/0068-compiled-shell-shaders.md));
+the role installs the `.qsb` and the host compiles nothing. After editing a
+shader:
+
+```bash
+tools/build-shaders.sh            # needs qsb from qt6-shadertools
+tools/build-shaders.sh --check    # what verify.sh level 0j runs
+```
+
+The sphere draws its still form, `SphereStill.qml`, under the software
+backend, when the effect reports an error (a missing or broken `.qsb`), for
+a character outside the six and when `forceStill` is set; `stillReason`
+says which (`software`, `shader-error`, `unknown-character`, `forced`).
+The still form is QtQuick Shapes and gradients: halo, glass body, engraving,
+rim, a lit or dark core in the colour, the highlight, and the character as a
+small fixed pattern (a heart, one ring, a swirl, three bands, five sparks, a
+lattice), so the network stays recognisable with no motion. A character
+outside the six draws a dark core with no pattern. The shell's runtime
+contracts render with the software backend, so their captures show the
+still form.
+
+`tests/network_sphere_contract.py` checks the manifest and its refusals,
+the components' sources (no colour literal, constructor or name, no timer or
+animation, the reviewed uniform block, `time` read once behind the lit
+gate), a software sheet of the six characters lit and dark at 48, 96 and 192
+pixels, and, where Xvfb is installed, the same sheet through OpenGL on Mesa
+llvmpipe with the shader, the fallbacks and the lit gate. `--sheet` and
+`--rhi-sheet` write the sheets. The shader's look on the Nitro's GPU is a
+hardware check.
+
 ### Bar core
 
 In the host bar, and only there, the core of the product symbol follows

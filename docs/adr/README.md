@@ -220,6 +220,11 @@ entered the pipeline.
     host and every Machine, sharing network and GPU observations, with angular
     sectors, state orbits and accessible sector counts.
 
+68. [`0068-compiled-shell-shaders.md`](0068-compiled-shell-shaders.md) —
+    proposed: shell shaders compiled in the repository with a digest
+    manifest, never on the host, and a complete still form wherever the
+    shader cannot run.
+
 The pre-VM baseline that led to these decisions remains available as
 [`../historical-audit-m0.md`](../historical-audit-m0.md); it is archival evidence,
 not current implementation documentation.
@@ -731,3 +736,16 @@ remain.
     [`sfere_view_contract.py`](../../tests/sfere_view_contract.py)
   - Prerequisites: acceptance of the proposed composition choices; installed
     Nitro checks on both compositors, then Predator replay.
+
+- [ADR 0068](0068-compiled-shell-shaders.md)
+  - Decision: proposed.
+  - Built: built — the glass network sphere with its shader source, the
+    committed `.qsb`, the digest manifest, `tools/build-shaders.sh` and the
+    still form.
+  - Activation: on request — no view uses the sphere yet; the role installs
+    the compiled shader with the shell.
+  - Source: [`NetworkSphere.qml`](../../roles/host_desktop_common/files/quickshell/hyperlab/NetworkSphere.qml),
+    [`build-shaders.sh`](../../tools/build-shaders.sh),
+    [`network_sphere_contract.py`](../../tests/network_sphere_contract.py)
+  - Prerequisites: acceptance of the proposed build and fallback rules; the
+    shader seen on Nitro hardware.

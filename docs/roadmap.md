@@ -586,6 +586,14 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
       [ADR 0067](adr/0067-sfere-map.md), `tests/sfere_view_contract.py`)
 - [ ] Sfere map accepted on Nitro under both compositors, including external
       domains, network/GPU facts and context navigation; then Predator replay
+- [x] glass network sphere for the Sfere seal: `NetworkSphere.qml` with a
+      shader compiled in the repository (`shaders/sphere.frag.qsb`, manifest
+      checked by `verify.sh` level 0j) and a complete still form for the
+      software backend and shader errors (software-verified;
+      [ADR 0068](adr/0068-compiled-shell-shaders.md),
+      `tests/network_sphere_contract.py`)
+- [ ] network sphere shader seen on Nitro: glass, engraving, lit core in
+      motion and dark core still, at full and half texture scale
 
 ### 8a. Test infrastructure
 

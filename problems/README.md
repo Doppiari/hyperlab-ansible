@@ -534,4 +534,8 @@ proof.
   outer spheres shared inner spheres' angles, so a line to the host seemed to
   join two Machines; every sphere in a sector now has its own angle.
 
+- [`rhi-render-offscreen-was-software.md`](rhi-render-offscreen-was-software.md):
+  an offscreen OpenGL request silently rendered with the software backend; the
+  sphere contract uses a private Xvfb and claims a shader render only on OpenGL.
+
 Author: [importriri](https://github.com/importriri).

@@ -6341,3 +6341,47 @@ and loses both, so it is red. A forced delegate reset on every inventory
 timestamp is red on the identity check; the scenario then stops on that
 recorded failure instead of touching the destroyed spheres. These
 observations are software verification only.
+
+## The glass network sphere and its compiled shader
+
+The check is `python tests/network_sphere_contract.py`; the manifest part
+alone is `python tests/network_sphere_contract.py --manifest`, which
+`verify.sh` level 0j runs. Files below are under
+`roles/host_desktop_common/files/quickshell/hyperlab/` unless named in full.
+Before each break, save the named files to a separate copy. When the break
+says "rebuilt", run `tools/build-shaders.sh` after the edit, so the manifest
+matches and the contract must find the fault elsewhere; then save and
+restore `shaders/sphere.frag.qsb` and `shaders/SHADERS.sha256` too. Copy the
+saved bytes back, compare them and rerun the check.
+
+The contract was first seen red on the missing `tools/build-shaders.sh`,
+before the shader manifest and the components existed.
+
+| Mutation | File and break | Observed red diagnostic | Restored |
+| --- | --- | --- | --- |
+| `stale-qsb` | `shaders/sphere.frag`: `0.86 + 0.14 * fresnel` becomes `0.85`, not rebuilt. | `--manifest`: the committed shaders do not match their manifest: sphere.frag does not match the manifest | Exit 0, OK. |
+| `dark-core-moves` | `shaders/sphere.frag`: `float t = lit > 0.0 ? time : 0.0;` becomes `float t = time;`, rebuilt. | time is read once, behind the lit gate: a dark sphere is still | Exit 0, OK. |
+| `dark-gate-opened-in-qml` | `NetworkSphere.qml`: the effect's `lit` becomes `Math.max(0.01, sphere.litLevel)`. | RHI render: a dark sphere moved with time: shader: character 0, lit 0, 48 px | Exit 0, OK. |
+| `uniform-renamed` | `shaders/sphere.frag`: the uniform `turn` becomes `rotation` (and its use), rebuilt. | the uniform block is not the reviewed one | Exit 0, OK. |
+| `no-software-fallback` | `NetworkSphere.qml`: delete the `GraphicsInfo.Software` line of `stillReason`. | the software backend must choose the still form | Exit 0, OK. |
+| `no-shader-error-fallback` | `NetworkSphere.qml`: delete both `status === ShaderEffect.Error` assignments. | RHI render: a missing .qsb must choose the still form | Exit 0, OK. |
+| `hex-literal` | `SphereStill.qml`: the bright rim `still.colour` becomes `"#5b8cff"`. | colour literal in SphereStill.qml | Exit 0, OK. |
+| `colour-name` | `SphereStill.qml`: the bright rim `still.colour` becomes `"white"`. | literal outside the reviewed vocabulary in SphereStill.qml (colour name?): ['white'] | Exit 0, OK. |
+| `colour-constructor` | `SphereStill.qml`: `clear` becomes `Qt.rgba(0, 0, 0, 0)`. | colour constructor bypasses the palette in SphereStill.qml | Exit 0, OK. |
+| `own-timer` | `NetworkSphere.qml`: add a `Timer` advancing `sphere.time`. | NetworkSphere.qml runs its own clock; time comes only from its parent | Exit 0, OK. |
+| `shared-pattern` | `SphereStill.qml`: the bands also show for character 5 and the lattice never. | one colour: two characters share one drawing at 48 px, lit 1 | Exit 0, OK. |
+| `still-ignores-lit` | `NetworkSphere.qml`: the still form's `lit` becomes `1`. | software: lit and dark spheres look the same | Exit 0, OK. |
+| `still-blank` | `SphereStill.qml`: add `opacity: 0` on the root. | blank sphere: software: character 0, lit 1, 48 px | Exit 0, OK. |
+| `silent-skip` | `tools/build-shaders.sh`: the version-mismatch `printf` becomes `:`. | `--manifest`: a different qsb must skip the rebuild and say why | Exit 0, OK. |
+| `rebuild-not-compared` | `tools/build-shaders.sh`: the `cmp -s` test becomes `false`. | `--manifest`: the shader check accepted a .qsb that the recorded qsb does not rebuild from its source | Exit 0, OK. |
+| `symlink-accepted` | `tools/build-shaders.sh`: `digest` drops `! -L`. | `--manifest`: the shader check accepted a .qsb redirected through a symlink | Exit 0, OK. |
+
+All sixteen breaks exited 1 with the diagnostic listed; every restored copy
+was byte-identical and exited 0. `dark-gate-opened-in-qml` and
+`no-shader-error-fallback` are caught only by the RHI part, which runs where
+Xvfb is installed; without it the contract prints `RHI render skipped` and
+the source and manifest checks still hold the shader side. Forcing the
+software backend inside the RHI fixture prints `RHI render skipped: Qt chose
+graphics API 1, not OpenGL` and exits 0: a still form is never reported as a
+shader render. The `stale-qsb` break edits a number on purpose: a comment
+compiles to the same bytes, so only the digest sees a comment edit.
