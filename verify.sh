@@ -49,6 +49,22 @@ run() {
     rm -f "${log}"
 }
 
+# Like run, but also shows what the check reports when it passes: a part it
+# skipped (the shader rebuild without qsb) must never pass silently.
+run_reported() {
+    local log
+    log="$(mktemp)"
+    if "$@" >"${log}" 2>&1; then
+        sed 's/^/   | /' "${log}"
+        echo "   OK"
+    else
+        echo "   FAIL - last lines:"
+        tail -n 25 "${log}" | sed 's/^/   | /'
+        fail=1
+    fi
+    rm -f "${log}"
+}
+
 run_render() {
     local -a become_args=()
     local -a render_select=()
@@ -206,6 +222,11 @@ run ruff check .
 
 step "level 0i - ansible-lint (production profile)"
 run ansible-lint
+
+# The shell's compiled shaders: the manifest always, and where the recorded
+# qsb is installed a rebuild that must give the committed bytes.
+step "level 0j - compiled shaders (manifest; byte-identical rebuild where qsb exists)"
+run_reported python tests/network_sphere_contract.py --manifest
 
 step "level 1 - syntax-check (every playbook, discovered)"
 ok=1

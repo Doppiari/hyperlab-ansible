@@ -122,6 +122,8 @@ def main() -> int:
             "DashedFrame.qml",
             "IsolationGlyph.qml",
             "MachineSphere.qml",
+            "NetworkSphere.qml",
+            "SphereStill.qml",
             "ProvenanceMarker.qml",
             "ProvenanceTag.qml",
             "StateChip.qml",

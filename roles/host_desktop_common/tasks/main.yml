@@ -222,6 +222,9 @@
     group: root
     mode: "0644"
 
+# The source includes shaders/, compiled in the repository
+# (tools/build-shaders.sh): the host installs the .qsb and compiles nothing.
+# directory_mode keeps that subdirectory traversable whatever the umask.
 - name: Install the non-active shared HyperLab Quickshell source
   tags: [hyperlab_provenance]
   ansible.builtin.copy:
@@ -230,6 +233,7 @@
     owner: root
     group: root
     mode: "0644"
+    directory_mode: "0755"
 
 - name: Install the shared HyperLab runtime features
   ansible.builtin.copy:
@@ -248,6 +252,7 @@
   loop:
     - shell.qml
     - HyperLabBar.qml
+    - shaders/sphere.frag.qsb
   when: not ansible_check_mode
 
 - name: Verify installed shared HyperLab Quickshell files
