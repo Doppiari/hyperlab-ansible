@@ -534,6 +534,13 @@ proof.
   outer spheres shared inner spheres' angles, so a line to the host seemed to
   join two Machines; every sphere in a sector now has its own angle.
 
+- [`sfere-seal-host-name-has-no-source.md`](sfere-seal-host-name-has-no-source.md):
+  the seal's blades should read the host's name, but no read the shell makes
+  carries it; they carry only words true of every host until one does.
+- [`sfere-seal-clock-under-session-lock.md`](sfere-seal-clock-under-session-lock.md):
+  the seal's clock stops on a hidden tab or window but not behind the locker,
+  because the shell keeps no locked state and hears no unlock.
+
 - [`rhi-render-offscreen-was-software.md`](rhi-render-offscreen-was-software.md):
   an offscreen OpenGL request silently rendered with the software backend; the
   sphere contract uses a private Xvfb and claims a shader render only on OpenGL.

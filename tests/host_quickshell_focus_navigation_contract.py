@@ -119,17 +119,17 @@ SCENARIO = r'''
             sharedSurfaces.clearMachineSelection();
             check(raises() === baseline, "clearing selection refocused");
 
-            // A sphere is internal navigation into the same window.
+            // A card under the seal is internal navigation into the same window.
             sharedSurfaces.switchWorkspace("sfere");
             const map = find(workspaceSurface, "sfere-view");
-            const mapSlot = findWhere(map, item => item.entry && item.entry.kind === "machine"
+            const mapSlot = findWhere(find(map, "sfere-panel-cards"), item => item.visible && item.machine
                 && typeof item.activated === "function");
-            check(mapSlot !== null, "selectable map sphere missing");
+            check(mapSlot !== null, "selectable seal card missing");
             if (mapSlot) mapSlot.activated();
             check(sharedSurfaces.workspaceView === "machines"
-                  && sharedSurfaces.selectedMachineId === (mapSlot ? mapSlot.entry.id : ""),
-                  "map sphere did not open its existing pane");
-            check(raises() === baseline, "map selection refocused");
+                  && sharedSurfaces.selectedMachineId === (mapSlot ? String(mapSlot.machine.name) : ""),
+                  "seal card did not open its existing pane");
+            check(raises() === baseline, "seal selection refocused");
             sharedSurfaces.clearMachineSelection();
 
             // Native workspace tabs, including repeated clicks on active tabs.

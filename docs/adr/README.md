@@ -218,12 +218,18 @@ entered the pipeline.
 
 67. [`0067-sfere-map.md`](0067-sfere-map.md) — proposed: a static map of the
     host and every Machine, sharing network and GPU observations, with angular
-    sectors, state orbits and accessible sector counts.
+    sectors, state orbits and accessible sector counts; ADR 0069 replaces its
+    picture and keeps its routes and sources.
 
 68. [`0068-compiled-shell-shaders.md`](0068-compiled-shell-shaders.md) —
     proposed: shell shaders compiled in the repository with a digest
     manifest, never on the host, and a complete still form wherever the
     shader cannot run.
+
+69. [`0069-sfere-seal.md`](0069-sfere-seal.md) — proposed: Sfere as the
+    seal, one port and spoke per listed network, sealed and broken exactly
+    when isolated, a heartbeat of source freshness and an atmosphere that
+    never carries state.
 
 The pre-VM baseline that led to these decisions remains available as
 [`../historical-audit-m0.md`](../historical-audit-m0.md); it is archival evidence,
@@ -742,10 +748,24 @@ remain.
   - Built: built — the glass network sphere with its shader source, the
     committed `.qsb`, the digest manifest, `tools/build-shaders.sh` and the
     still form.
-  - Activation: on request — no view uses the sphere yet; the role installs
-    the compiled shader with the shell.
+  - Activation: default — the Sfere seal (ADR 0069) draws every network and
+    the host's core with it; the role installs the compiled shader with the
+    shell.
   - Source: [`NetworkSphere.qml`](../../roles/host_desktop_common/files/quickshell/hyperlab/NetworkSphere.qml),
     [`build-shaders.sh`](../../tools/build-shaders.sh),
     [`network_sphere_contract.py`](../../tests/network_sphere_contract.py)
   - Prerequisites: acceptance of the proposed build and fallback rules; the
     shader seen on Nitro hardware.
+
+- [ADR 0069](0069-sfere-seal.md)
+  - Decision: proposed.
+  - Built: built — the seal view and its helpers, gateway and DHCP in net
+    list, source freshness in the shell and the Ambient motion setting.
+  - Activation: default — the common desktop role installs the view;
+    networks keep the existing Networks opt-in, ambient motion is on unless
+    its setting is off.
+  - Source: [`SfereView.qml`](../../roles/host_desktop_common/files/quickshell/hyperlab/SfereView.qml),
+    [`net.py`](../../tools/hyperlabctl/hyperlabctl/commands/net.py),
+    [`sfere_view_contract.py`](../../tests/sfere_view_contract.py)
+  - Prerequisites: acceptance of the proposed seal; the seal on Nitro with
+    the GPU at home and lent, then Predator replay.

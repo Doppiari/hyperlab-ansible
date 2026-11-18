@@ -7,6 +7,9 @@ ShellCard {
 
     required property var icons
     required property var machine
+    // The Sfere seal's panel shows the card without its sphere: the network
+    // sphere above it already says where the Machine is.
+    property bool sphereVisible: true
 
     signal navigationRequested(int key)
 
@@ -50,6 +53,7 @@ ShellCard {
 
         MachineSphere {
             id: sphere
+            visible: tile.sphereVisible
             tokens: tile.tokens
             theme: tile.theme
             machineName: String(tile.machine.name)

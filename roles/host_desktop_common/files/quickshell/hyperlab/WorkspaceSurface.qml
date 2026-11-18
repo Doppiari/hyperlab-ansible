@@ -393,6 +393,7 @@ FloatingWindow {
                     tokens: workspace.tokens
                     theme: workspace.theme
                     shellState: workspace.shellState
+                    icons: workspace.icons
 
                     onMachineRequested: identifier => {
                         machineStage.creating = false;

@@ -217,65 +217,74 @@ exercise five occupied workspaces with long, unconfirmed Machine names.
   silent when ownership is known and nothing holds it, because a free GPU at
   idle is not news.
 
-## Sfere map
+## Sfere seal
 
 **Sfere** is the first workspace tab. Clicking the product glyph in the rail,
-pressing Enter on it or using its accessible press action opens this map;
+pressing Enter on it or using its accessible press action opens this view;
 so does `qs -c hyperlab ipc call workspace sfere`, for a compositor binding.
-The command palette keeps its existing keyboard and IPC routes. The host is
-geometry B at the centre in the HOST grey: focus never tints this core.
+The command palette keeps its existing keyboard and IPC routes.
 
-Every registry Machine and every other observed libvirt domain appears as a
-MachineSphere. Domains form angular sectors in palette order, external last.
-Running Machines use the inner ellipse; other observed states use the outer.
-Distance carries no network or trust rank. The same two radii serve every
-sector. Every sphere has its own angle, running ones spread evenly among
-their sector's angles, so no sphere stands on another's line to the host. The map has no drift; only an observed transition can move the shared
-sphere's state arc, and reduced motion holds that arc still. A small window
-scrolls the scene instead of shrinking or overlapping its controls.
+The view is the seal ([ADR 0069](adr/0069-sfere-seal.md)). An engraved seal
+lies on the floor in perspective: rings, ticks, a faint chord between every
+pair of network places, a pool of light under each network (stronger under
+a lit one) and each network's name, subnet and mode along the outer ring.
+The host stands above its centre: geometry B drawn by `IsolationGlyph`
+itself, its core a silver glass `NetworkSphere` (character 0), and on its
+ring one port per network of `hyperlabctl --json net list`, no more and no
+fewer. Each blade is engraved with words true of every host; the shell has
+no source for the host's name yet
+([`../problems/sfere-seal-host-name-has-no-source.md`](../problems/sfere-seal-host-name-has-no-source.md)).
 
-Links use the same network-inventory read as Networks and hyperlabctl net
-list. Only a Machine or external domain attached to a declared NAT network
-reported active gets a line to the host as router. The attachment decides,
-never the domain: a dev Machine attached only to lab has no line. Lab's isolated network draws none.
-An inactive, missing or unknown forwarding mode draws none. A line is not
-proof of firewall rules, access to host services or reachability; no link
-between Machines is inferred. The existing Networks opt-in remains in force:
-with it disabled the map explains why links are absent. A stale or failed
-answer also withholds links. External observations carry the attachments
-the raw inventory reports, or none when it could not read them. A line stops
-outside its own Machine's name, the host word and the host GPU token.
+Every listed network is a `NetworkSphere` floating over its place, in its
+`dom_<name>` colour and character: clean calm, dev swirling, services
+banded, dirty flickering, lab lattice; an unknown network neutral and calm.
+Its core is lit when a managed Machine attached to it runs and the Machine
+inventory is current, dark otherwise. A spoke joins it to the host from its
+own port. An isolated network (`forward` isolated) has a sealed port and a
+broken spoke, and only an isolated one does. A spoke is not a proof of
+reachability. Under each sphere: "N machines · M running" ("lit: M
+running" when lit), "empty" or "isolated · sealed".
 
-The GPU token follows current gpuOwnership, on its owner or on the host when
-a known answer names no owner. Unknown and stale answers draw no token and
-say ownership unknown. The separate boot claim marks sectors above its level
-as requiring a reboot, retaining a last-seen restriction after a failed read.
-Services stays outside that ladder. Inventory GPU configuration never decides
-where the token is drawn.
+Each managed Machine is a still electron on a tilted ring around its
+network's sphere: bright when running, hollow when not, on a dashed ring
+when disposable. Past eight Machines the last ring reads "+N". Machines on
+no listed network and unmanaged domains are listed outside the seal, bottom
+left, with a dashed mark.
 
-Hover or focus shows the Machine name, domain and observed state in a fixed
-readout that stays visible while the scene scrolls. A new hover or focus
-selects its own readout; leaving falls back to keyboard focus, then hover.
-Arrows move
-in sector order; Enter or click opens the existing Machine context pane.
-External spheres open the read-only inventory, without an operational pane.
-Beyond 24 Machines the largest sectors collapse into spheres with a count,
-one per orbit, so a count of running Machines sits on the inner orbit and
-the rest on the outer; the GPU owner remains individual. Mixed states use a neutral outline and the
-words mixed states, rather than claiming a shared running state. Count
-activation opens Machines. A count has a link only when all its members share
-the same declared active NAT network. An invisible accessible list still
-names every underlying Machine with its state and marks. A readable empty
-system shows the host and one Create a Machine action into the existing
-Create flow; unavailable inventory never reads as empty.
+A click or Enter selects a network; the panel under the stage shows its
+name, subnet, gateway, DHCP range, mode, GPU level and the outbound rule of
+`docs/network-flows.md` in words, and its Machines as the Machines view's
+cards without spheres. A card opens the existing Machine pane. A second
+activation, `+` or "Enter <network>" enters the network; Esc or "← The
+whole seal" returns. Tab enters the stage at one network, arrows follow the
+seal's order and, inside an entered network, its Machines. A hidden list
+gives a screen reader the host's freshness line, every network, every
+Machine and everything outside the seal. A readable empty system offers one
+Create a Machine action; an unreadable inventory never reads as empty, and a
+network inventory that is off, failing or stale draws no network and says
+why.
 
-[ADR 0067](adr/0067-sfere-map.md) records these proposed composition choices.
-Run `python tests/sfere_view_contract.py --renders DIR` to keep the four
-1920x1080 fixture captures: host alone, five domains, twelve including an
-external domain, and thirty Machines. The contract executes actual QML with
-inert transports, checks the CLI-derived network and GPU ladder fixtures,
-small-window clearance, reduced motion, accessible content, source failures
-and pointer/keyboard routing. Software-verified; installed Quickshell and
+The host's core beats once for every successful refresh of the network
+inventory, the Machine inventory or GPU ownership. When any of them is older
+than twice the 30-second poll, failed or off, the core stops and dims and
+the host's words say it: "data from 14:02 · Machine inventory not
+answering"; otherwise "data current". With reduced motion it never beats.
+
+The atmosphere (the seal's turning rings and ticks, dust, the host's light
+rays) never carries state: it takes only the seal's geometry and a clock,
+turns once in minutes and stops with reduced motion, a hidden view or the
+**Ambient motion** setting off. One 33 ms timer drives the lit cores, the
+heartbeat, the atmosphere and the camera, and runs only while the view is
+shown and something needs it; a locked session does not stop it yet
+([`../problems/sfere-seal-clock-under-session-lock.md`](../problems/sfere-seal-clock-under-session-lock.md)).
+Sphere effects drop to `textureScale` 0.5 while the GPU is lent to a
+Machine, or once 30 frames in a row miss 50 ms.
+
+Run `python tests/sfere_view_contract.py --renders DIR` to keep the five
+1920x1080 fixture captures: no Machines, five networks, thirty Machines,
+lab entered, and a stale Machine inventory. The contract executes the real
+QML with inert transports over the real net list formatter and the role's
+libvirt network template. Software-verified; installed Quickshell and
 Nitro/Predator acceptance remain open.
 
 ## Machines
@@ -629,7 +638,7 @@ physical acceptance.
 `ShellState` owns the one read-only request through
 `privatestack-hyperlab network-inventory`, whose fixed command is exactly
 `hyperlabctl --json net list`. It reads on opening and on the existing
-30-second slow cadence only while that enabled page or the Sfere map is
+30-second slow cadence only while that enabled page or the Sfere seal is
 visible. Both consumers share the same reader and opt-in. Only one
 bridge process may be in flight. Opening or reopening shows **Reading declared
 networks** until the first reply or completion deadline, regardless of shell
@@ -1147,8 +1156,8 @@ core in the host bar does (below).
 ### Network spheres
 
 A network is a glass sphere with an energy core: the sphere of the Sfere
-seal. `NetworkSphere.qml` draws one; no view uses it yet (the seal is the
-next step). Its inputs:
+seal. `NetworkSphere.qml` draws one; the seal uses it for every network and
+for the host's core. Its inputs:
 
 | Property | Meaning |
 | --- | --- |

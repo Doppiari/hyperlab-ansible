@@ -594,6 +594,18 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
       `tests/network_sphere_contract.py`)
 - [ ] network sphere shader seen on Nitro: glass, engraving, lit core in
       motion and dark core still, at full and half texture scale
+- [x] the Sfere seal replaces the map's picture: the host keystone with one
+      port per listed network, network spheres lit where a managed Machine
+      runs, spokes broken and ports sealed exactly for isolated networks,
+      still Machines on their rings, the network panel with gateway and DHCP
+      from libvirt, a heartbeat of source freshness and an Ambient motion
+      setting (software-verified; [ADR 0069](adr/0069-sfere-seal.md),
+      `tests/sfere_view_contract.py`)
+- [ ] Sfere seal accepted on Nitro with the GPU at home and lent: one port
+      per real network and lab sealed, lit cores where Machines run, panel
+      values equal to `net list` and `virsh net-dumpxml`, the heartbeat
+      stopping with the status bridge, Ambient motion off and a low, steady
+      integrated GPU load; then Predator replay
 
 ### 8a. Test infrastructure
 

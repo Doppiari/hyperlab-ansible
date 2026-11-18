@@ -208,6 +208,12 @@ host_desktop_common_shell_stage:
     - WorkspaceFrame.qml
     - MachineStage.qml
     - SfereView.qml
+    - SealFloor.qml
+    - SealAmbient.qml
+    - HostKeystone.qml
+    - SealSpoke.qml
+    - SealNetwork.qml
+    - SealPanel.qml
     - MachineTile.qml
     - MachineListRow.qml
     - MachineContextPane.qml
