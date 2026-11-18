@@ -115,6 +115,9 @@ def invoke(root: Path, argv: tuple[str, ...], *, terminal: bool = False,
         config=SimpleNamespace(repo_root=root, var=lambda name, default: variables.get(name, default)),
         environ={"TERM": "xterm-256color", "COLORTERM": "truecolor"}
         if environ is None else environ,
+        # net list reads each live definition; here libvirt never answers,
+        # so gateway and DHCP are reported unknown.
+        virsh=lambda *args: SimpleNamespace(ok=False, stdout="", stderr="libvirt unavailable"),
     )
     output, errors = Output(terminal), io.StringIO()
     with (patch("hyperlabctl.document.build", return_value=copy.deepcopy(built)),
