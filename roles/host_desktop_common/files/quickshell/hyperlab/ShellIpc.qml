@@ -7,6 +7,7 @@
 // a process.
 //
 //   qs -c hyperlab ipc call launcher toggle
+//   qs -c hyperlab ipc call workspace sfere
 //   qs -c hyperlab ipc call workspace machines
 //   qs -c hyperlab ipc call workspace close
 //   qs -c hyperlab ipc call osd show audio
@@ -97,6 +98,11 @@ Scope {
 
     IpcHandler {
         target: "workspace"
+
+        function sfere(): string {
+            ipc.shellSurfaces.openWorkspace("sfere");
+            return "sfere";
+        }
 
         function machines(): string {
             ipc.shellSurfaces.openWorkspace("machines");

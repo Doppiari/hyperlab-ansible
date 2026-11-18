@@ -29,10 +29,10 @@ def check_routes() -> None:
     }
     expected = {
         # ShellIpc: one external IPC route per destination (workspace
-        # machines, controls, diagnostics, workbench, devices). HyperLabBar:
+        # sfere, machines, controls, diagnostics, workbench, devices). HyperLabBar:
         # Sfere, Diagnostics and Control Center from the mark (ADR 0067),
         # and Machines from the emergency stop chip (ADR 0047).
-        "openWorkspace": {"HyperLabBar.qml": 4, "ShellIpc.qml": 5,
+        "openWorkspace": {"HyperLabBar.qml": 4, "ShellIpc.qml": 6,
                           "ShellSurfaces.qml": 1},
         "openWorkspacePage": {"HyperLabBar.qml": 2, "LauncherSurface.qml": 1,
                               "SystemPanel.qml": 1, "ShellSurfaces.qml": 3},
