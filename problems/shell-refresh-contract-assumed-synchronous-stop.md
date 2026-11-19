@@ -49,3 +49,6 @@ These are software checks. Installed Nitro and Predator refresh acceptance
 remains open. The real multithreaded shell's incomplete-stop rate is
 unmeasured; repeated host applies must establish whether it converges with
 the immediate sample before considering any bounded wait while paused.
+The host apply at `971ab67` then failed on that refusal; see
+[shell-refresh-refused-on-first-incomplete-stop.md](shell-refresh-refused-on-first-incomplete-stop.md)
+for the resumed retry the installed refresh now performs.

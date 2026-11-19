@@ -989,50 +989,107 @@ def replacement_contract(module: Any, directory: Path) -> None:
             send.assert_not_called()
     # No sleep or monotonic deadline is permitted while the pinned shell is stopped.
     # A busy child first seen after SIGSTOP causes an immediate, single-sample refusal.
-    for outcome in ("idle", "late-busy", "not-all-stopped"):
-        signals = []
-        stopped = [False]
+    # An incomplete stop resumes the shell first; only then may the retry delay run.
+    for outcome in ("idle", "late-busy", "late-stop", "never-stops", "identity-changed", "body-incomplete"):
+        stop_refresh_case(module, outcome)
 
-        def send_signal(descriptor: int, sent: int, signals: list[tuple[int, int]] = signals,
-                        stopped: list[bool] = stopped) -> None:
-            signals.append((descriptor, sent))
-            stopped[0] = sent == signal.SIGSTOP
 
-        def no_paused_wait(*args: Any, stopped: list[bool] = stopped) -> float:
-            require(not stopped[0], "sleep or monotonic wait while the shell is paused")
-            return 0.0
+def stop_refresh_case(module: Any, outcome: str) -> None:
+    env = {"XDG_RUNTIME_DIR": "/private"}
+    incomplete = "Shell did not stop every thread; reapply"
+    signals: list[tuple[int, int]] = []
+    stopped = [False]
+    clock = [0.0]
+    waits: list[float] = []
+    samples: list[bool] = []
+    pauses = [0]
+    tick_reads = [0]
 
-        samples = []
+    def reload(argv: list[str], **kwargs: Any) -> None:
+        require(argv == ["/usr/bin/systemctl", "--user", "daemon-reload"], "unsafe refresh command")
 
-        def members(state: Any, samples: list[bool] = samples, stopped: list[bool] = stopped,
-                    outcome: str = outcome) -> list[int]:
-            samples.append(stopped[0])
-            return [99] if stopped[0] and outcome == "late-busy" else []
+    def send_signal(descriptor: int, sent: int) -> None:
+        signals.append((descriptor, sent))
+        stopped[0] = sent == signal.SIGSTOP
 
-        states = [["S", "S"], ["T", "S"] if outcome == "not-all-stopped" else ["T", "T"]]
-        with patch.object(module.os, "pidfd_open", return_value=123) as pin, \
-                patch.object(module.os, "close") as close, \
-                patch.object(module, "process_ticks", return_value=50), \
-                patch.object(module, "thread_states", side_effect=states) as threads, \
-                patch.object(module, "shell_properties", side_effect=[properties(), properties(MainPID="42")]), \
-                patch.object(module, "busy_members", side_effect=members), \
-                patch.object(module.subprocess, "run", side_effect=reload), \
-                patch.object(module.time, "monotonic", side_effect=no_paused_wait), \
-                patch.object(module.time, "sleep", side_effect=no_paused_wait) as sleep, \
-                patch.object(module.signal, "pidfd_send_signal", side_effect=send_signal):
-            if outcome == "idle":
-                require(module.replace_shell(env, properties()) == 42, "idle shell did not refresh")
-            else:
-                refused(lambda: module.replace_shell(env, properties()), "late child or running thread was killed")
-            require(threads.call_count == 2, "stopped threads must be checked once without polling")
-            require(samples == ([False] if outcome == "not-all-stopped" else [False, True]),
-                    "refresh needs one live and one paused cgroup inspection")
-            sleep.assert_not_called()
-            pin.assert_called_once_with(41)
-            close.assert_called_once_with(123)
-            require(signals == [(123, signal.SIGSTOP),
-                                (123, signal.SIGKILL if outcome == "idle" else signal.SIGCONT)],
-                    "paused shell resumed before termination or not resumed on refusal")
+    def paused_clock() -> float:
+        require(not stopped[0], "sleep or monotonic wait while the shell is paused")
+        return clock[0]
+
+    def paused_sleep(seconds: float) -> None:
+        require(not stopped[0], "sleep or monotonic wait while the shell is paused")
+        waits.append(seconds)
+        clock[0] += seconds
+
+    def members(state: Any) -> list[int]:
+        samples.append(stopped[0])
+        if stopped[0] and outcome == "body-incomplete":
+            raise module.IncompleteStop(incomplete)
+        return [99] if stopped[0] and outcome == "late-busy" else []
+
+    def thread_sample(pid: int) -> list[str]:
+        require(pid == 41, "thread sample changed the pinned shell")
+        if not stopped[0]:
+            return ["S", "S"]
+        pauses[0] += 1
+        require(pauses[0] <= 1000, "incomplete stop was retried without a deadline")
+        partial = outcome == "never-stops" or (outcome in ("late-stop", "identity-changed") and pauses[0] == 1)
+        return ["T", "S"] if partial else ["T", "T"]
+
+    def ticks(pid: int) -> int:
+        tick_reads[0] += 1
+        return 51 if outcome == "identity-changed" and tick_reads[0] > 2 else 50
+
+    error: BaseException | None = None
+    result = None
+    with patch.object(module.os, "pidfd_open", return_value=123) as pin, \
+            patch.object(module.os, "close") as close, \
+            patch.object(module, "process_ticks", side_effect=ticks), \
+            patch.object(module, "thread_states", side_effect=thread_sample) as threads, \
+            patch.object(module, "shell_properties", side_effect=[properties(), properties(MainPID="42")]), \
+            patch.object(module, "busy_members", side_effect=members), \
+            patch.object(module.subprocess, "run", side_effect=reload), \
+            patch.object(module.time, "monotonic", side_effect=paused_clock), \
+            patch.object(module.time, "sleep", side_effect=paused_sleep), \
+            patch.object(module.signal, "pidfd_send_signal", side_effect=send_signal):
+        try:
+            result = module.replace_shell(env, properties())
+        except (RuntimeError, OSError) as exc:
+            error = exc
+    stop, resume, kill = (123, signal.SIGSTOP), (123, signal.SIGCONT), (123, signal.SIGKILL)
+    attempts = pin.call_count
+    require(pin.call_args_list == [((41,),)] * attempts and close.call_count == attempts,
+            "every pause must pin the same shell and close its descriptor")
+    # A changed identity is refused before that pause samples any thread.
+    require(threads.call_count == 2 * attempts - (2 if outcome == "identity-changed" else 0),
+            "stopped threads must be checked once per pause without polling")
+    if outcome in ("idle", "late-stop"):
+        require(error is None and result == 42, "shell did not refresh after a complete stop")
+    else:
+        require(error is not None and result is None, "late child, running thread or changed shell was killed")
+    expected = {
+        "idle": ([stop, kill], [False, True], []),
+        "late-busy": ([stop, resume], [False, True], []),
+        "late-stop": ([stop, resume, stop, kill], [False, False, True], [0.05]),
+        "identity-changed": ([stop, resume], [False, False], [0.05]),
+        "body-incomplete": ([stop, resume], [False, True], []),
+    }
+    if outcome == "never-stops":
+        require(str(error) == incomplete, "persistent incomplete stop did not report itself")
+        require(attempts >= 2 and signals == [stop, resume] * attempts,
+                "incomplete stop was not resumed before every retry")
+        require(samples == [False] * attempts, "running threads reached the paused cgroup inspection")
+        require(waits == [0.05] * (attempts - 1) and abs(sum(waits) - 10) < 0.1,
+                "incomplete stop retry was not bounded by its ten-second deadline")
+        return
+    signals_expected, samples_expected, waits_expected = expected[outcome]
+    require(signals == signals_expected,
+            "paused shell resumed before termination or not resumed on refusal")
+    require(samples == samples_expected,
+            "every pause needs a live idle inspection and one paused cgroup inspection")
+    require(waits == waits_expected, "only an incomplete stop may be retried, once resumed")
+    if outcome == "body-incomplete":
+        require(str(error) == incomplete, "paused inspection failure was changed")
 
 
 @contextmanager

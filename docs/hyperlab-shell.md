@@ -50,10 +50,11 @@ up to ten seconds for busy cgroup children while the shell keeps running
 and showing current host trust and provenance. It then pins the main
 process with a PID descriptor, sends `SIGSTOP`, checks all its threads
 stopped once, and inspects its cgroup and descendants once. An incomplete
-stop causes immediate refusal and resume. There is no sleep or deadline
-polling during the pause. The real multithreaded shell's incomplete-stop
-rate is unmeasured. The shell cannot launch an application or action after
-this inspection. Only the
+stop resumes the shell at once; after 50 ms of running, the live check and
+the pause repeat for up to ten seconds before the apply is refused. There
+is no sleep or deadline polling during the pause. The real multithreaded
+shell's incomplete-stop rate is unmeasured. The shell cannot launch an
+application or action after this inspection. Only the
 exact read-only status observers in `ShellState.qml` and their own children
 may remain. The provenance observer is recognized in both its bridge form
 and its exact post-exec resolver form, validated against the checkout
@@ -109,8 +110,10 @@ seconds; all other failures propagate. The busy-child fixture requires the
 paused inspection and its specific refusal, so an earlier stop refusal
 cannot stand in for child-survival evidence. Per-process signal sequences
 require resume after each incomplete stop, pinned kill without resume on
-launcher success, and resume on busy-child refusal. Installed refresh still
-refuses an incomplete stop immediately and requires a later apply.
+launcher success, and resume on busy-child refusal. Installed refresh
+retries an incomplete stop only after resuming the shell, within ten
+seconds; its replacement stage checks the resumed retry, its bound, and
+that changed identities and paused-inspection failures are not retried.
 Its isolated Ansible fixture covers a later failure and retry, a failed
 refresh and retry, adapter-only and unit-only changes followed immediately
 by `changed=0`, already stale residents, unrelated helpers and check mode. This is

@@ -47,6 +47,10 @@ RESIDENT_OBSERVERS = frozenset({
 INTERPRETERS = frozenset({(), ("bash",), ("python3",), ("/usr/bin/env", "bash"),
                           ("/usr/bin/env", "python3")})
 IDLE_WAIT_SECONDS = 10
+# SIGSTOP is delivered asynchronously: a thread still running on another CPU
+# can be seen before it stops. The shell is resumed before every retry delay.
+STOP_RETRY_SECONDS = 10
+STOP_RETRY_DELAY = 0.05
 CHECKOUT_POINTER = Path("/etc/hyperlabctl/checkout")
 
 
@@ -378,6 +382,10 @@ def thread_states(pid: int) -> list[str]:
     return states
 
 
+class IncompleteStop(RuntimeError):
+    """The single post-SIGSTOP sample still saw a thread that had not stopped."""
+
+
 class PausedShell:
     def __init__(self, descriptor: int) -> None:
         self.descriptor = descriptor
@@ -401,7 +409,7 @@ def paused_shell(pid: int, started: int) -> Iterator[PausedShell]:
         stopped = True
         signal.pidfd_send_signal(descriptor, signal.SIGSTOP)
         if any(state != "T" for state in thread_states(pid)):
-            raise RuntimeError("Shell did not stop every thread; reapply")
+            raise IncompleteStop("Shell did not stop every thread; reapply")
         yield paused
     finally:
         try:
@@ -435,15 +443,33 @@ def replace_shell(env: dict[str, str], properties: dict[str, str]) -> int:
         raise RuntimeError("Shell identity or restart policy changed before refresh")
     pid = int(current["MainPID"])
     started = process_ticks(pid)
-    require_idle_cgroup(current)
-    with paused_shell(pid, started) as paused:
-        # Never wait while host trust/provenance presentation is frozen.
-        if busy := busy_members(current):
-            raise RuntimeError(
-                f"Shell refresh refused: shell child PIDs {busy} appeared before "
-                "the pause. Finish or close them, then reapply."
-            )
-        paused.terminate()
+    retry_deadline = None
+    while True:
+        require_idle_cgroup(current)
+        entered = False
+        try:
+            with paused_shell(pid, started) as paused:
+                entered = True
+                # Never wait while host trust/provenance presentation is frozen.
+                if busy := busy_members(current):
+                    raise RuntimeError(
+                        f"Shell refresh refused: shell child PIDs {busy} appeared before "
+                        "the pause. Finish or close them, then reapply."
+                    )
+                paused.terminate()
+        except IncompleteStop:
+            # Only an incomplete pause entry is retried. paused_shell has
+            # already resumed the pinned shell, so it runs during the delay.
+            if entered:
+                raise
+            now = time.monotonic()
+            if retry_deadline is None:
+                retry_deadline = now + STOP_RETRY_SECONDS
+            elif now >= retry_deadline:
+                raise
+            time.sleep(STOP_RETRY_DELAY)
+            continue
+        break
     # Existing on-failure policy performs the restart and observer cleanup.
     # We never start an inactive service or send a compositor/session job.
     deadline = time.monotonic() + 30

@@ -4611,6 +4611,36 @@ contract's `__file__` so its repository paths remain unchanged, then call
 its `delayed` stage. Restore the exact saved copy and rerun: the extra
 busy-shell resume was red, restoration green.
 
+### Resumed retry of an incomplete stop in the installed refresh
+
+The host apply at `971ab67` failed on the installed refresh's single
+incomplete-stop refusal. `replace_shell` now retries only `IncompleteStop`
+from pause entry, after `paused_shell` resumed the shell, with a 50 ms
+delay and a ten-second bound from the first incomplete stop. The
+replacement stage's `stop_refresh_case` drives `idle`, `late-busy`,
+`late-stop`, `never-stops`, `identity-changed` and `body-incomplete`
+through the real `paused_shell` with instrumented signals, a fake clock
+that refuses reads and sleeps while the shell is stopped, and exact
+signal, sample and delay sequences. The former `not-all-stopped` case
+expected a final refusal after one pause; `late-stop` and `never-stops`
+replace it, as ADR 0061 now records.
+
+Replay with the `replacement` stage above. Copy `refresh.py` before each
+mutation, restore its saved bytes and rerun the same stage. Each case was
+red with the stated result and green after restoration; none survived.
+Before the fix, the new stage was red with `shell did not refresh after a
+complete stop`.
+
+| ID | Break | Focused stage | Observed red result |
+| --- | --- | --- | --- |
+| V64 | Re-raise at the top of `except IncompleteStop:` in `replace_shell` | replacement | `shell did not refresh after a complete stop` |
+| V65 | Replace `elif now >= retry_deadline:` with `elif False:` | replacement | `incomplete stop was retried without a deadline` |
+| V66 | Insert `time.sleep(STOP_RETRY_DELAY)` before `paused_shell` raises `IncompleteStop` | replacement | `sleep or monotonic wait while the shell is paused` |
+| V67 | Delete the `if entered: raise` guard | replacement | `paused shell resumed before termination or not resumed on refusal` |
+| V68 | Move `require_idle_cgroup(current)` above the retry loop | replacement | `every pause needs a live idle inspection and one paused cgroup inspection` |
+| V69 | Catch `RuntimeError` instead of `IncompleteStop` in `replace_shell` | replacement | `stopped threads must be checked once per pause without polling` |
+| V70 | Set `STOP_RETRY_SECONDS = 1` | replacement | `incomplete stop retry was not bounded by its ten-second deadline` |
+
 ## Disposable boot access and SSH identity (ADR 0018)
 
 All twenty-three mutations below were observed red (exit 1), restored from

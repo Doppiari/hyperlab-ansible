@@ -513,6 +513,9 @@ proof.
 - [`shell-refresh-contract-assumed-synchronous-stop.md`](shell-refresh-contract-assumed-synchronous-stop.md):
   real refresh fixtures assumed synchronous SIGSTOP delivery and could accept
   an early stop refusal without inspecting the busy child.
+- [`shell-refresh-refused-on-first-incomplete-stop.md`](shell-refresh-refused-on-first-incomplete-stop.md):
+  the installed shell refresh failed the host apply on one incomplete
+  SIGSTOP sample; it now resumes the shell and retries for ten seconds.
 
 - [`sfere-orbit-clearance.md`](sfere-orbit-clearance.md):
   tangential spacing left adjacent tilted orbits too close in a small window;

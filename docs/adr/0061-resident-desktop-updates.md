@@ -71,6 +71,11 @@ whole-unit restart job:
    descendants once while the shell cannot launch anything. Any busy child
    appearing since the live inspection causes immediate refusal and resume.
    There is no sleep, deadline polling or idle wait during the pause.
+   An incomplete stop alone is retried within the same apply: the pause
+   ends with the shell resumed, it runs for 50 ms, the live inspection of
+   step 2 repeats and the same pinned identity is paused again. Retries
+   stop ten seconds after the first incomplete stop with the same refusal.
+   Failures inside the pause and every other refusal are not retried.
 4. Send `SIGKILL` through that same descriptor without resuming the shell.
    The existing service policy restarts it and cleans up its observers.
    Wait for an active, different process identity before saving success.
@@ -117,15 +122,26 @@ Invalid transports, failed commands and deadlines fail the apply.
   is insufficient because shutdown resumes the main process.
 - `KillMode=process`: it would change normal session cleanup and leave
   unowned observer processes. Session lifecycle remains unchanged.
+- Polling thread states while the shell is paused until every thread
+  stops: it converges in milliseconds, but reintroduces a wait while host
+  trust and provenance presentation is frozen. Resumed retries keep each
+  pause to one sample.
 
 ## Consequences and evidence
 
 Open surfaces, selection and unsaved forms are lost; GTK closes. The shell
 keeps running during the bounded idle wait. The pause contains only the
 thread and cgroup inspections and the final signal;
-if stopping is incomplete, resume immediately and retry on a later apply.
-The incomplete-stop rate for the real multithreaded shell is unmeasured,
-and an immediate sample after `SIGSTOP` may legitimately see running threads.
+if stopping is incomplete, resume immediately and retry after a short
+delay while the shell runs, for at most ten seconds in the same apply.
+An immediate sample after `SIGSTOP` may legitimately see running threads.
+The host apply at `971ab67` failed on exactly that refusal when it was
+final, so one incomplete stop failed the whole apply. On a development
+workstation, inert multithreaded processes with up to seven threads kept
+running and every CPU loaded stopped completely at the first sample in
+10 to 100 percent of attempts. With resumed retries under this deadline,
+all 760 trials stopped completely, the slowest after 78 attempts. The
+real shell's rate on the Nitro remains unmeasured.
 This replaces the former paused idle wait and stopped-thread polling.
 The successful replacement is deliberately abrupt, and its journal records
 a signal failure followed by the existing automatic restart. If the refresh
@@ -173,3 +189,11 @@ cgroup inspection and report that specific refusal, then leave both shell
 and child alive with the shell resumed. Accepting any earlier refusal as
 proof of busy-child survival was also an incorrect fixture assumption;
 the contract now checks the inspection and refusal reason explicitly.
+
+The installed refresh later adopted the same scope after the host apply at
+`971ab67` failed on its first incomplete stop. Only `IncompleteStop` raised
+before the paused body runs is retried; the replacement stage requires a
+live idle inspection before every pause, one thread sample and at most one
+cgroup sample per pause, `SIGCONT` before every retry delay, no clock or
+sleep while paused, the ten-second bound, and no retry of a changed
+identity or of a failure inside the paused inspection.
