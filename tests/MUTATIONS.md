@@ -6379,14 +6379,30 @@ measured heights.
 | `no-fallback-cards` | `SfereView.qml`: the panel's Machines become `[]` when no network is shown. | five-networks checks: "with no network shown, a managed Machine is no longer one card away"; focus navigation: grid-focus: "selectable seal card missing" | Exit 0, OK. |
 | `ambient-absent-off` | `ShellState.qml`: an absent `ambient-motion` file sets `ambientMotion` false. | ambient-motion: "ambient-motion file content read wrongly" | Exit 0, OK. |
 | `ambient-unknown-on` | `ShellState.qml`: any content but `0` or `false` reads as on. | ambient-motion: "ambient-motion file content read wrongly" | Exit 0, OK. |
+| `ambient-faster-front` | `SealAmbient.qml`: a mote's `speed` triples while the sine of its angle exceeds 0.9 (over the front network), using only the inputs it has. | five-networks checks: "a mote's motion depends on where it is" | Exit 0, OK. |
+| `whole-spoke-to-isolated` | `SealSpoke.qml`: the line's `strokeColor` ignores `broken`, so a whole spoke is drawn under lab's broken one. | no-machines checks: "the drawn spoke is whole for an isolated network or broken for another" | Exit 0, OK. |
+| `port-without-slash` | `HostKeystone.qml`: the slash's `strokeColor` is always clear. | no-machines checks: "the drawn port is open for an isolated network or sealed for another" | Exit 0, OK. |
+| `panel-empty-ignores-inventory` | `SfereView.qml`: drop the unreadable-inventory branch of `detail.empty`. | five-networks checks: "an unreadable Machine inventory reads as an empty network in the panel" | Exit 0, OK. |
+| `electron-bright-stale` | `SfereView.qml`: a ring's `running` ignores `machinesCurrent`. | stale checks: "an electron is not bright exactly while its Machine runs and the inventory is current" | Exit 0, OK. |
 
-All sixteen breaks exited 1 with the diagnostic listed, and every restored
-copy was byte-identical and exited 0. `ambient-near-lit` is refused by the
-source check before any scene runs: the atmosphere's whole interface is the
-seal's geometry and one clock, so making it faster near a network needs an
-input it may not have. The runtime check that motes move no faster near a
-network, and that lighting every core leaves the atmosphere unchanged,
-stands behind it. These observations are software verification only.
+All twenty-one breaks exited 1 with the diagnostic listed, and every
+restored copy was byte-identical and exited 0. `ambient-near-lit` is refused
+by the source check before any scene runs, because it adds an input. That
+check alone is not enough: the seal's geometry already tells the atmosphere
+where the front network stands, and `ambient-faster-front` speeds the dust
+there without a new input. The runtime check catches it: every mote's `x`
+and `y` must be the projection of its place on the seal's unit plane and its
+rise, and it must turn at one steady rate and rise at another for ten
+simulated minutes, so its motion cannot depend on where it is. The first
+version of that runtime check compared each speed near a network with the
+largest speed of all, which no speed can exceed, and could not fail.
+
+The isolation breaks act on the drawing, not on the properties the view
+passes: the contract reads the `strokeColor` and `fillColor` of the named
+ShapePaths of every spoke and port. `spoke-to-isolated` above flips the
+property; `whole-spoke-to-isolated` and `port-without-slash` leave it right
+and break what is drawn. These observations are software verification
+only.
 
 ## The glass network sphere and its compiled shader
 
