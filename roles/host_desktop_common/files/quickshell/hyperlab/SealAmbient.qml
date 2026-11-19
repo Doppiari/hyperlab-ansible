@@ -52,7 +52,9 @@ Item {
 
     // Where a mote is at a time, and how bright: it drifts round the seal
     // and rises from the floor, fading in and out. Speed comes from the
-    // mote's own seed only.
+    // mote's own seed only. `u` and `v` are its place on the seal's unit
+    // plane and `rise` its height above it; `x` and `y` are their
+    // projection, so the motion can be checked for uniformity.
     function moteAt(index, time) {
         const turn = ambient.seed(index, 1) * Math.PI * 2;
         const reach = 0.08 + 0.95 * Math.sqrt(ambient.seed(index, 2));
@@ -61,9 +63,15 @@ Item {
         const height = (time * 12 * speed + ambient.seed(index, 4) * rise) % rise;
         const angle = turn + time * 0.05 * speed;
 
+        const u = Math.cos(angle) * reach;
+        const v = Math.sin(angle) * reach;
+
         return {
-            "x": ambient.centreX + Math.cos(angle) * ambient.radius * reach,
-            "y": ambient.floorY + Math.sin(angle) * ambient.radius * reach * ambient.tilt - height,
+            "u": u,
+            "v": v,
+            "rise": height,
+            "x": ambient.centreX + u * ambient.radius,
+            "y": ambient.floorY + v * ambient.radius * ambient.tilt - height,
             "alpha": 0.28 * Math.sin(height / rise * Math.PI)
         };
     }

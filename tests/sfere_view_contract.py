@@ -170,6 +170,14 @@ SETUP = r'''
                 return out;
             }
             function named(prefix) { return nodes(view, item => item.objectName.indexOf(prefix) === 0); }
+            // The ShapePaths actually drawn under an item, by objectName.
+            function drawn(root, name) {
+                const out = [];
+                for (const node of nodes(root, () => true))
+                    for (const path of node.data || [])
+                        if (path && path.objectName === name) out.push(path);
+                return out;
+            }
             function shown(item) {
                 for (let node = item; node; node = node.parent) if (!node.visible || node.opacity === 0) return false;
                 return true;
@@ -209,6 +217,18 @@ CHECKS = r'''
                 const row = networks[i], isolated = row.forward === "isolated";
                 check(ports[i].sealed === isolated && spokes[i].broken === isolated,
                       "sealed port or broken spoke differs from forward isolated");
+                // What is drawn, not only what is asked: a whole spoke and an
+                // open port exactly when not isolated, the broken ends, the
+                // seal and the slash exactly when isolated.
+                const whole = drawn(spokes[i], "sfere-path-whole"), broken = drawn(spokes[i], "sfere-path-broken");
+                const open = drawn(ports[i], "sfere-path-open"), slash = drawn(ports[i], "sfere-path-slash");
+                check(whole.length === 2 && broken.length === 2
+                      && whole.every(path => (path.strokeColor.a > 0) === !isolated)
+                      && broken.every(path => (path.strokeColor.a > 0) === isolated),
+                      "the drawn spoke is whole for an isolated network or broken for another");
+                check(open.length === 1 && slash.length === 1
+                      && (open[0].fillColor.a > 0) === !isolated && (slash[0].strokeColor.a > 0) === isolated,
+                      "the drawn port is open for an isolated network or sealed for another");
                 // The spoke leaves from its own port.
                 const port = ports[i].mapToItem(spokes[i], ports[i].width / 2, ports[i].height / 2);
                 check(Math.hypot(port.x - spokes[i].fromX, port.y - spokes[i].fromY) < 1.5,
@@ -245,8 +265,8 @@ CHECKS = r'''
                                                             && item.visible);
                     check(dots.length === 1, "a Machine is not exactly one electron");
                     if (dots.length === 1)
-                        check((dots[0].border.width === 0) === (machine.state === "running"),
-                              "an electron is not bright exactly while its Machine runs");
+                        check((dots[0].border.width === 0) === (machinesCurrent && machine.state === "running"),
+                              "an electron is not bright exactly while its Machine runs and the inventory is current");
                 }
             }
             for (const row of fixture.external)
@@ -396,13 +416,20 @@ INTERACTION = r'''
                   === sharedState.machines.length,
                   "with no network shown, a managed Machine is no longer one card away");
             sharedState.applyFeatures('{"networks_view_enabled":true}');
+            // The flight started before the switch is retired first; the
+            // fresh read it queued is the one that draws again.
             answerNetworks(networks);
+            answerNetworks(networks);
+            check(view.networks.length === networks.length, "re-enabling the network read drew no network");
             sharedState.applyMachinePayload("unreadable");
             keyEvents.wait(30);
             check(find(view, "sfere-unavailable").visible && !find(view, "sfere-create").visible
                   && view.networks.every(network => !network.lit)
                   && find(view, "sfere-freshness").text.indexOf("Machine inventory not answering") >= 0,
                   "an unreadable Machine inventory lit a core, offered Create or read as current");
+            check(find(view, "sfere-panel-empty").text.indexOf("Machines unknown") === 0
+                  && find(view, "sfere-panel-summary").text === "Machines unknown",
+                  "an unreadable Machine inventory reads as an empty network in the panel");
             check(sharedMachineActions.operations.length === 0, "the seal performed a Machine operation");
 '''
 
@@ -431,15 +458,28 @@ MOTION = r'''
             check(JSON.stringify(Array.from({length: ambient.moteCount}, (_, i) => ambient.moteAt(i, 42)))
                   + ambient.ringAngle + ambient.rayAngle === before,
                   "the atmosphere changed with the networks' state");
-            const speeds = Array.from({length: ambient.moteCount}, (_, i) => {
-                const a = ambient.moteAt(i, 10), b = ambient.moteAt(i, 10.5);
-                return Math.hypot(b.x - a.x, b.y - a.y);
-            });
-            for (const place of view.places) {
-                const near = speeds.filter((_, i) => Math.hypot(ambient.moteAt(i, 10).x - place.x,
-                                                                 ambient.moteAt(i, 10).y - place.y) < place.radius * 3);
-                check(near.every(speed => speed <= Math.max.apply(null, speeds)),
-                      "the atmosphere moves faster near a network");
+            // Uniform motion, so nothing about a place can change it: each
+            // mote's x and y are the projection of its place on the seal's
+            // unit plane and its rise, it turns round the centre at one
+            // steady rate and rises at another, wherever it is.
+            for (let i = 0; i < ambient.moteCount; i++) {
+                let rate = null, climb = null, uniform = true;
+                for (let step = 0; step < 1200; step++) {
+                    const t = step * 0.5, a = ambient.moteAt(i, t), b = ambient.moteAt(i, t + 0.5);
+                    uniform = uniform
+                        && Math.abs(a.x - (ambient.centreX + a.u * ambient.radius)) < 1e-6
+                        && Math.abs(a.y - (ambient.floorY + a.v * ambient.radius * ambient.tilt - a.rise)) < 1e-6
+                        && Math.abs(Math.hypot(a.u, a.v) - Math.hypot(b.u, b.v)) < 1e-9;
+                    let turn = Math.atan2(b.v, b.u) - Math.atan2(a.v, a.u);
+                    turn -= Math.round(turn / (2 * Math.PI)) * 2 * Math.PI;
+                    rate = rate === null ? turn : rate;
+                    uniform = uniform && Math.abs(turn - rate) < 1e-9;
+                    if (b.rise >= a.rise) {
+                        climb = climb === null ? b.rise - a.rise : climb;
+                        uniform = uniform && Math.abs(b.rise - a.rise - climb) < 1e-6;
+                    }
+                }
+                check(uniform, "a mote's motion depends on where it is");
             }
             ambient.time = Qt.binding(() => view.ambientTime);
             // The setting off: only lit cores keep moving.

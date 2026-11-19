@@ -172,7 +172,9 @@ Item {
                 "lit": view.machinesCurrent && runningCount > 0,
                 "rings": rings.map(machine => ({
                     "name": String(machine.name),
-                    "running": view.running(machine),
+                    // Bright only while the inventory is current: a stale
+                    // observation is not a running Machine.
+                    "running": view.machinesCurrent && view.running(machine),
                     "disposable": machine.lifecycle === "disposable",
                     "more": 0
                 })).concat(machines.length > view.ringLimit
@@ -729,7 +731,10 @@ Item {
             ["GPU level", view.levelWords(view.selected.name)]
         ],
         "rule": view.ruleWords(view.selected.forward),
-        "empty": view.selected.isolated
+        // An unreadable inventory never reads as an empty network.
+        "empty": !view.inventoryAvailable
+            ? "Machines unknown: the Machine inventory cannot be read."
+            : view.selected.isolated
             ? "This network is sealed and empty: no route out and no route to any other network."
             : "No Machines in this network."
     })

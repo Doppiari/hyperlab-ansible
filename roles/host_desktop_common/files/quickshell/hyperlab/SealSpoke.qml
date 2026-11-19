@@ -35,6 +35,7 @@ Shape {
 
     // A whole spoke: a soft band and the line itself.
     ShapePath {
+        objectName: "sfere-path-whole"
         strokeColor: spoke.broken ? spoke.clear : spoke.theme.alpha(spoke.colour, 0.05 + 0.08 * spoke.lit)
         strokeWidth: 10
         fillColor: spoke.clear
@@ -45,6 +46,7 @@ Shape {
     }
 
     ShapePath {
+        objectName: "sfere-path-whole"
         strokeColor: spoke.broken ? spoke.clear
             : spoke.theme.alpha(spoke.colour, spoke.selected ? 0.9 : 0.55)
         strokeWidth: spoke.selected ? 2 : 1.3
@@ -57,6 +59,7 @@ Shape {
 
     // A broken spoke: two dashed ends with a gap between them...
     ShapePath {
+        objectName: "sfere-path-broken"
         strokeColor: spoke.broken ? spoke.theme.alpha(spoke.colour, 0.45) : spoke.clear
         strokeWidth: 1.2
         fillColor: spoke.clear
@@ -71,6 +74,7 @@ Shape {
 
     // ...and the seal in the gap.
     ShapePath {
+        objectName: "sfere-path-broken"
         strokeColor: spoke.broken ? spoke.theme.alpha(spoke.colour, 0.9) : spoke.clear
         strokeWidth: 1.4
         fillColor: spoke.clear

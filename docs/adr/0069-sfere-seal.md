@@ -46,8 +46,8 @@ the gap), and only such a network has them. A spoke is not a proof of
 reachability, firewall acceptance or access to host services.
 
 **Machines.** Each managed Machine is an electron, still, on a tilted ring
-around its network's sphere: bright while running, hollow otherwise, on a
-dashed ring when it is disposable. Past eight Machines in a network the last
+around its network's sphere: bright while running and the Machine inventory
+is current, hollow otherwise, on a dashed ring when it is disposable. Past eight Machines in a network the last
 ring stands for the rest as "+N". A Machine attached to no listed network
 and every unmanaged domain are listed outside the seal, bottom left, with a
 dashed mark, never on a ring.
@@ -55,7 +55,8 @@ dashed mark, never on a ring.
 **The panel.** A click or Enter selects a network; the panel under the stage
 shows its name, subnet, gateway, DHCP range, mode, GPU level and the
 outbound rule in words, and its Machines as the Machines view's cards
-without their spheres. A second activation, `+` or "Enter <network>" enters
+without their spheres; with the Machine inventory unreadable it says the
+Machines are unknown, never that the network is empty. A second activation, `+` or "Enter <network>" enters
 it: the camera centres the network at 2.1 times, at once with reduced
 motion. Esc or "← The whole seal" returns. A card opens the existing Machine
 pane. Selecting and entering are the only actions; no Machine operation is

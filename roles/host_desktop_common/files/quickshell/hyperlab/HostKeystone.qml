@@ -150,6 +150,7 @@ Item {
 
                 // An open port: a lit point in the network's colour.
                 ShapePath {
+                    objectName: "sfere-path-open"
                     strokeWidth: -1
                     strokeColor: keystone.clear
                     fillColor: port.sealed ? keystone.clear
@@ -176,6 +177,7 @@ Item {
 
                 // A sealed port: the slash across it.
                 ShapePath {
+                    objectName: "sfere-path-slash"
                     strokeColor: port.sealed ? port.modelData.colour : keystone.clear
                     strokeWidth: 1.3
                     fillColor: keystone.clear

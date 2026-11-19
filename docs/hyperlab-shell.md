@@ -246,8 +246,8 @@ reachability. Under each sphere: "N machines · M running" ("lit: M
 running" when lit), "empty" or "isolated · sealed".
 
 Each managed Machine is a still electron on a tilted ring around its
-network's sphere: bright when running, hollow when not, on a dashed ring
-when disposable. Past eight Machines the last ring reads "+N". Machines on
+network's sphere: bright when running and the inventory is current, hollow
+otherwise, on a dashed ring when disposable. Past eight Machines the last ring reads "+N". Machines on
 no listed network and unmanaged domains are listed outside the seal, bottom
 left, with a dashed mark.
 
@@ -260,7 +260,8 @@ whole seal" returns. Tab enters the stage at one network, arrows follow the
 seal's order and, inside an entered network, its Machines. A hidden list
 gives a screen reader the host's freshness line, every network, every
 Machine and everything outside the seal. A readable empty system offers one
-Create a Machine action; an unreadable inventory never reads as empty, and a
+Create a Machine action; an unreadable inventory never reads as empty (the
+panel says the Machines are unknown), and a
 network inventory that is off, failing or stale draws no network and says
 why.
 
