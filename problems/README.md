@@ -552,6 +552,12 @@ proof.
 - [`sfere-seal-animation-on-property.md`](sfere-seal-animation-on-property.md):
   the seal's source check refused `NumberAnimation {` but not
   `NumberAnimation on liveTime {`; it now refuses both spellings.
+- [`sfere-seal-focus-moved-electrons.md`](sfere-seal-focus-moved-electrons.md):
+  rings were sorted with the GPU holder and focus first, so a change of focus
+  moved electrons; rings now keep a stable order.
+- [`sfere-seal-traffic-missed-unmanaged-domains.md`](sfere-seal-traffic-missed-unmanaged-domains.md):
+  traffic summed only product Machines' interfaces; it now reads every active
+  domain and calls an unobserved network unknown.
 
 - [`rhi-render-offscreen-was-software.md`](rhi-render-offscreen-was-software.md):
   an offscreen OpenGL request silently rendered with the software backend; the

@@ -53,25 +53,83 @@ def require(condition: bool, message: str) -> None:
         raise SystemExit("Sfere live layer contract: " + message)
 
 
-def declared_rules() -> list[dict]:
-    """The flows between two different guest networks the ruleset accepts."""
+TEMPLATE = ROOT / "roles/lab_isolation/templates/lab-isolation.nft.j2"
+# One forward rule this derivation can read: an optional input and output
+# interface name (nft allows one trailing `*`), an optional counter, and a
+# verdict. Anything else (a set, a map, an address, a state) is refused.
+FORWARD_RULE = re.compile(r'(?:iifname "([\w.-]+\*?)" )?(?:oifname "([\w.-]+\*?)" )?(?:counter )?(accept|drop)')
+
+
+def matches(pattern: str | None, name: str) -> bool:
+    if pattern is None:
+        return True
+    return name.startswith(pattern[:-1]) if pattern.endswith("*") else name == pattern
+
+
+def declared_rules(template_text: str | None = None) -> list[dict]:
+    """The flows between two different guest networks the ruleset accepts,
+    by first match over the rendered forward chain, then its policy."""
     networks = yaml.safe_load((ROOT / "group_vars/all/networks.yml").read_text())
     guests = networks["network_domains"] + networks["lab_host_networks"]
     lab = next(entry for entry in networks["network_domains"] if entry["forward"] == "isolated")["bridge"]
-    template = jinja2.Template((ROOT / "roles/lab_isolation/templates/lab-isolation.nft.j2").read_text())
+    template = jinja2.Template(TEMPLATE.read_text() if template_text is None else template_text)
     ruleset = template.render(lab_isolation_guest_networks=guests, lab_isolation_table="inet lab_isolation",
                               lab_isolation_lab_bridge=lab)
-    bridges = {entry["bridge"]: entry["name"] for entry in guests}
+    require(ruleset.count("chain forward {") == 1, "the isolation ruleset must have one forward chain")
     forward = ruleset.split("chain forward {", 1)[1].split("\n    }", 1)[0]
+    policy = None
     rules = []
     for line in (line.strip() for line in forward.splitlines()):
-        pair = re.match(r'iifname "([^"]+)" oifname "([^"]+)" .*\baccept$', line)
-        if pair and pair[1] in bridges and pair[2] in bridges and pair[1] != pair[2]:
-            rules.append({"from": bridges[pair[1]], "to": bridges[pair[2]], "name": line})
-    require(all(re.search(r"\b(?:drop|accept)$", line) or not line or line.startswith(("#", "type "))
-                for line in (line.strip() for line in forward.splitlines())),
-            "a forward rule neither accepts nor drops: the derivation of declared rules is incomplete")
-    return rules
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("type "):
+            hook = re.fullmatch(r"type filter hook forward priority -?\d+; policy (accept|drop);", line)
+            require(hook is not None and policy is None, "the forward chain's hook or policy is unreadable")
+            policy = hook[1]
+            continue
+        rule = FORWARD_RULE.fullmatch(line)
+        require(rule is not None, f"a forward rule the derivation of declared rules cannot read: {line}")
+        rules.append((rule[1], rule[2], rule[3], line))
+    require(policy is not None, "the forward chain has no policy")
+    declared = []
+    for source in guests:
+        for target in guests:
+            if source["name"] == target["name"]:
+                continue
+            verdict, name = policy, "policy " + policy
+            for iif, oif, action, line in rules:
+                if matches(iif, source["bridge"]) and matches(oif, target["bridge"]):
+                    verdict, name = action, line
+                    break
+            if verdict == "accept":
+                declared.append({"from": source["name"], "to": target["name"], "name": name})
+    return declared
+
+
+def derivation_self_test() -> None:
+    """The derivation sees an accept only where nft would apply it, and
+    refuses what it cannot read."""
+    text = TEMPLATE.read_text()
+    anchor = "type filter hook forward priority -10; policy accept;\n"
+    require(text.count(anchor) == 1, "the forward chain's hook line moved")
+    early = '        iifname "virbr-dev" oifname "virbr-services" accept\n'
+    late = '        iifname "virbr-dev" oifname "virbr-services" accept\n    }\n\n    chain input {'
+    found = declared_rules(text.replace(anchor, anchor + early))
+    require([(rule["from"], rule["to"]) for rule in found] == [("dev", "services")],
+            "an accept before every drop is not seen as declared")
+    require(declared_rules(text.replace("\n    }\n\n    chain input {", "\n" + late, 1)) == [],
+            "an accept after the matching drop is counted as declared")
+    require(declared_rules(text.replace('        iifname "virbr*" oifname "virbr*" counter drop\n', "")
+                           .replace('        iifname "{{ a.bridge }}" oifname "{{ b.bridge }}" counter drop\n', "")) != [],
+            "with no drop, the accept policy declares nothing")
+    for unreadable in ('        iifname { "virbr-dev" } oifname "virbr-services" accept\n',
+                       '        iifname @guests oifname "virbr-services" accept\n',
+                       '        ip saddr 10.10.3.0/24 oifname "virbr-services" accept\n'):
+        try:
+            declared_rules(text.replace(anchor, anchor + unreadable))
+        except SystemExit:
+            continue
+        require(False, f"a forward rule the derivation cannot read was ignored: {unreadable.strip()}")
 
 
 def rows_for(case: dict) -> list[dict]:
@@ -105,6 +163,7 @@ def samples(case: dict) -> list[dict]:
         for name, rate in live["traffic"].items():
             members = sorted(f"{row['name']}/vnet{index}" for index, row in enumerate(running)
                              if name in row["networks"])
+            require(members != [], f"{case['id']}: {name} has a traffic reading but no running interface")
             networks[name] = {"rx_bytes": 4000000 + step * round(rate * 30 * 0.75),
                               "tx_bytes": 900000 + step * round(rate * 30 * 0.25), "interfaces": members}
         out.append({"available": True, "sampled_ns": 5 * 10**12 + step * POLL_NS,
@@ -165,21 +224,40 @@ LIVE_CHECKS = r'''
             const rings = nodes(view, item => item.objectName.indexOf("sfere-ring-") === 0 && !item.more)
                 .map(item => ({ item: item, row: managed.find(row => row.name === item.modelData.name) }));
             check(rings.every(entry => entry.row !== undefined), "an electron is not a managed Machine");
-            // 1. Motion: one speed for every running Machine, none for any other.
-            const t0 = view.liveTime;
-            const before = rings.map(entry => entry.item.angle);
-            view.liveTime = t0 + 2;
-            const moved = rings.map((entry, i) => entry.item.angle - before[i]);
-            check(rings.every((entry, i) => !running(entry.row) || Math.abs(moved[i] - 2 * view.orbitRate) < 1e-9),
-                  "a running electron's speed is not the one shared speed");
-            check(rings.every((entry, i) => running(entry.row) || moved[i] === 0), "a shut-off electron moved");
-            check(view.orbitRate > 0, "running electrons do not move");
-            // The electron is drawn where its angle says.
-            for (const entry of rings) {
+            // 1. Motion: one speed for every running Machine, none for any other,
+            // read back from what is drawn: the visible dot's centre, un-tilted
+            // by the drawn ring's rotation, gives the electron's angle on the
+            // ring's ellipse.
+            function drawnAt(entry) {
                 const dots = nodes(entry.item.parent, item => item.objectName === "sfere-electron-" + entry.row.name
                                                              && item.visible);
-                check(dots.length === 1, "a Machine is not exactly one visible electron");
+                const orbits = nodes(entry.item, item => item.objectName === "sfere-orbit");
+                if (dots.length !== 1 || orbits.length !== 1)
+                    return null;
+                const net = entry.item.parent;
+                const centre = dots[0].mapToItem(entry.item, dots[0].width / 2, dots[0].height / 2);
+                const tilt = orbits[0].rotation * Math.PI / 180;
+                const ex = (centre.x * Math.cos(tilt) + centre.y * Math.sin(tilt)) / net.ringX;
+                const ey = (centre.y * Math.cos(tilt) - centre.x * Math.sin(tilt)) / net.ringY;
+                return { angle: Math.atan2(ey, ex), onRing: Math.abs(Math.hypot(ex, ey) - 1) < 1e-3 };
             }
+            // The signed difference of two angles, in -pi..pi.
+            const turned = (from, to) => ((to - from) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
+            const t0 = view.liveTime;
+            const before = rings.map(drawnAt);
+            check(before.every(spot => spot !== null), "a Machine is not exactly one visible electron on one ring");
+            check(before.every(spot => spot.onRing), "an electron is not drawn on its ring");
+            check(rings.every((entry, i) => Math.abs(turned(entry.item.angle, before[i].angle)) < 1e-3),
+                  "an electron is not drawn at its angle");
+            view.liveTime = t0 + 2;
+            const after = rings.map(drawnAt);
+            check(after.every(spot => spot !== null && spot.onRing), "an electron left its ring");
+            const moved = rings.map((entry, i) => turned(before[i].angle, after[i].angle));
+            check(rings.every((entry, i) => !running(entry.row) || Math.abs(moved[i] - 2 * view.orbitRate) < 1e-3),
+                  "a running electron's speed is not the one shared speed");
+            check(rings.every((entry, i) => running(entry.row) || Math.abs(moved[i]) < 1e-9), "a shut-off electron moved");
+            check(view.orbitRate > 0 && 2 * view.orbitRate < Math.PI, "running electrons do not move, or too fast to measure");
+            if (window.firstFailure >= 0) { Qt.exit(40 + window.firstFailure); return; }
             // Trails: only with a load reading, as long as the load says.
             for (const entry of rings) {
                 const span = loadKnown(entry.row) ? 0.4 + 1.8 * live.loads[entry.row.name] : 0;
@@ -303,9 +381,11 @@ LIVE_CHECKS = r'''
                 check(row !== undefined && card.text === view.machineFacts(sharedState.machineById(row.name)).join(" · ")
                       && (!running(row) || card.text.indexOf("load") > 0), "a card does not carry its Machine's live words");
             }
-            check(spoken[0].indexOf(gpu.known ? (gpu.owner === "" ? "holds the GPU" : "GPU lent to " + gpu.owner)
-                                               : "GPU holder unknown") > 0
-                  && (spoken[0].indexOf("has focus") > 0) === (live.focus.kind === "host"),
+            // The host's whole line, word for word: GPU, focus, then freshness.
+            const hostGpu = !gpu.known ? "GPU holder unknown" : gpu.owner === "" ? "holds the GPU"
+                : "GPU lent to " + gpu.owner + (holderRing ? "" : ", outside the seal");
+            check(spoken[0] === "Host, every path passes here, " + hostGpu
+                      + (live.focus.kind === "host" ? ", has focus" : "") + ", " + find(view, "sfere-freshness").text,
                   "the host's spoken line does not say who holds the GPU or that it has focus");
             // The host's live words never run into a network's words.
             const hostLive = find(view, "sfere-host-live");
@@ -338,6 +418,45 @@ LIVE_CHECKS = r'''
             keyEvents.wait(60);
 '''
 
+# Focus and the GPU move between Machines of one network: no electron moves.
+STEADY = r'''
+            function placed() {
+                const out = {};
+                for (const ring of nodes(view, item => item.objectName.indexOf("sfere-ring-") === 0 && !item.more)) {
+                    const dots = nodes(ring.parent, item => item.objectName === "sfere-electron-" + ring.modelData.name
+                                                           && item.visible);
+                    const centre = dots.length === 1 ? dots[0].mapToItem(scene, dots[0].width / 2, dots[0].height / 2)
+                                                     : null;
+                    const orbit = nodes(ring, item => item.objectName === "sfere-orbit")[0];
+                    out[ring.modelData.name] = { angle: ring.angle, tilt: orbit.rotation,
+                                                 x: centre ? centre.x : NaN, y: centre ? centre.y : NaN };
+                }
+                return out;
+            }
+            const steadyTime = view.liveTime;
+            const steadyBefore = placed();
+            const steadyNames = Object.keys(steadyBefore);
+            check(["dev-desk", "dev-build", "dev-runner"].every(name => steadyNames.indexOf(name) >= 0),
+                  "the five-networks fixture lost a dev Machine");
+            sharedState.provenanceObservation = sharedState.provenanceResult(
+                "resolved", "dev", "host-owned-vm-spec", "dev-runner",
+                "managed-surface-resolved", "Registered managed surface");
+            sharedState.applyGpuPayload(JSON.stringify({ known: true, owner: "dev-build", bound: true }));
+            keyEvents.wait(30);
+            check(view.focusName === "dev-runner" && view.gpuHolder === "dev-build" && view.liveTime === steadyTime,
+                  "the steady step did not move focus and the GPU at a fixed time");
+            const steadyAfter = placed();
+            check(JSON.stringify(Object.keys(steadyAfter).sort()) === JSON.stringify(steadyNames.slice().sort())
+                  && steadyNames.every(name => ["angle", "tilt", "x", "y"].every(key =>
+                      Math.abs(steadyAfter[name][key] - steadyBefore[name][key]) < 1e-6)),
+                  "moving focus or the GPU between Machines moved an electron");
+            sharedState.provenanceObservation = sharedState.provenanceResult(
+                "resolved", live.focus.identity, "host-owned-vm-spec", live.focus.name,
+                "managed-surface-resolved", "Registered managed surface");
+            sharedState.applyGpuPayload(JSON.stringify({ known: true, owner: gpu.owner, bound: true }));
+            keyEvents.wait(30);
+'''
+
 RATES = r'''
             // 4. Rates need two samples of the same thing.
             const base = counterSamples[1];
@@ -362,6 +481,20 @@ RATES = r'''
             again(next => next.networks.dirty.tx_bytes = 0);
             check(!Object.prototype.hasOwnProperty.call(sharedState.networkTraffic, "dirty"),
                   "a traffic counter that fell gave a rate");
+            // A network with no interface: nothing observed, no rate.
+            const quiet = JSON.parse(JSON.stringify(base));
+            quiet.networks.clean = { rx_bytes: 0, tx_bytes: 0, interfaces: [] };
+            answerInventory(quiet);
+            const quieter = JSON.parse(JSON.stringify(quiet));
+            quieter.sampled_ns += 30e9;
+            answerInventory(quieter);
+            check(!Object.prototype.hasOwnProperty.call(sharedState.networkTraffic, "clean")
+                  && Object.prototype.hasOwnProperty.call(sharedState.networkTraffic, "dev"),
+                  "a network with no interface gave a traffic rate");
+            view.select(view.networks.findIndex(network => network.name === "clean"));
+            keyEvents.wait(30);
+            check(find(view, "sfere-fact-Traffic").text === "unknown",
+                  "the panel calls the traffic of a network with no interface anything but unknown");
             again(next => next.sampled_ns += 600e9);
             check(Object.keys(sharedState.machineLoad).length === 0, "a sample after a long gap gave a load");
             again(next => next.sampled_ns -= 60e9);
@@ -406,6 +539,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--renders", type=Path)
     args = parser.parse_args()
+    derivation_self_test()
     declared = declared_rules()
     require(declared == [], "the isolation ruleset now accepts a flow between two networks: "
             "ShellState.networkRules must read it from the same data, and this check must change with it")
@@ -447,7 +581,7 @@ def main() -> int:
             setup += '''
             const machinesCurrent = true;
 '''
-            body = setup + LIVE_CHECKS + (RATES if case["id"] == "five-networks" else "")
+            body = setup + LIVE_CHECKS + (STEADY + RATES if case["id"] == "five-networks" else "")
             gpu = dict(case["gpu"], bound=bool(case["gpu"]["owner"]))
             for label, scenario, destination in (("checks", body, ""), ("render", setup,
                     str(args.renders.resolve() / f"{case['id']}-1920x1080.png") if args.renders else "")):

@@ -6516,9 +6516,15 @@ uncaught runtime error", because ShellState has no `networkRules`,
 | `reduced-moves` | `SfereView.qml`: drop `&& !view.reduced` from `liveMoving`. | no-machines checks: "reduced motion moved the live layer" | Exit 0, OK. |
 | `network-colour-literal` | `SealNetwork.qml`: add `property color inventedTone: "red"`. | colour literal in SealNetwork.qml | Exit 0, OK. |
 | `electron-animation` | `SealNetwork.qml`: add `NumberAnimation on liveTime { ... loops: Animation.Infinite }`. | SealNetwork.qml gained an animation or a data transport | Exit 0, OK. |
+| `electron-drawn-from-load` | `SealNetwork.qml`: `electronAt` adds `liveTime x load` to the angle it draws at, leaving `angleOf` alone. | five-networks checks: "a running electron's speed is not the one shared speed" | Exit 0, OK. |
+| `rings-reordered` | `SfereView.qml`: a network with no more Machines than rings sorts them with `ringOrder` (GPU holder and focus first). | five-networks checks: "moving focus or the GPU between Machines moved an electron" | Exit 0, OK. |
+| `host-line-padded` | `SfereView.qml`: `hostLine` gains `, data current` before the freshness words. | seal contract, no-machines checks: "the screen reader list lost a network, a Machine or the freshness line"; live contract, no-machines checks: "the host's spoken line does not say who holds the GPU or that it has focus" | Exit 0, OK. |
+| `empty-interfaces-quiet` | `ShellState.qml`: drop `now.interfaces.length === 0 \|\|` from the traffic loop. | five-networks checks: "a network with no interface gave a traffic rate" | Exit 0, OK. |
+| `rule-unreadable-ignored` | `tests/sfere_live_layer_contract.py`: `declared_rules` skips a forward rule it cannot read instead of refusing. | a forward rule the derivation cannot read was ignored: iifname { "virbr-dev" } oifname "virbr-services" accept | Exit 0, OK. |
+| `rule-last-match` | `tests/sfere_live_layer_contract.py`: drop the `break` after the first matching forward rule. | an accept before every drop is not seen as declared | Exit 0, OK. |
 
-All seventeen breaks exited 1 with the diagnostic listed, and every restored
-copy was byte-identical and exited 0. Two were not red at first:
+All twenty-three breaks exited 1 with the diagnostic listed, and every
+restored copy was byte-identical and exited 0. Two were not red at first:
 
 - `electron-animation` stayed green: the seal contract's source check
   matched `NumberAnimation {` but not the property value source form
@@ -6528,6 +6534,18 @@ copy was byte-identical and exited 0. Two were not red at first:
 - `trail-span` was red, but with "a trail is drawn without a load reading",
   because one check tested both the trail's presence and its length. The two
   are now separate checks, and the length has its own diagnostic.
+
+The last six were added after the first catalogue. `speed-from-load`
+breaks `angleOf`, which
+both the drawn dot and the contract's mirror property read, so the contract
+measured the mirror; it now reads each electron's angle back from the drawn
+dot and the drawn ring's tilt, and `electron-drawn-from-load` breaks the
+drawing alone. `rings-reordered` restores the first version of the ring
+order, where a change of focus or GPU holder swapped two electrons' rings.
+`host-line-padded` is red because both contracts now compare the host's
+whole spoken line. The two rule breaks act on the contract itself: its
+derivation of declared rules follows nft's first match per pair and refuses
+a rule it cannot read, and a self-test injects rules to prove it.
 
 `wave-without-machine` is caught by the host-focus scene, which runs first;
 `wave-unknown-focus` breaks only the unknown case and is caught there. The

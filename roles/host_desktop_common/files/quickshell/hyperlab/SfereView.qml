@@ -182,8 +182,11 @@ Item {
         return words;
     }
 
-    // The Machines drawn on rings: the GPU holder and the focused Machine
-    // first, so neither hides behind "+N", then running ones, then by name.
+    // Which Machines get a ring when a network has more than `ringLimit`:
+    // the GPU holder and the focused Machine first, so neither hides behind
+    // "+N", then running ones, then by name. It never orders the rings
+    // themselves: a ring's place and tilt follow its index, so a change of
+    // focus or of GPU holder must not move an electron.
     function ringOrder(a, b) {
         const marked = row => String(row.name) === view.gpuHolder || String(row.name) === view.focusName ? 0 : 1;
 
@@ -255,8 +258,8 @@ Item {
                 .slice().sort(view.byRunningThenName);
             const runningCount = machines.filter(view.running).length;
             const rings = machines.length > view.ringLimit
-                ? machines.slice().sort(view.ringOrder).slice(0, view.ringLimit - 1)
-                : machines.slice().sort(view.ringOrder);
+                ? machines.slice().sort(view.ringOrder).slice(0, view.ringLimit - 1).sort(view.byRunningThenName)
+                : machines;
             const network = {
                 "name": name,
                 "title": view.title(name),

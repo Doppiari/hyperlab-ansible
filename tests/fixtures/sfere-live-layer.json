@@ -95,9 +95,7 @@
     },
     "traffic": {
      "dev": 2400000,
-     "dirty": 18000,
-     "clean": 0,
-     "services": 0
+     "dirty": 18000
     },
     "focus": {
      "kind": "machine",
@@ -510,8 +508,6 @@
     "traffic": {
      "dev": 1200,
      "dirty": 0,
-     "clean": 0,
-     "services": 0,
      "lab": 75000
     },
     "focus": {
@@ -593,9 +589,7 @@
     },
     "traffic": {
      "dev": 2400000,
-     "dirty": 18000,
-     "clean": 0,
-     "services": 0
+     "dirty": 18000
     },
     "focus": {
      "kind": "machine",

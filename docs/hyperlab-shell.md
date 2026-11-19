@@ -273,13 +273,19 @@ matrix allows none, so no pulse is drawn
 ([`../problems/sfere-seal-rules-have-no-runtime-source.md`](../problems/sfere-seal-rules-have-no-runtime-source.md)).
 
 Load and traffic come from raw counters: `hyperlabctl machine inventory
---json` adds `counters` beside its rows, read with one `virsh domstats
---cpu-total --interface` on the existing connection (each running Machine's
-`cpu_time_ns` and vCPUs, each network's summed `rx_bytes`, `tx_bytes` and
-interfaces, and the read's monotonic `sampled_ns`). ShellState divides two
-consecutive samples; the first sample, a counter that fell, a changed vCPU
-count or interface set, a gap over 90 seconds or a failed read give no
-reading, never 0. Each Machine's tooltip (on hover, or under the keyboard in
+--json` adds `counters` beside its rows, read with one `virsh domstats --raw
+--cpu-total --interface --list-active` on the existing connection: each
+running Machine's `cpu_time_ns` and vCPUs, each network's summed `rx_bytes`,
+`tx_bytes` and interfaces, and the read's monotonic `sampled_ns`. A
+network's traffic is that of every active domain's interfaces on it, managed
+or not, placed through each domain's definition (an interface on a bare
+bridge counts for the libvirt network that owns the bridge, read with
+`net-dumpxml`). A network with no active interface is left out, and an
+interface that cannot be placed leaves the networks it may be on out, so
+neither reads as "none". ShellState divides two consecutive samples; the
+first sample, a counter that fell, a changed vCPU count or interface set, an
+empty interface set, a gap over 90 seconds or a failed read give no reading,
+never 0. Each Machine's tooltip (on hover, or under the keyboard in
 an entered network), card and spoken line say its state, "load N%" or "load
 unavailable" while it runs, "holds the GPU" and "has focus" where true; the
 tooltip says "address unknown", because the shell has no source for it

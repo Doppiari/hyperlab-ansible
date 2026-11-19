@@ -220,9 +220,9 @@ run, the saved copy restored byte-identical and the suite run green again.
 | `bridge-not-resolved` | `commands/machine.py` | An interface on a bare bridge counts under the bridge's name, not its network's | red | `bridged_traffic_counted` got `virbr-dev` instead of `dev` |
 | `unplaced-unmanaged-ignored` | `commands/machine.py` | An unmanaged domain whose definition cannot be read is ignored instead of leaving every network unknown | red | `unreadable_unmanaged_networks` expected {}, got `dev` |
 
-The read first covered product Machines only; review found that a domain
-made by hand on a network moved bytes the seal would call "none", so it now
-covers every active domain, and the last three breaks pin that.
+The read first covered product Machines only, so a domain made by hand on
+a network moved bytes the seal would call "none"; it now covers every
+active domain, and the last three breaks pin that.
 `unmapped-tap-counted` stayed green on its first run against that version:
 the test's only interface was the unmapped one, so skipping it left the same
 empty answer as refusing it. The test now gives the Machine a placed

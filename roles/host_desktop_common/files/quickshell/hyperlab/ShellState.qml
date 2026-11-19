@@ -1411,7 +1411,8 @@ Scope {
     // A rate needs two consecutive samples of the same thing. The first
     // sample, a counter that fell (a restart), a different vCPU count or
     // interface set, a gap longer than the stale threshold or an invalid
-    // object gives no rate: the fact is unknown, never 0.
+    // object gives no rate: the fact is unknown, never 0. So does a network
+    // with no interface: nothing was observed there.
 
     property var counterSample: null
     property var machineLoadObserved: ({})
@@ -1489,7 +1490,8 @@ Scope {
                 const now = counters.networks[name];
                 const then = own(previous.networks, name) ? previous.networks[name] : null;
 
-                if (then === null
+                // No interface observed is no reading, not a quiet network.
+                if (then === null || now.interfaces.length === 0
                     || then.interfaces.slice().sort().join("\n") !== now.interfaces.slice().sort().join("\n")
                     || now.rx_bytes < then.rx_bytes || now.tx_bytes < then.tx_bytes)
                     continue;

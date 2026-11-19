@@ -369,6 +369,7 @@ Item {
             z: 1
 
             Item {
+                objectName: "sfere-orbit"
                 rotation: net.tiltOf(ring.index)
 
                 Shape {

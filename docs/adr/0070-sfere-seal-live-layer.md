@@ -31,13 +31,21 @@ and only while something live is on the seal.
 **Load and traffic are rates the shell computes.** `hyperlabctl machine
 inventory --json` adds a `counters` object beside its rows: each running
 product Machine's `cpu_time_ns` and vCPU count, and per network the summed
-`rx_bytes` and `tx_bytes` of its running Machines' interfaces (tap to
-network through the domain definition) with the list of those interfaces,
-all from one `domstats` read on the existing `qemu:///system` connection,
-with the read's monotonic time. hyperlabctl keeps no state. ShellState keeps
+`rx_bytes` and `tx_bytes` of every active domain's interfaces on it, managed
+or not, with the list of those interfaces, all from one `domstats --raw
+--list-active` read on the existing `qemu:///system` connection, with the
+read's monotonic time. A network's traffic is all of it, so a domain made
+by hand on a network counts too. Each interface is placed through its
+domain's definition: its source network, or the libvirt network that owns
+its bridge (`net-dumpxml`); an interface on neither carries no listed
+network's bytes. An interface that cannot be placed leaves out the networks
+it may be on (a product Machine's declared networks, or every network for
+any other domain), and a network with no active interface is left out too,
+since nothing was observed there. hyperlabctl keeps no state. ShellState keeps
 the previous sample and divides: load is CPU time over elapsed time and vCPU
 count (0 to 1), traffic is bytes received and sent per second. The first
-sample, a counter that fell, a changed vCPU count or interface set, a gap
+sample, a counter that fell, a changed vCPU count or interface set, an
+empty interface set, a gap
 longer than the 90-second stale threshold, a failed read or an invalid object
 give no reading, never 0. Counters sit beside the rows, so the inventory's
 signature, and the confirmations that depend on it, move only with a fact.
@@ -53,7 +61,11 @@ gives the selected network's traffic in words: a rate, "none" or "unknown".
 **The GPU beam follows GPU ownership.** A dotted beam labelled "GPU" runs
 from the host's core to the electron of the Machine that GPU ownership names,
 with a white token beside the electron; the holder is always drawn on a ring,
-never hidden behind "+N". When ownership says the host holds it, the token
+never hidden behind "+N". The rings themselves stay in the order of the
+still seal (running first, then by name), because a ring's place and tilt
+follow its index: a change of GPU holder or of focus moves no electron. Only
+in a network with more Machines than rings do the holder and the focused
+Machine come first when choosing who gets one. When ownership says the host holds it, the token
 sits on the host and there is no beam. When ownership is unknown, or names a
 domain outside the seal, there is no beam; the words under the keystone say
 "GPU holder unknown" or name the holder "outside the seal", and so does the
@@ -70,15 +82,41 @@ allowed between two different networks, and the seal draws one pulse for
 each whose two networks are listed: network, its port, the host, the other
 port, the other network, with a caption naming the rule. The flow matrix
 allows none, so the list is empty and no pulse is drawn on a real host.
-`tests/sfere_live_layer_contract.py` renders the isolation ruleset and holds
-the list equal to the flows it accepts between two guest bridges; a fixture
-alone declares a rule to show the pulse.
+`tests/sfere_live_layer_contract.py` renders the isolation ruleset, takes
+for every ordered pair of guest bridges the verdict of the first forward rule
+that matches it (or the chain's policy), refuses a rule it cannot read, and
+holds the list equal to the pairs accepted; a fixture alone declares a rule
+to show the pulse.
 
 **Words.** Each Machine's spoken line, tooltip and card say its state, its
 load or "load unavailable" while it runs, "holds the GPU" and "has focus"
 where true; the host's line says who holds the GPU and whether it has focus.
 No state is shown by colour or motion alone. A Machine's address has no
 source in the shell, and its tooltip says "address unknown".
+
+## Alternatives considered
+
+- **The mockup's speed under load.** Its demonstration data moves a loaded
+  electron faster. Rejected: motion would then mean two things, and a still
+  electron and a slow one would be hard to tell apart. Load has its own
+  mark, the trail.
+- **Rates in hyperlabctl.** A stateful hyperlabctl would keep the previous
+  sample between invocations in a file. Rejected: the bridge runs it as a
+  one-shot command, and a state file is one more thing to trust, lock and
+  clean up. The shell already keeps every observation it shows.
+- **Counters inside each Machine row.** Rejected: the shell compares the
+  rows to decide whether the inventory changed, and an open exact-name
+  confirmation is dropped when it does. Counters move on every poll.
+- **A zero for what was not read.** Rejected: a quiet network and an unread
+  one would look the same. Unknown draws nothing and says "unknown".
+- **Only product Machines' traffic.** Cheaper (no definitions of other
+  domains), but a domain made by hand on a network would move bytes the seal
+  calls "none". Rejected for the network's traffic; load stays per product
+  Machine, since only those have electrons.
+- **Reading the live nftables ruleset in the shell.** It would show a rule
+  added by hand, but needs privilege the shell does not have. Rejected; the
+  contract reads the rendered ruleset instead, and a runtime source is
+  recorded as a problem.
 
 ## Consequences
 
