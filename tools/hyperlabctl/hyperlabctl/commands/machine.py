@@ -17,7 +17,7 @@ from typing import Any
 
 from .. import document as doc
 from ..errors import ContractError, HyperlabError, Unavailable
-from ..inventory import domain_names
+from ..inventory import domain_names, network_names
 from ..machine_factory import (
     image_os_label,
     materialize_machine,
@@ -454,10 +454,13 @@ def build_product_inventory(
 # ---------------------------------------------------------------- counters
 #
 # Raw runtime counters for the shell's live layer: each running product
-# Machine's total CPU time and, per network, the bytes its running Machines'
-# interfaces received and sent. One read-only `virsh domstats` on the
-# existing connection; the shell computes rates between two samples, so this
-# keeps no state. Whatever cannot be read is left out, never written as 0.
+# Machine's total CPU time and, per network, the bytes every active domain's
+# interfaces on it received and sent, managed or not, since a network's
+# traffic is all of it. One read-only `virsh domstats` on the existing
+# connection, plus the definitions that map each interface to its network;
+# the shell computes rates between two samples, so this keeps no state.
+# Whatever cannot be read is left out, never written as 0, and a network
+# with no active interface is left out too: nothing was observed there.
 
 _STATS_DOMAIN = re.compile(r"^Domain: '(.+)'$")
 _STATS_FIELD = re.compile(r"^  ([a-z0-9_.]+)=(.*)$")
@@ -498,8 +501,9 @@ def _parse_domstats(text: str) -> dict[str, dict[str, str]] | None:
     return records
 
 
-def _interface_networks(ctx, name: str) -> dict[str, str] | None:
-    """Each interface's host device name -> its network, from dumpxml."""
+def _interface_sources(ctx, name: str) -> dict[str, tuple[str, str] | None] | None:
+    """Each interface's host device -> ("network", name) or ("bridge", name)
+    from dumpxml, or None for an interface on neither; None when unreadable."""
 
     result = ctx.virsh("dumpxml", name)
 
@@ -511,23 +515,56 @@ def _interface_networks(ctx, name: str) -> dict[str, str] | None:
     except ET.ParseError:
         return None
 
-    mapped: dict[str, str] = {}
+    sources: dict[str, tuple[str, str] | None] = {}
 
     for interface in root.findall("./devices/interface"):
         target = interface.find("target")
         source = interface.find("source")
 
-        if target is None or source is None or not target.get("dev"):
+        if target is None or not target.get("dev"):
             continue
 
-        # The same attribute order as domainxml.parse_domain, so a tap maps
-        # to the network name the Machine row carries.
-        network = source.get("network") or source.get("bridge")
+        if source is not None and source.get("network"):
+            sources[target.get("dev")] = ("network", source.get("network"))
+        elif source is not None and source.get("bridge"):
+            sources[target.get("dev")] = ("bridge", source.get("bridge"))
+        else:
+            sources[target.get("dev")] = None
 
-        if network:
-            mapped[target.get("dev")] = network
+    return sources
 
-    return mapped
+
+def _bridge_networks(ctx) -> dict[str, str] | None:
+    """Every libvirt network's bridge -> its name, from net-dumpxml; None
+    when any network cannot be read."""
+
+    try:
+        names = network_names(ctx)
+    except HyperlabError:
+        return None
+
+    bridges: dict[str, str] = {}
+
+    for name in names:
+        result = ctx.virsh("net-dumpxml", name)
+
+        if not result.ok:
+            return None
+
+        try:
+            root = ET.fromstring(result.stdout)
+        except ET.ParseError:
+            return None
+
+        bridge = root.find("bridge")
+
+        if root.tag != "network" or root.findtext("name") != name:
+            return None
+
+        if bridge is not None and bridge.get("name"):
+            bridges[bridge.get("name")] = name
+
+    return bridges
 
 
 def runtime_counters(
@@ -536,31 +573,12 @@ def runtime_counters(
     *,
     clock: Callable[[], int] = time.monotonic_ns,
 ) -> dict[str, Any]:
-    """Raw CPU and interface counters of the running product Machines."""
+    """Raw CPU counters of the running product Machines and interface
+    counters of every active domain, per network."""
 
-    running = [row for row in machines if row.get("state") == "running"]
-    attached = {
-        str(network)
-        for row in machines
-        if isinstance(row.get("networks"), list)
-        for network in row["networks"]
-    }
-    totals: dict[str, dict[str, Any]] = {
-        network: {"rx_bytes": 0, "tx_bytes": 0, "interfaces": []}
-        for network in sorted(attached)
-    }
-    unknown: set[str] = set()
-    loads: dict[str, dict[str, int]] = {}
-
-    if not running:
-        sampled = clock()
-        return {"available": True, "sampled_ns": sampled, "machines": {}, "networks": totals}
-
+    running = {str(row["name"]): row for row in machines if row.get("state") == "running"}
     before = clock()
-    result = ctx.virsh(
-        "domstats", "--cpu-total", "--interface",
-        *[str(row["name"]) for row in running],
-    )
+    result = ctx.virsh("domstats", "--raw", "--cpu-total", "--interface", "--list-active")
     after = clock()
 
     if not result.ok:
@@ -571,51 +589,90 @@ def runtime_counters(
     if records is None:
         return {"available": False}
 
-    for row in running:
-        name = str(row["name"])
-        record = records.get(name)
-        declared = [str(network) for network in row.get("networks") or []]
+    totals: dict[str, dict[str, Any]] = {}
+    unknown: set[str] = set()
+    loads: dict[str, dict[str, int]] = {}
+    bridges: dict[str, str] | None = None
+    # A domain whose interfaces cannot be placed may be on any network.
+    everywhere = False
 
-        if record is None:
-            unknown.update(declared)
-            continue
+    for name, row in running.items():
+        if name not in records:
+            unknown.update(str(network) for network in row.get("networks") or [])
 
-        vcpus = row.get("vcpus")
+    for name, record in sorted(records.items()):
+        row = running.get(name)
+        declared = [str(network) for network in (row or {}).get("networks") or []]
 
-        if "cpu.time" in record and isinstance(vcpus, int) and not isinstance(vcpus, bool) and vcpus > 0:
-            loads[name] = {"cpu_time_ns": int(record["cpu.time"]), "vcpus": vcpus}
+        if row is not None:
+            vcpus = row.get("vcpus")
 
-        taps = _interface_networks(ctx, name)
+            if ("cpu.time" in record and isinstance(vcpus, int) and not isinstance(vcpus, bool)
+                    and vcpus > 0):
+                loads[name] = {"cpu_time_ns": int(record["cpu.time"]), "vcpus": vcpus}
 
-        if taps is None or "net.count" not in record:
-            unknown.update(declared)
-            unknown.update(taps.values() if taps else [])
-            continue
+        # An interface that cannot be placed may carry a product Machine's
+        # declared networks, or, for any other domain, any network at all.
+        scope = set(declared) if row is not None and declared else None
+        count = int(record["net.count"]) if "net.count" in record else None
+        sources = None if count is None else _interface_sources(ctx, name) if count else {}
+        unplaced = sources is None
+        counted: list[tuple[str, str, int, int]] = []
 
-        for index in range(int(record["net.count"])):
+        for index in range(count if sources is not None else 0):
             prefix = "net.%d." % index
-            tap = record.get(prefix + "name")
-            network = taps.get(tap or "")
+            tap = record.get(prefix + "name") or ""
 
-            if network is None:
-                unknown.update(declared)
+            if tap not in sources:
+                unplaced = True
+                break
+
+            source = sources[tap]
+
+            if source is None:
+                # On no network and no bridge: no listed network's traffic.
                 continue
 
-            entry = totals.setdefault(network, {"rx_bytes": 0, "tx_bytes": 0, "interfaces": []})
+            kind, value = source
+
+            if kind == "bridge":
+                if bridges is None:
+                    bridges = _bridge_networks(ctx)
+
+                if bridges is None:
+                    everywhere = True
+                    break
+
+                if value not in bridges:
+                    # A bridge no libvirt network owns.
+                    continue
+
+                value = bridges[value]
 
             if prefix + "rx.bytes" not in record or prefix + "tx.bytes" not in record:
-                unknown.add(network)
+                unknown.add(value)
                 continue
 
-            entry["rx_bytes"] += int(record[prefix + "rx.bytes"])
-            entry["tx_bytes"] += int(record[prefix + "tx.bytes"])
+            counted.append((value, tap, int(record[prefix + "rx.bytes"]), int(record[prefix + "tx.bytes"])))
+
+        if unplaced:
+            if scope is None:
+                everywhere = True
+            else:
+                unknown.update(scope)
+            continue
+
+        for value, tap, rx_bytes, tx_bytes in counted:
+            entry = totals.setdefault(value, {"rx_bytes": 0, "tx_bytes": 0, "interfaces": []})
+            entry["rx_bytes"] += rx_bytes
+            entry["tx_bytes"] += tx_bytes
             entry["interfaces"].append("%s/%s" % (name, tap))
 
     return {
         "available": True,
         "sampled_ns": (before + after) // 2,
         "machines": loads,
-        "networks": {
+        "networks": {} if everywhere else {
             network: dict(entry, interfaces=sorted(entry["interfaces"]))
             for network, entry in sorted(totals.items())
             if network not in unknown
