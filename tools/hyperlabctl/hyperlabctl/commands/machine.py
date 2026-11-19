@@ -7,7 +7,11 @@ import getpass
 import hashlib
 import json
 import os
+import re
 import stat
+import time
+import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -447,6 +451,178 @@ def build_product_inventory(
     }
 
 
+# ---------------------------------------------------------------- counters
+#
+# Raw runtime counters for the shell's live layer: each running product
+# Machine's total CPU time and, per network, the bytes its running Machines'
+# interfaces received and sent. One read-only `virsh domstats` on the
+# existing connection; the shell computes rates between two samples, so this
+# keeps no state. Whatever cannot be read is left out, never written as 0.
+
+_STATS_DOMAIN = re.compile(r"^Domain: '(.+)'$")
+_STATS_FIELD = re.compile(r"^  ([a-z0-9_.]+)=(.*)$")
+_STATS_COUNTER = re.compile(r"^[0-9]+$")
+
+
+def _parse_domstats(text: str) -> dict[str, dict[str, str]] | None:
+    """`Domain: 'name'` then `  field=value` lines; None on any surprise."""
+
+    records: dict[str, dict[str, str]] = {}
+    current: dict[str, str] | None = None
+
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+
+        domain = _STATS_DOMAIN.match(line)
+
+        if domain is not None:
+            if domain.group(1) in records:
+                return None
+            current = records[domain.group(1)] = {}
+            continue
+
+        field = _STATS_FIELD.match(line)
+
+        if field is None or current is None or field.group(1) in current:
+            return None
+
+        current[field.group(1)] = field.group(2)
+
+    for record in records.values():
+        for key, value in record.items():
+            if key in ("cpu.time", "net.count") or key.endswith((".rx.bytes", ".tx.bytes")):
+                if _STATS_COUNTER.match(value) is None:
+                    return None
+
+    return records
+
+
+def _interface_networks(ctx, name: str) -> dict[str, str] | None:
+    """Each interface's host device name -> its network, from dumpxml."""
+
+    result = ctx.virsh("dumpxml", name)
+
+    if not result.ok:
+        return None
+
+    try:
+        root = ET.fromstring(result.stdout)
+    except ET.ParseError:
+        return None
+
+    mapped: dict[str, str] = {}
+
+    for interface in root.findall("./devices/interface"):
+        target = interface.find("target")
+        source = interface.find("source")
+
+        if target is None or source is None or not target.get("dev"):
+            continue
+
+        # The same attribute order as domainxml.parse_domain, so a tap maps
+        # to the network name the Machine row carries.
+        network = source.get("network") or source.get("bridge")
+
+        if network:
+            mapped[target.get("dev")] = network
+
+    return mapped
+
+
+def runtime_counters(
+    ctx,
+    machines: list[dict[str, Any]],
+    *,
+    clock: Callable[[], int] = time.monotonic_ns,
+) -> dict[str, Any]:
+    """Raw CPU and interface counters of the running product Machines."""
+
+    running = [row for row in machines if row.get("state") == "running"]
+    attached = {
+        str(network)
+        for row in machines
+        if isinstance(row.get("networks"), list)
+        for network in row["networks"]
+    }
+    totals: dict[str, dict[str, Any]] = {
+        network: {"rx_bytes": 0, "tx_bytes": 0, "interfaces": []}
+        for network in sorted(attached)
+    }
+    unknown: set[str] = set()
+    loads: dict[str, dict[str, int]] = {}
+
+    if not running:
+        sampled = clock()
+        return {"available": True, "sampled_ns": sampled, "machines": {}, "networks": totals}
+
+    before = clock()
+    result = ctx.virsh(
+        "domstats", "--cpu-total", "--interface",
+        *[str(row["name"]) for row in running],
+    )
+    after = clock()
+
+    if not result.ok:
+        return {"available": False}
+
+    records = _parse_domstats(result.stdout)
+
+    if records is None:
+        return {"available": False}
+
+    for row in running:
+        name = str(row["name"])
+        record = records.get(name)
+        declared = [str(network) for network in row.get("networks") or []]
+
+        if record is None:
+            unknown.update(declared)
+            continue
+
+        vcpus = row.get("vcpus")
+
+        if "cpu.time" in record and isinstance(vcpus, int) and not isinstance(vcpus, bool) and vcpus > 0:
+            loads[name] = {"cpu_time_ns": int(record["cpu.time"]), "vcpus": vcpus}
+
+        taps = _interface_networks(ctx, name)
+
+        if taps is None or "net.count" not in record:
+            unknown.update(declared)
+            unknown.update(taps.values() if taps else [])
+            continue
+
+        for index in range(int(record["net.count"])):
+            prefix = "net.%d." % index
+            tap = record.get(prefix + "name")
+            network = taps.get(tap or "")
+
+            if network is None:
+                unknown.update(declared)
+                continue
+
+            entry = totals.setdefault(network, {"rx_bytes": 0, "tx_bytes": 0, "interfaces": []})
+
+            if prefix + "rx.bytes" not in record or prefix + "tx.bytes" not in record:
+                unknown.add(network)
+                continue
+
+            entry["rx_bytes"] += int(record[prefix + "rx.bytes"])
+            entry["tx_bytes"] += int(record[prefix + "tx.bytes"])
+            entry["interfaces"].append("%s/%s" % (name, tap))
+
+    return {
+        "available": True,
+        "sampled_ns": (before + after) // 2,
+        "machines": loads,
+        "networks": {
+            network: dict(entry, interfaces=sorted(entry["interfaces"]))
+            for network, entry in sorted(totals.items())
+            if network not in unknown
+        },
+    }
+
+
 class MachineCommand(Command):
     name = "machine"
     help = "manage C10 product Machines"
@@ -760,6 +936,13 @@ class MachineCommand(Command):
         )
 
         if args.json:
+            # Counters only where the runtime was read; they sit beside the
+            # rows, never in them, so a row changes only when a fact does.
+            payload["counters"] = (
+                runtime_counters(ctx, payload["machines"])
+                if payload.get("runtime_available") is not False
+                else {"available": False}
+            )
             print(
                 json.dumps(
                     payload,
