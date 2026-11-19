@@ -549,6 +549,9 @@ proof.
 - [`sfere-seal-rules-have-no-runtime-source.md`](sfere-seal-rules-have-no-runtime-source.md):
   rule pulses between networks have no source the shell reads at run time;
   the list is empty, held equal to the rendered ruleset by a contract.
+- [`sfere-seal-animation-on-property.md`](sfere-seal-animation-on-property.md):
+  the seal's source check refused `NumberAnimation {` but not
+  `NumberAnimation on liveTime {`; it now refuses both spellings.
 
 - [`rhi-render-offscreen-was-software.md`](rhi-render-offscreen-was-software.md):
   an offscreen OpenGL request silently rendered with the software backend; the

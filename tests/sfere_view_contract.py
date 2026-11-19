@@ -109,8 +109,11 @@ def source_contract() -> None:
         clean = strip_noise(source)
         require(not re.search(r"\bQt\.(?:rgba?|hsla?|hsva?|color|darker|lighter|tint)\s*\(", clean),
                 f"colour constructor in {name}")
-        require(not re.search(r"\b(?:\w*Animation|Transition|Behavior|Process|FileView|FrameAnimation)\s*\{",
-                              clean), f"{name} gained an animation or a data transport")
+        # `NumberAnimation on angle { ... }` and `Behavior on x { ... }` are
+        # the same objects in property-value-source form: refused alike.
+        require(not re.search(r"\b(?:\w*Animation|Transition|Behavior|Process|FileView|FrameAnimation)"
+                              r"(?:\s+on\s+[\w.]+)?\s*\{", clean),
+                f"{name} gained an animation or a data transport")
         timers += len(re.findall(r"\bTimer\s*\{", clean))
         for number in ("0.685", "0.41", "0.555", "0.057", "0.413", "0.46"):
             require(not re.search(r"(?<![\d.])" + re.escape(number) + r"(?!\d)", clean),

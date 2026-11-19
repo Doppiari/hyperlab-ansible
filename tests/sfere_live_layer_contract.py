@@ -187,8 +187,10 @@ LIVE_CHECKS = r'''
                                                                && item.machine === entry.row.name);
                 const painted = trails.some(trail => trail.outline.length > 2
                     && drawn(trail, "sfere-path-trail").some(path => path.fillColor.a > 0));
-                check(Math.abs(entry.item.trailSpan - span) < 1e-9 && (span > 0 || !painted),
+                check(span > 0 || (entry.item.trailSpan === 0 && !painted),
                       "a trail is drawn without a load reading");
+                check(Math.abs(entry.item.trailSpan - span) < 1e-9,
+                      "a trail's length is not 0.4 + 1.8 x its Machine's load");
                 check(span === 0 || painted, "a running Machine with a load reading has no trail");
             }
             view.liveTime = t0;

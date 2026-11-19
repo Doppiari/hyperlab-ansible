@@ -6483,3 +6483,54 @@ software backend inside the RHI fixture prints `RHI render skipped: Qt chose
 graphics API 1, not OpenGL` and exits 0: a still form is never reported as a
 shader render. The `stale-qsb` break edits a number on purpose: a comment
 compiles to the same bytes, so only the digest sees a comment edit.
+
+## Sfere seal: the live layer
+
+The check is `python tests/sfere_live_layer_contract.py`; the two source
+breaks run `python tests/sfere_view_contract.py`. QML filenames below are
+under `roles/host_desktop_common/files/quickshell/hyperlab/`. Before each
+break, save the named file to a separate copy; make only the named change,
+run the check, copy the saved bytes back, compare them and rerun the check.
+
+Run against the tree before the live layer (the parent of the commit that
+draws it), the contract is red: "no-machines checks never completed -- an
+uncaught runtime error", because ShellState has no `networkRules`,
+`machineLoad` or `networkTraffic` and the scene fails on the first of them.
+
+| Mutation | File and break | Observed red diagnostic | Restored |
+| --- | --- | --- | --- |
+| `speed-from-load` | `SealNetwork.qml`: in `angleOf`, multiply `net.liveTime * net.orbitRate` by `1 + load` when the ring has a load. | five-networks checks: "a running electron's speed is not the one shared speed" | Exit 0, OK. |
+| `shut-off-moves` | `SealNetwork.qml`: `angleOf` returns `base + net.liveTime * net.orbitRate` whatever the state. | five-networks checks: "a shut-off electron moved" | Exit 0, OK. |
+| `trail-without-load` | `SealNetwork.qml`: `trailSpan` gives a running ring without a load `0.4 + 1.8 * 0`. | thirty checks: "a trail is drawn without a load reading" | Exit 0, OK. |
+| `trail-span` | `SealNetwork.qml`: `1.8 * row.load` becomes `1.2 * row.load`. | five-networks checks: "a trail's length is not 0.4 + 1.8 x its Machine's load" | Exit 0, OK. |
+| `particles-on-broken` | `SealSpoke.qml`: drop `spoke.broken ? 0 :` from `particleCount`. | thirty checks: "a broken spoke carries traffic" | Exit 0, OK. |
+| `particles-unknown` | `SfereView.qml`: `trafficOf` returns `1` instead of `-1` without a reading. | no-machines checks: "particles without a traffic reading" | Exit 0, OK. |
+| `pulse-without-rule` | `SfereView.qml`: `pulses` concatenates a `dev` to `services` `ssh` rule to the rules it reads. | no-machines checks: "a rule pulse is drawn without a declared rule" | Exit 0, OK. |
+| `invented-rule` | `ShellState.qml`: `networkRules` declares the `dev` to `services` `ssh` rule. | no-machines checks: "ShellState declares a rule the rendered isolation ruleset does not accept, or misses one" | Exit 0, OK. |
+| `first-poll-load` | `ShellState.qml`: with no previous sample, `applyCounters` gives every Machine a load of 0. | five-networks checks: "the first poll gave a load or a traffic rate" | Exit 0, OK. |
+| `reset-load` | `ShellState.qml`: drop `\|\| now.cpu_time_ns < then.cpu_time_ns` from the load loop. | five-networks checks: "a CPU counter that fell gave a load" | Exit 0, OK. |
+| `counters-in-signature` | `ShellState.qml`: the inventory signature is `JSON.stringify([parsed.machines, parsed.counters])`. | no-machines checks: "counters moved the inventory generation" | Exit 0, OK. |
+| `beam-wrong-machine` | `SfereView.qml`: `beamEnd` is the electron of the first managed Machine instead of the holder's. | five-networks checks: "the GPU beam does not end on the holder" | Exit 0, OK. |
+| `wave-without-machine` | `SfereView.qml`: `focusNetwork` is `0` instead of `-1` when no Machine has focus. | no-machines checks: "host focus has no wave round the host" | Exit 0, OK. |
+| `wave-unknown-focus` | `SfereView.qml`: `hostFocused` is also true when the focus kind is `unknown`. | thirty checks: "a focus wave without a recognised focus" | Exit 0, OK. |
+| `reduced-moves` | `SfereView.qml`: drop `&& !view.reduced` from `liveMoving`. | no-machines checks: "reduced motion moved the live layer" | Exit 0, OK. |
+| `network-colour-literal` | `SealNetwork.qml`: add `property color inventedTone: "red"`. | colour literal in SealNetwork.qml | Exit 0, OK. |
+| `electron-animation` | `SealNetwork.qml`: add `NumberAnimation on liveTime { ... loops: Animation.Infinite }`. | SealNetwork.qml gained an animation or a data transport | Exit 0, OK. |
+
+All seventeen breaks exited 1 with the diagnostic listed, and every restored
+copy was byte-identical and exited 0. Two were not red at first:
+
+- `electron-animation` stayed green: the seal contract's source check
+  matched `NumberAnimation {` but not the property value source form
+  `NumberAnimation on liveTime {`. The check now accepts an optional
+  `on <property>` before the brace
+  ([`problems/sfere-seal-animation-on-property.md`](../problems/sfere-seal-animation-on-property.md)).
+- `trail-span` was red, but with "a trail is drawn without a load reading",
+  because one check tested both the trail's presence and its length. The two
+  are now separate checks, and the length has its own diagnostic.
+
+`wave-without-machine` is caught by the host-focus scene, which runs first;
+`wave-unknown-focus` breaks only the unknown case and is caught there. The
+hyperlabctl side of the counters is catalogued in
+`tools/hyperlabctl/MUTATIONS.md` ("Raw runtime counters"). These
+observations are software verification only.

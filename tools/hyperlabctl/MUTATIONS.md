@@ -199,3 +199,18 @@ were still refused by the subsequent mandatory lookups. A complete table with
 an extra, unreviewed domain now isolates exact-key validation; replay is red.
 Neither green result was evidence that unsafe input was accepted. Both exposed
 a fixture that failed to distinguish the individual guard from another refusal.
+
+## Raw runtime counters
+
+`machine inventory --json` carries the `counters` object the seal's live
+layer rates (`runtime_counters` in `commands/machine.py`). The check is
+`python3 tools/hyperlabctl/tests/run.py`; the assertions are in
+`tests/test_machine_counters.py`. Each break was made on the file, the suite
+run, the saved copy restored byte-identical and the suite run green again.
+
+| Mutation | File | Break | Result | Assertion that caught it |
+| --- | --- | --- | --- | --- |
+| `failed-read-zeros` | `commands/machine.py` | A failed `virsh domstats` returns an available sample with empty Machines and zeroed networks | red | `failed_unavailable` expected False, got True; `failed_has_no_counters` |
+| `unmapped-tap-counted` | `commands/machine.py` | An interface whose tap maps to no network is skipped instead of making its networks unknown | red | `unmapped_network_unknown` expected {}, got a zeroed `dev` |
+| `missing-bytes-zero` | `commands/machine.py` | A missing `rx.bytes` or `tx.bytes` counts as 0 | red | `missing_tx_network_absent` expected {}, got `dev` with `tx_bytes` 0 |
+| `absent-machine-counted` | `commands/machine.py` | A running Machine absent from the answer is skipped instead of making its networks unknown | red | `absent_machine_network` expected {}, got a zeroed `dev` |
