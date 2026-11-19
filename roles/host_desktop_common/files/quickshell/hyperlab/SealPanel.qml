@@ -17,6 +17,8 @@ Rectangle {
     required property var detail
     required property var machines
     property string highlighted: ""
+    // Each Machine's live words (state, load, GPU, focus), by name.
+    property var notes: ({})
     // Shown instead of a network when the seal has none to show.
     property string absence: ""
     property bool offerCreate: false
@@ -181,19 +183,36 @@ Rectangle {
             Repeater {
                 model: panel.machines
 
-                MachineTile {
+                Column {
+                    id: card
+
                     required property var modelData
 
-                    width: Math.max(panel.tokens.cardMinWidth,
-                        Math.min(panel.tokens.cardMaxWidth,
-                            (cards.width - panel.tokens.cardGap * 2) / 3))
-                    tokens: panel.tokens
-                    theme: panel.theme
-                    icons: panel.icons
-                    machine: modelData
-                    sphereVisible: false
-                    selected: String(modelData.name) === panel.highlighted
-                    onActivated: panel.machineRequested(String(modelData.name))
+                    readonly property string name: String(card.modelData.name)
+
+                    spacing: 2
+
+                    MachineTile {
+                        width: Math.max(panel.tokens.cardMinWidth,
+                            Math.min(panel.tokens.cardMaxWidth,
+                                (cards.width - panel.tokens.cardGap * 2) / 3))
+                        tokens: panel.tokens
+                        theme: panel.theme
+                        icons: panel.icons
+                        machine: card.modelData
+                        sphereVisible: false
+                        selected: card.name === panel.highlighted
+                        onActivated: panel.machineRequested(card.name)
+                    }
+
+                    ShellLabel {
+                        objectName: "sfere-card-live-" + card.name
+                        tokens: panel.tokens
+                        role: "meta"
+                        text: Object.prototype.hasOwnProperty.call(panel.notes, card.name)
+                            ? panel.notes[card.name] : ""
+                        color: panel.theme.textSecondary
+                    }
                 }
             }
         }

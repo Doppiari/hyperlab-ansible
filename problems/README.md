@@ -543,6 +543,12 @@ proof.
 - [`sfere-seal-clock-under-session-lock.md`](sfere-seal-clock-under-session-lock.md):
   the seal's clock stops on a hidden tab or window but not behind the locker,
   because the shell keeps no locked state and hears no unlock.
+- [`sfere-seal-machine-address-has-no-source.md`](sfere-seal-machine-address-has-no-source.md):
+  the seal's tooltip should give each Machine's address, but no read the shell
+  makes carries it; it says "address unknown" until one does.
+- [`sfere-seal-rules-have-no-runtime-source.md`](sfere-seal-rules-have-no-runtime-source.md):
+  rule pulses between networks have no source the shell reads at run time;
+  the list is empty, held equal to the rendered ruleset by a contract.
 
 - [`rhi-render-offscreen-was-software.md`](rhi-render-offscreen-was-software.md):
   an offscreen OpenGL request silently rendered with the software backend; the

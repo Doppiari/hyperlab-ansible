@@ -10,12 +10,30 @@
 //   lit core   a managed Machine in that network runs (Machine inventory)
 //   port       one per listed network; sealed, with a broken spoke, exactly
 //              when the network is isolated
-//   electron   a managed Machine attached to the network, still: bright when
+//   electron   a managed Machine attached to the network: bright when
 //              running, hollow otherwise, on a dashed ring when disposable
 //   heartbeat  one beat of the host's core per successful refresh of the
 //              network inventory, the Machine inventory or GPU ownership;
 //              when any of them is stale it stops, dims and says so
 //   panel      the selected network's facts and its Machines' cards
+//
+// The live layer (ADR 0070) shows what is true now, and moves only for it:
+//
+//   orbit      a running Machine's electron travels its ring at one speed
+//              for all; a stopped one stands still
+//   trail      behind a running electron, as long as its CPU load (rated by
+//              ShellState between two inventory polls); no reading, none
+//   traffic    particles both ways on a whole spoke, more for more bytes per
+//              second; none at rest, unknown or on a broken spoke
+//   GPU beam   a dotted beam from the host to the electron of the Machine
+//              GPU ownership names, with a token beside it; the token on the
+//              host when the host holds it; nothing when unknown
+//   focus      a wave round the network, and a ring round the electron, of
+//              the Machine the provenance answer names; round the host when
+//              the host has focus; none when focus is unrecognised
+//   rule       a pulse network -> port -> host -> port -> network for each
+//              rule ShellState declares between two listed networks (the
+//              flow matrix declares none, so none is drawn on a real host)
 //
 // The rest is atmosphere (SealAmbient) and never carries state. One 33 ms
 // timer drives every clock here and stops when nothing needs it.
@@ -89,6 +107,89 @@ Item {
     // Past this many Machines a network's last ring stands for the rest.
     readonly property int ringLimit: 8
 
+    // Live facts. Load and traffic are empty unless the inventory is
+    // current; a name without an entry has no reading.
+    readonly property var loads: view.shellState.machineLoad
+    readonly property var traffic: view.shellState.networkTraffic
+    // The Machine GPU ownership names, "" when the host holds the GPU or
+    // ownership is unknown; `gpuHome` only when it is known to be the host.
+    readonly property string gpuHolder: view.gpuLent ? String(view.gpuOwnership.owner) : ""
+    readonly property bool gpuHome: view.gpuOwnership.known === true && !view.gpuLent
+    // Focus from the reviewed provenance answer only, never a window title.
+    readonly property var focusAnswer: view.shellState.focusedMachine
+    readonly property string focusName: view.focusAnswer.kind === "machine" ? String(view.focusAnswer.name) : ""
+    readonly property bool hostFocused: view.focusAnswer.kind === "host"
+
+    function own(object, key) {
+        return object !== null && typeof object === "object" && Object.prototype.hasOwnProperty.call(object, key);
+    }
+
+    // A running Machine's load as a share of its vCPUs, or null.
+    function loadOf(row) {
+        const name = String(row.name);
+
+        return view.machinesCurrent && view.running(row) && view.own(view.loads, name)
+            ? view.loads[name] : null;
+    }
+
+    // A network's bytes per second, or -1 when there is no reading.
+    function trafficOf(name) {
+        return view.own(view.traffic, name) && typeof view.traffic[name] === "number"
+            ? view.traffic[name] : -1;
+    }
+
+    function rateWords(rate) {
+        if (rate < 0)
+            return "unknown";
+
+        if (rate === 0)
+            return "none";
+
+        const units = ["B/s", "kB/s", "MB/s", "GB/s"];
+        let value = rate;
+        let unit = 0;
+
+        while (value >= 1000 && unit < units.length - 1) {
+            value /= 1000;
+            unit += 1;
+        }
+
+        return (value < 10 && unit > 0 ? value.toFixed(1) : String(Math.round(value))) + " " + units[unit];
+    }
+
+    // A Machine in words: state, load, the GPU, focus and lifecycle. The
+    // same words read in its tooltip, its card and the hidden list.
+    function machineFacts(row) {
+        const name = String(row.name);
+        const words = [String(row.state)];
+        const load = view.loadOf(row);
+
+        if (view.inventoryAvailable && !view.machinesCurrent)
+            words[0] = "last observed " + words[0];
+
+        if (view.machinesCurrent && view.running(row))
+            words.push(load === null ? "load unavailable" : "load " + Math.round(load * 100) + "%");
+
+        if (name === view.gpuHolder)
+            words.push("holds the GPU");
+
+        if (name === view.focusName)
+            words.push("has focus");
+
+        if (row.lifecycle === "disposable")
+            words.push("disposable");
+
+        return words;
+    }
+
+    // The Machines drawn on rings: the GPU holder and the focused Machine
+    // first, so neither hides behind "+N", then running ones, then by name.
+    function ringOrder(a, b) {
+        const marked = row => String(row.name) === view.gpuHolder || String(row.name) === view.focusName ? 0 : 1;
+
+        return marked(a) - marked(b) || view.byRunningThenName(a, b);
+    }
+
     function attached(row, name) {
         return Array.isArray(row.networks) && row.networks.map(String).indexOf(name) >= 0;
     }
@@ -154,7 +255,8 @@ Item {
                 .slice().sort(view.byRunningThenName);
             const runningCount = machines.filter(view.running).length;
             const rings = machines.length > view.ringLimit
-                ? machines.slice(0, view.ringLimit - 1) : machines.slice();
+                ? machines.slice().sort(view.ringOrder).slice(0, view.ringLimit - 1)
+                : machines.slice().sort(view.ringOrder);
             const network = {
                 "name": name,
                 "title": view.title(name),
@@ -170,15 +272,22 @@ Item {
                 "machines": machines,
                 "runningCount": runningCount,
                 "lit": view.machinesCurrent && runningCount > 0,
+                "traffic": view.trafficOf(name),
                 "rings": rings.map(machine => ({
                     "name": String(machine.name),
-                    // Bright only while the inventory is current: a stale
-                    // observation is not a running Machine.
+                    // Bright, and moving, only while the inventory is
+                    // current: a stale observation is not a running Machine.
                     "running": view.machinesCurrent && view.running(machine),
                     "disposable": machine.lifecycle === "disposable",
+                    "load": view.loadOf(machine),
+                    "gpu": String(machine.name) === view.gpuHolder,
+                    "focused": String(machine.name) === view.focusName,
+                    "words": [String(machine.name), view.title(name), "address unknown"]
+                        .concat(view.machineFacts(machine)).join(" · "),
                     "more": 0
                 })).concat(machines.length > view.ringLimit
-                    ? [{ "name": "", "running": false, "disposable": false,
+                    ? [{ "name": "", "running": false, "disposable": false, "load": null,
+                         "gpu": false, "focused": false, "words": "",
                          "more": machines.length - rings.length }]
                     : [])
             };
@@ -204,6 +313,12 @@ Item {
 
         for (const row of view.shellState.outsideDomains)
             out.push({ "name": String(row.name), "words": "not managed · outside the seal" });
+
+        // GPU ownership may name a Machine with no electron: it says so here.
+        for (const row of out) {
+            if (row.name === view.gpuHolder)
+                row.words += " · holds the GPU";
+        }
 
         return out;
     }
@@ -371,13 +486,23 @@ Item {
         view.shown && !view.reduced && view.fresh && view.lastRefresh > view.beatDoneAt
     readonly property bool cameraMoving: view.shown && !view.reduced
         && Math.abs(view.camT - view.aimT) > 0.002
-    readonly property bool clockNeeded:
-        view.ambientActive || view.coresMoving || view.beatPending || view.cameraMoving
+    // The live layer moves while something live is on the seal: a running
+    // electron (and its trail and traffic), a focus wave or a rule pulse.
+    readonly property bool liveMoving: view.shown && !view.reduced
+        && (view.networks.some(network => network.rings.some(row => row.running))
+            || view.focusNetwork >= 0 || view.hostFocused || view.pulses.length > 0)
+    readonly property bool clockNeeded: view.ambientActive || view.coresMoving
+        || view.liveMoving || view.beatPending || view.cameraMoving
 
     // Seconds the lit cores and the atmosphere have moved: each advances
     // only while it may.
     property real coreTime: 0
     property real ambientTime: 0
+    // Seconds the live layer has moved, and the one speed of every running
+    // electron, in radians per second: the motion means "running" and
+    // nothing else, so no load or traffic enters it.
+    property real liveTime: 0
+    readonly property real orbitRate: 0.9
     property real beat: 0
     property real lastTick: 0
 
@@ -418,6 +543,9 @@ Item {
 
         if (view.ambientActive)
             view.ambientTime += seconds;
+
+        if (view.liveMoving)
+            view.liveTime += seconds;
 
         view.updateBeat(now);
 
@@ -623,6 +751,97 @@ Item {
         "lit": view.networks[index].lit ? 1 : 0
     }))
 
+    // ----------------------------------------------------------- live marks
+
+    // Where a network is on the seal, by name, or -1.
+    function placeOf(name) {
+        return view.networks.findIndex(network => network.name === name);
+    }
+
+    // The focused Machine's network: the one listed network whose rings
+    // carry it, or -1. A Machine on no ring (outside the seal, or not in the
+    // inventory) moves no wave.
+    readonly property int focusNetwork: view.focusName.length === 0 ? -1
+        : view.networks.findIndex(network => network.rings.some(row => row.focused))
+
+    // The port on the host ring that a network's spoke leaves from.
+    function portPoint(index) {
+        const angle = view.places[index].toward;
+
+        return Qt.point(view.hostX + Math.cos(angle) * keystone.ringRadius,
+                        view.hostY + Math.sin(angle) * keystone.ringRadius);
+    }
+
+    // The electron of a Machine on the seal, in the scene, or null.
+    function electronPoint(name) {
+        for (let index = 0; index < view.networks.length; index++) {
+            const ring = view.networks[index].rings.findIndex(row => row.name === name && !(row.more > 0));
+            const slot = networkRepeater.count === view.networks.length ? networkRepeater.itemAt(index) : null;
+
+            if (ring < 0 || slot === null)
+                continue;
+
+            // The control centres its content on whole pixels: map from the
+            // sphere's own centre, read again whenever its place moves.
+            if (!view.places[index])
+                continue;
+
+            const spot = slot.seal.electronAt(ring);
+            const centre = slot.seal.mapToItem(scene, slot.seal.width / 2, slot.seal.height / 2);
+
+            return Qt.point(centre.x + spot.x, centre.y + spot.y);
+        }
+
+        return null;
+    }
+
+    // The GPU beam's end: the holder's electron, or null when the host holds
+    // the GPU, ownership is unknown or the holder is not on a ring.
+    readonly property var beamEnd: view.gpuHolder.length > 0 && view.places.length === view.networks.length
+        ? view.electronPoint(view.gpuHolder) : null
+
+    // One pulse per declared rule whose two networks are listed, each with
+    // its route through the host and its caption.
+    readonly property var pulses: {
+        const out = [];
+        const rules = Array.isArray(view.shellState.networkRules) ? view.shellState.networkRules : [];
+
+        if (view.places.length !== view.networks.length)
+            return out;
+
+        for (const rule of rules) {
+            const from = view.placeOf(String(rule.from));
+            const to = view.placeOf(String(rule.to));
+
+            if (from < 0 || to < 0 || from === to)
+                continue;
+
+            out.push({
+                "from": view.networks[from].name,
+                "to": view.networks[to].name,
+                "colours": [view.networks[from].colour, view.networks[to].colour],
+                "route": [Qt.point(view.places[from].x, view.places[from].y), view.portPoint(from),
+                          Qt.point(view.hostX, view.hostY), view.portPoint(to),
+                          Qt.point(view.places[to].x, view.places[to].y)],
+                "words": view.networks[from].name + " → " + view.networks[to].name + " · "
+                    + String(rule.name) + " · via host"
+            });
+        }
+
+        return out;
+    }
+
+    // Where a pulse is along its route at `share` (0..1) of the way.
+    function routePoint(route, share) {
+        const legs = route.length - 1;
+        const along = Math.max(0, Math.min(legs - 1e-6, share * legs));
+        const leg = Math.floor(along);
+        const rest = along - leg;
+
+        return Qt.point(route[leg].x + (route[leg + 1].x - route[leg].x) * rest,
+                        route[leg].y + (route[leg + 1].y - route[leg].y) * rest);
+    }
+
     // The camera: the whole seal, or one network entered. With reduced
     // motion, or when the view is not shown, it moves at once.
     // `camT` runs from 0 (the whole seal) to 1 (the network last entered);
@@ -728,7 +947,8 @@ Item {
             ["Gateway", view.gatewayWords(view.selected.gateway)],
             ["Mode", view.modeWord(view.selected.forward)],
             ["DHCP", view.dhcpWords(view.selected.dhcp)],
-            ["GPU level", view.levelWords(view.selected.name)]
+            ["GPU level", view.levelWords(view.selected.name)],
+            ["Traffic", view.rateWords(view.selected.traffic)]
         ],
         "rule": view.ruleWords(view.selected.forward),
         // An unreadable inventory never reads as an empty network.
@@ -741,15 +961,41 @@ Item {
 
     function networkLine(network) {
         return network.title + ", " + network.words + ", " + view.modeWord(network.forward)
-            + ", " + (network.subnet || "subnet unknown");
+            + ", " + (network.subnet || "subnet unknown")
+            + ", traffic " + view.rateWords(network.traffic)
+            + (view.focusNetwork >= 0 && view.networks[view.focusNetwork] === network ? ", has focus" : "");
     }
 
     function machineLine(row, network) {
-        return String(row.name) + ", " + network.title + " network, " + String(row.state)
-            + (row.lifecycle === "disposable" ? ", disposable" : "");
+        return String(row.name) + ", " + network.title + " network, " + view.machineFacts(row).join(", ");
     }
 
-    readonly property string hostLine: "Host, every path passes here, " + view.freshnessLine
+    // Who holds the GPU, in words, from GPU ownership.
+    readonly property string gpuLine: {
+        if (view.gpuHome)
+            return "holds the GPU";
+
+        if (view.gpuHolder.length === 0)
+            return "GPU holder unknown";
+
+        return view.beamEnd !== null || view.managed.some(row => String(row.name) === view.gpuHolder
+                                                               && view.networks.some(network => view.attached(row, network.name)))
+            ? "GPU lent to " + view.gpuHolder
+            : "GPU lent to " + view.gpuHolder + ", outside the seal";
+    }
+
+    readonly property string hostLine: "Host, every path passes here, " + view.gpuLine
+        + (view.hostFocused ? ", has focus" : "") + ", " + view.freshnessLine
+
+    // Each Machine's live words under its card.
+    readonly property var cardNotes: {
+        const out = {};
+
+        for (const row of view.managed)
+            out[String(row.name)] = view.machineFacts(row).join(" · ");
+
+        return out;
+    }
 
     // The same content as the picture, for a screen reader.
     readonly property var listLines: {
@@ -916,6 +1162,9 @@ Item {
                     broken: row.isolated
                     selected: index === view.selectedIndex
                     lit: row.lit ? 1 : 0
+                    traffic: row.traffic
+                    time: view.liveTime
+                    place: index
                 }
             }
 
@@ -989,6 +1238,7 @@ Item {
                     required property int index
 
                     readonly property var network: view.networks[slot.index]
+                    readonly property Item seal: sealNetwork
 
                     objectName: "sfere-network-" + slot.modelData.name
                     x: slot.modelData.x - width / 2
@@ -1014,6 +1264,8 @@ Item {
                             height: 1
 
                             SealNetwork {
+                                id: sealNetwork
+
                                 x: -width / 2
                                 y: -height / 2
                                 tokens: view.tokens
@@ -1028,6 +1280,9 @@ Item {
                                     ? view.machineCursor : ""
                                 labelBelow: slot.modelData.below
                                 labelDrop: slot.modelData.drop
+                                liveTime: view.liveTime
+                                orbitRate: view.orbitRate
+                                focusWave: view.focusNetwork === slot.index
                             }
                         }
                     ]
@@ -1038,6 +1293,152 @@ Item {
                             view.cursor = slot.index;
                     }
                     Keys.onPressed: event => view.stageKey(event)
+                }
+            }
+
+            // The GPU beam: dotted, from the host's core to the electron of
+            // the Machine holding the GPU.
+            Shape {
+                id: beam
+
+                readonly property point from: Qt.point(view.hostX, view.hostY)
+                readonly property point to: view.beamEnd === null ? beam.from : view.beamEnd
+
+                objectName: "sfere-gpu-beam"
+                anchors.fill: parent
+                z: 5
+                visible: view.beamEnd !== null
+                opacity: view.zoomed ? 0.4 : 1
+                antialiasing: true
+
+                ShapePath {
+                    objectName: "sfere-path-beam"
+                    strokeColor: view.beamEnd === null ? view.theme.alpha(view.theme.textPrimary, 0)
+                        : view.theme.alpha(view.theme.textPrimary, 0.85)
+                    strokeWidth: 1.4
+                    fillColor: view.theme.alpha(view.theme.textPrimary, 0)
+                    strokeStyle: ShapePath.DashLine
+                    dashPattern: [1, 4]
+                    startX: beam.from.x
+                    startY: beam.from.y
+
+                    PathLine { x: beam.to.x; y: beam.to.y }
+                }
+
+                ShellLabel {
+                    objectName: "sfere-gpu-beam-label"
+                    x: beam.from.x + (beam.to.x - beam.from.x) * 0.62 + view.tokens.spaceSm
+                    y: beam.from.y + (beam.to.y - beam.from.y) * 0.62 - height - 2
+                    tokens: view.tokens
+                    role: "label"
+                    text: "GPU"
+                    color: view.theme.textPrimary
+                }
+            }
+
+            // The host holds the GPU: its token sits on the host.
+            Rectangle {
+                objectName: view.gpuHome ? "sfere-gpu-token-host" : ""
+                visible: view.gpuHome
+                x: view.hostX + view.hostRadius * 0.3 - width / 2
+                y: view.hostY - view.hostRadius * 0.3 - height / 2
+                z: 5
+                width: 9
+                height: 9
+                rotation: 45
+                color: view.theme.textPrimary
+            }
+
+            // The host has focus: two rings widen round its core.
+            Repeater {
+                model: view.hostFocused ? 2 : 0
+
+                Rectangle {
+                    required property int index
+
+                    readonly property real phase: (view.liveTime * 0.55 + index * 0.5) % 1
+
+                    objectName: "sfere-wave-host"
+                    x: view.hostX - width / 2
+                    y: view.hostY - height / 2
+                    z: 5
+                    width: view.hostRadius * 0.84 * (1.05 + phase * 1.6)
+                    height: width
+                    radius: width / 2
+                    color: view.theme.alpha(view.theme.textPrimary, 0)
+                    border.width: 1.5
+                    border.color: view.theme.alpha(view.theme.textPrimary, (1 - phase) * 0.6 + 0.1)
+                }
+            }
+
+            // Who holds the GPU and whether the host has focus, in words,
+            // under the keystone: the far networks' words leave no room above.
+            ShellLabel {
+                id: hostLive
+
+                objectName: "sfere-host-live"
+                x: view.hostX - width / 2
+                y: view.hostY + view.hostRadius + view.tokens.spaceXs
+                z: 4
+                opacity: view.zoomed ? 0.3 : 1
+                tokens: view.tokens
+                role: "mono"
+                text: view.gpuLine + (view.hostFocused ? " · has focus" : "")
+                color: view.theme.textQuiet
+            }
+
+            // A declared rule between two networks: a pulse along its route,
+            // always through the host, and its caption under the host.
+            Repeater {
+                model: view.pulses
+
+                Item {
+                    id: pulse
+
+                    required property var modelData
+                    required property int index
+
+                    // A still pulse stands on the first network's spoke.
+                    readonly property real share: (0.15 + view.liveTime * 0.3) % 1
+                    readonly property point at: view.routePoint(pulse.modelData.route, pulse.share)
+
+                    objectName: "sfere-pulse-" + pulse.modelData.from + "-" + pulse.modelData.to
+                    anchors.fill: parent
+                    z: 6
+
+                    Rectangle {
+                        x: pulse.at.x - width / 2
+                        y: pulse.at.y - height / 2
+                        width: 7
+                        height: 7
+                        radius: 3.5
+                        color: view.theme.textPrimary
+                        border.width: 2
+                        border.color: view.theme.alpha(
+                            pulse.modelData.colours[pulse.share < 0.5 ? 0 : 1], 0.6)
+                    }
+
+                    Rectangle {
+                        objectName: "sfere-rule-caption"
+                        x: view.hostX - width / 2
+                        y: hostLive.y + hostLive.height + view.tokens.spaceXs + pulse.index * (height + 4)
+                        width: caption.width + view.tokens.spaceMd * 2
+                        height: caption.height + view.tokens.spaceXs * 2
+                        radius: view.tokens.radiusControl
+                        color: view.theme.alpha(view.theme.base, 0.85)
+                        border.width: 1
+                        border.color: view.theme.alpha(view.theme.textSecondary, 0.4)
+
+                        ShellLabel {
+                            id: caption
+
+                            anchors.centerIn: parent
+                            tokens: view.tokens
+                            role: "meta"
+                            text: pulse.modelData.words
+                            color: view.theme.textPrimary
+                        }
+                    }
                 }
             }
         }
@@ -1156,6 +1557,7 @@ Item {
         // away: the panel lists them all.
         machines: view.selected ? view.selected.machines : (view.networksReady ? [] : view.managed)
         highlighted: view.zoomed && view.machineCursor.length > 0 ? view.machineCursor : view.highlighted
+        notes: view.cardNotes
         absence: view.absenceLine
         offerCreate: view.inventoryAvailable && view.managed.length === 0
             && view.shellState.outsideDomainsAvailable

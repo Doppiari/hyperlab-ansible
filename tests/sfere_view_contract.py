@@ -331,7 +331,7 @@ CHECKS = r'''
             // The screen reader list.
             const spoken = nodes(find(view, "sfere-list"), item => item.Accessible.role === Accessible.ListItem)
                 .map(item => item.Accessible.name);
-            check(spoken[0] === "Host, every path passes here, " + words
+            check(spoken[0].indexOf("Host, every path passes here, ") === 0 && spoken[0].endsWith(", " + words)
                   && networks.every(row => spoken.some(line => line.indexOf(view.title(row.name) + ", ") === 0))
                   && managed.every(row => !row.networks || spoken.some(line => line.indexOf(row.name + ", ") === 0)),
                   "the screen reader list lost a network, a Machine or the freshness line");

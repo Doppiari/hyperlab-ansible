@@ -1362,6 +1362,7 @@ Scope {
                 "class": "error"
             };
             state.machinesGeneration += 1;
+            state.applyCounters(null);
             return;
         }
 
@@ -1377,6 +1378,7 @@ Scope {
             state.machinesAvailable = false;
             state.machinesSourceState = "unavailable";
             state.machinesGeneration += 1;
+            state.applyCounters(null);
             return;
         }
 
@@ -1394,10 +1396,123 @@ Scope {
         state.machinesAvailable = true;
         state.machinesSourceState = "ok";
         state.machinesObservedAt = Date.now();
+        state.applyCounters(parsed.counters);
 
         if (changed)
             state.machinesGeneration += 1;
     }
+
+    // ----------------------------------------------------- load and traffic
+    //
+    // The inventory carries raw counters beside its rows (never in them, so
+    // the signature above moves only with a fact): each running Machine's
+    // CPU time and vCPU count, and per network the bytes its running
+    // Machines' interfaces received and sent, with one monotonic sample time.
+    // A rate needs two consecutive samples of the same thing. The first
+    // sample, a counter that fell (a restart), a different vCPU count or
+    // interface set, a gap longer than the stale threshold or an invalid
+    // object gives no rate: the fact is unknown, never 0.
+
+    property var counterSample: null
+    property var machineLoadObserved: ({})
+    property var networkTrafficObserved: ({})
+
+    // Share of its vCPUs each running Machine used between the last two
+    // samples, 0..1, and each network's bytes per second (received plus
+    // sent). A name that is absent has no reading. Both are empty unless
+    // the Machine inventory is current.
+    readonly property bool countersCurrent:
+        state.sourceState(state.machinesSourceState, state.machinesObservedAt) === "ok"
+    readonly property var machineLoad: state.countersCurrent ? state.machineLoadObserved : ({})
+    readonly property var networkTraffic: state.countersCurrent ? state.networkTrafficObserved : ({})
+
+    function counterValue(value) {
+        return typeof value === "number" && Number.isFinite(value) && value >= 0;
+    }
+
+    function validCounters(counters) {
+        const plain = value => value !== null && typeof value === "object" && !Array.isArray(value);
+
+        if (!plain(counters) || counters.available !== true
+            || !state.counterValue(counters.sampled_ns) || counters.sampled_ns === 0
+            || !plain(counters.machines) || !plain(counters.networks))
+            return false;
+
+        for (const name of Object.keys(counters.machines)) {
+            const row = counters.machines[name];
+
+            if (!plain(row) || !state.counterValue(row.cpu_time_ns)
+                || !Number.isInteger(row.vcpus) || row.vcpus <= 0)
+                return false;
+        }
+
+        for (const name of Object.keys(counters.networks)) {
+            const row = counters.networks[name];
+
+            if (!plain(row) || !state.counterValue(row.rx_bytes) || !state.counterValue(row.tx_bytes)
+                || !Array.isArray(row.interfaces)
+                || !row.interfaces.every(item => typeof item === "string")
+                || new Set(row.interfaces).size !== row.interfaces.length)
+                return false;
+        }
+
+        return true;
+    }
+
+    function applyCounters(counters) {
+        const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+
+        if (!state.validCounters(counters)) {
+            state.counterSample = null;
+            state.machineLoadObserved = ({});
+            state.networkTrafficObserved = ({});
+            return;
+        }
+
+        const previous = state.counterSample;
+        const seconds = previous === null ? 0 : (counters.sampled_ns - previous.sampled_ns) / 1e9;
+        const loads = {};
+        const traffic = {};
+
+        if (seconds > 0 && seconds <= state.staleSeconds) {
+            for (const name of Object.keys(counters.machines)) {
+                const now = counters.machines[name];
+                const then = own(previous.machines, name) ? previous.machines[name] : null;
+
+                if (then === null || then.vcpus !== now.vcpus || now.cpu_time_ns < then.cpu_time_ns)
+                    continue;
+
+                loads[name] = Math.min(1, (now.cpu_time_ns - then.cpu_time_ns) / 1e9 / seconds / now.vcpus);
+            }
+
+            for (const name of Object.keys(counters.networks)) {
+                const now = counters.networks[name];
+                const then = own(previous.networks, name) ? previous.networks[name] : null;
+
+                if (then === null
+                    || then.interfaces.slice().sort().join("\n") !== now.interfaces.slice().sort().join("\n")
+                    || now.rx_bytes < then.rx_bytes || now.tx_bytes < then.tx_bytes)
+                    continue;
+
+                traffic[name] = (now.rx_bytes - then.rx_bytes + now.tx_bytes - then.tx_bytes) / seconds;
+            }
+        }
+
+        state.counterSample = counters;
+        state.machineLoadObserved = loads;
+        state.networkTrafficObserved = traffic;
+    }
+
+    // ------------------------------------------------- rules between networks
+    //
+    // The flows the host allows between two different networks, each as
+    // { "from", "to", "name" }. The frozen flow matrix (docs/network-flows.md,
+    // rendered into roles/lab_isolation's ruleset) declares none: every
+    // ordered pair is dropped, so this is empty and the seal draws no rule
+    // pulse. tests/sfere_live_layer_contract.py derives the allowed pairs
+    // from the rendered ruleset and holds this list equal to them; a fixture
+    // may set it to show what a declared rule would look like.
+    property var networkRules: []
 
     // -------------------------------------------------------- capabilities
     //

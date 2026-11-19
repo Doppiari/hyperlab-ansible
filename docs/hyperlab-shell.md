@@ -248,11 +248,44 @@ broken spoke, and only an isolated one does. A spoke is not a proof of
 reachability. Under each sphere: "N machines · M running" ("lit: M
 running" when lit), "empty" or "isolated · sealed".
 
-Each managed Machine is a still electron on a tilted ring around its
-network's sphere: bright when running and the inventory is current, hollow
-otherwise, on a dashed ring when disposable. Past eight Machines the last ring reads "+N". Machines on
+Each managed Machine is an electron on a tilted ring around its network's
+sphere: bright when running and the inventory is current, hollow otherwise,
+on a dashed ring when disposable. Past eight Machines the last ring reads
+"+N"; the GPU's holder and the focused Machine always keep a ring. Machines on
 no listed network and unmanaged domains are listed outside the seal, bottom
 left, with a dashed mark.
+
+The live layer ([ADR 0070](adr/0070-sfere-seal-live-layer.md)) shows only
+what is true now. A running Machine's electron travels its ring at one speed
+shared by every Machine, whatever its load; any other stands still. Behind it
+a tapering trail is as long as its CPU load (0.4 + 1.8 x load radians), and
+there is no trail without a load reading. Particles travel a whole spoke both
+ways, one more each way for every tenfold of bytes per second; none at rest,
+none without a reading, never on a broken spoke. A dotted beam labelled "GPU"
+runs from the host to the electron of the Machine GPU ownership names, with a
+token beside it; the token sits on the host when the host holds the GPU, and
+nothing is drawn when ownership is unknown. Two rings widen round the network
+of the Machine the focused-surface provenance names, with a ring round its
+electron, or round the host when the host has focus; none when focus is
+unrecognised. A rule between two networks would pulse from one through its
+port, the host and the other port to the other, with a caption; the flow
+matrix allows none, so no pulse is drawn
+([`../problems/sfere-seal-rules-have-no-runtime-source.md`](../problems/sfere-seal-rules-have-no-runtime-source.md)).
+
+Load and traffic come from raw counters: `hyperlabctl machine inventory
+--json` adds `counters` beside its rows, read with one `virsh domstats
+--cpu-total --interface` on the existing connection (each running Machine's
+`cpu_time_ns` and vCPUs, each network's summed `rx_bytes`, `tx_bytes` and
+interfaces, and the read's monotonic `sampled_ns`). ShellState divides two
+consecutive samples; the first sample, a counter that fell, a changed vCPU
+count or interface set, a gap over 90 seconds or a failed read give no
+reading, never 0. Each Machine's tooltip (on hover, or under the keyboard in
+an entered network), card and spoken line say its state, "load N%" or "load
+unavailable" while it runs, "holds the GPU" and "has focus" where true; the
+tooltip says "address unknown", because the shell has no source for it
+([`../problems/sfere-seal-machine-address-has-no-source.md`](../problems/sfere-seal-machine-address-has-no-source.md)).
+Under the keystone the host says who holds the GPU and whether it has focus;
+the panel gives the selected network's traffic.
 
 A click or Enter selects a network; the panel under the stage shows its
 name, subnet, gateway, DHCP range, mode, GPU level and the outbound rule of
@@ -278,8 +311,9 @@ The atmosphere (the seal's turning rings and ticks, dust, the host's light
 rays) never carries state: it takes only the seal's geometry and a clock,
 turns once in minutes and stops with reduced motion, a hidden view or the
 **Ambient motion** setting off. One 33 ms timer drives the lit cores, the
-heartbeat, the atmosphere and the camera, and runs only while the view is
-shown and something needs it; a locked session does not stop it yet
+heartbeat, the atmosphere, the camera and the live layer, and runs only
+while the view is shown and something needs it; a locked session does not
+stop it yet
 ([`../problems/sfere-seal-clock-under-session-lock.md`](../problems/sfere-seal-clock-under-session-lock.md)).
 Sphere effects drop to `textureScale` 0.5 while the GPU is lent to a
 Machine, or once 30 frames in a row miss 50 ms.
@@ -288,8 +322,12 @@ Run `python tests/sfere_view_contract.py --renders DIR` to keep the five
 1920x1080 fixture captures: no Machines, five networks, thirty Machines,
 lab entered, and a stale Machine inventory. The contract executes the real
 QML with inert transports over the real net list formatter and the role's
-libvirt network template. Software-verified; installed Quickshell and
-Nitro/Predator acceptance remain open.
+libvirt network template. `python tests/sfere_live_layer_contract.py
+--renders DIR` does the same for the live layer over two inventory samples
+per fixture: no Machines, five networks with focus on dev, thirty Machines
+with twelve running, lab entered, and `declared-rule`, which declares a rule
+no host has and is a fixture only. Software-verified; installed Quickshell
+and Nitro/Predator acceptance remain open.
 
 ## Machines
 

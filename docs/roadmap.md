@@ -606,6 +606,19 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
       values equal to `net list` and `virsh net-dumpxml`, the heartbeat
       stopping with the status bridge, Ambient motion off and a low, steady
       integrated GPU load; then Predator replay
+- [x] the seal's live layer: running electrons travel their rings at one
+      speed, a trail as long as the Machine's CPU load, traffic particles on
+      whole spokes, the GPU beam to the holder, the focus wave from the
+      provenance answer and a pulse only for a declared rule (none today);
+      load and traffic are rates the shell computes from raw counters that
+      `machine inventory --json` reads with `virsh domstats`
+      (software-verified; [ADR 0070](adr/0070-sfere-seal-live-layer.md),
+      `tests/sfere_live_layer_contract.py`)
+- [ ] the seal's live layer on Nitro: a loaded Machine's electron moves and
+      its trail grows, the beam lands on the Machine a GPU handoff names,
+      the wave follows focus from a Machine window to the host, every mark
+      matching `hyperlabctl` and `virsh domstats`, and a low, steady
+      integrated GPU load with the GPU lent; then Predator replay
 
 ### 8a. Test infrastructure
 

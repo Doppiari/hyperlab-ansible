@@ -1,0 +1,615 @@
+{
+ "cases": [
+  {
+   "id": "no-machines",
+   "gpu": {
+    "known": true,
+    "owner": ""
+   },
+   "machines": [],
+   "external": [],
+   "live": {
+    "loads": {},
+    "traffic": {},
+    "focus": {
+     "kind": "host"
+    },
+    "rules": []
+   }
+  },
+  {
+   "id": "five-networks",
+   "gpu": {
+    "known": true,
+    "owner": "dev-desk"
+   },
+   "machines": [
+    {
+     "name": "clean-desk",
+     "domain": "clean",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "clean"
+     ]
+    },
+    {
+     "name": "dev-desk",
+     "domain": "dev",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-build",
+     "domain": "dev",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-runner",
+     "domain": "dev",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "service-desk",
+     "domain": "services",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "services"
+     ]
+    },
+    {
+     "name": "dirty-web",
+     "domain": "dirty",
+     "state": "running",
+     "disposable": true,
+     "networks": [
+      "dirty"
+     ]
+    }
+   ],
+   "external": [
+    {
+     "name": "hl-lab-host",
+     "state": "running",
+     "networks": [
+      "hl-lab-testbed"
+     ]
+    }
+   ],
+   "live": {
+    "loads": {
+     "dev-desk": 0.62,
+     "dirty-web": 0.22
+    },
+    "traffic": {
+     "dev": 2400000,
+     "dirty": 18000,
+     "clean": 0,
+     "services": 0
+    },
+    "focus": {
+     "kind": "machine",
+     "identity": "dev",
+     "name": "dev-desk"
+    },
+    "rules": []
+   }
+  },
+  {
+   "id": "thirty",
+   "gpu": {
+    "known": true,
+    "owner": "hl-lab-host"
+   },
+   "machines": [
+    {
+     "name": "clean-00",
+     "domain": "clean",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "clean"
+     ]
+    },
+    {
+     "name": "clean-01",
+     "domain": "clean",
+     "state": "paused",
+     "disposable": false,
+     "networks": [
+      "clean"
+     ]
+    },
+    {
+     "name": "clean-02",
+     "domain": "clean",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "clean"
+     ]
+    },
+    {
+     "name": "clean-03",
+     "domain": "clean",
+     "state": "shut off",
+     "disposable": true,
+     "networks": [
+      "clean"
+     ]
+    },
+    {
+     "name": "dev-00",
+     "domain": "dev",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-01",
+     "domain": "dev",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-02",
+     "domain": "dev",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-03",
+     "domain": "dev",
+     "state": "running",
+     "disposable": true,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-04",
+     "domain": "dev",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-05",
+     "domain": "dev",
+     "state": "paused",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-06",
+     "domain": "dev",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-07",
+     "domain": "dev",
+     "state": "shut off",
+     "disposable": true,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-08",
+     "domain": "dev",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-09",
+     "domain": "dev",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "services-00",
+     "domain": "services",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "services"
+     ]
+    },
+    {
+     "name": "services-01",
+     "domain": "services",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "services"
+     ]
+    },
+    {
+     "name": "services-02",
+     "domain": "services",
+     "state": "paused",
+     "disposable": false,
+     "networks": [
+      "services"
+     ]
+    },
+    {
+     "name": "services-03",
+     "domain": "services",
+     "state": "shut off",
+     "disposable": true,
+     "networks": [
+      "services"
+     ]
+    },
+    {
+     "name": "services-04",
+     "domain": "services",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "services"
+     ]
+    },
+    {
+     "name": "dirty-00",
+     "domain": "dirty",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "dirty"
+     ]
+    },
+    {
+     "name": "dirty-01",
+     "domain": "dirty",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "dirty"
+     ]
+    },
+    {
+     "name": "dirty-02",
+     "domain": "dirty",
+     "state": "paused",
+     "disposable": false,
+     "networks": [
+      "dirty"
+     ]
+    },
+    {
+     "name": "dirty-03",
+     "domain": "dirty",
+     "state": "shut off",
+     "disposable": true,
+     "networks": [
+      "dirty"
+     ]
+    },
+    {
+     "name": "dirty-04",
+     "domain": "dirty",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "dirty"
+     ]
+    },
+    {
+     "name": "dirty-05",
+     "domain": "dirty",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "dirty"
+     ]
+    },
+    {
+     "name": "lab-00",
+     "domain": "lab",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "lab"
+     ]
+    },
+    {
+     "name": "lab-01",
+     "domain": "lab",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "lab"
+     ]
+    },
+    {
+     "name": "lab-02",
+     "domain": "lab",
+     "state": "paused",
+     "disposable": false,
+     "networks": [
+      "lab"
+     ]
+    },
+    {
+     "name": "lab-03",
+     "domain": "lab",
+     "state": "shut off",
+     "disposable": true,
+     "networks": [
+      "lab"
+     ]
+    },
+    {
+     "name": "lab-04",
+     "domain": "lab",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "lab"
+     ]
+    }
+   ],
+   "external": [
+    {
+     "name": "hl-lab-host",
+     "state": "running",
+     "networks": [
+      "hl-lab-testbed"
+     ]
+    }
+   ],
+   "live": {
+    "loads": {
+     "clean-00": 0.08,
+     "dev-00": 0.15,
+     "dev-01": 0.22,
+     "dev-02": 0.29,
+     "dev-04": 0.43,
+     "services-00": 0.5,
+     "dirty-00": 0.64,
+     "dirty-01": 0.71,
+     "lab-00": 0.78
+    },
+    "traffic": {
+     "clean": 900,
+     "dev": 5200000,
+     "services": 0,
+     "dirty": 140000,
+     "lab": 60000
+    },
+    "focus": {
+     "kind": "unknown"
+    },
+    "rules": []
+   }
+  },
+  {
+   "id": "isolated",
+   "gpu": {
+    "known": false,
+    "owner": ""
+   },
+   "enter": "lab",
+   "machines": [
+    {
+     "name": "clean-desk",
+     "domain": "clean",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "clean"
+     ]
+    },
+    {
+     "name": "dev-desk",
+     "domain": "dev",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-build",
+     "domain": "dev",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-runner",
+     "domain": "dev",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "service-desk",
+     "domain": "services",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "services"
+     ]
+    },
+    {
+     "name": "dirty-web",
+     "domain": "dirty",
+     "state": "running",
+     "disposable": true,
+     "networks": [
+      "dirty"
+     ]
+    },
+    {
+     "name": "lab-probe",
+     "domain": "lab",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "lab"
+     ]
+    },
+    {
+     "name": "lab-scratch",
+     "domain": "lab",
+     "state": "shut off",
+     "disposable": true,
+     "networks": [
+      "lab"
+     ]
+    }
+   ],
+   "external": [],
+   "live": {
+    "loads": {
+     "dev-desk": 0.4,
+     "dirty-web": 0.1,
+     "lab-probe": 0.85
+    },
+    "traffic": {
+     "dev": 1200,
+     "dirty": 0,
+     "clean": 0,
+     "services": 0,
+     "lab": 75000
+    },
+    "focus": {
+     "kind": "machine",
+     "identity": "lab",
+     "name": "lab-probe"
+    },
+    "rules": []
+   }
+  },
+  {
+   "id": "declared-rule",
+   "fixture_only": true,
+   "gpu": {
+    "known": true,
+    "owner": "dev-desk"
+   },
+   "machines": [
+    {
+     "name": "clean-desk",
+     "domain": "clean",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "clean"
+     ]
+    },
+    {
+     "name": "dev-desk",
+     "domain": "dev",
+     "state": "running",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-build",
+     "domain": "dev",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "dev-runner",
+     "domain": "dev",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "dev"
+     ]
+    },
+    {
+     "name": "service-desk",
+     "domain": "services",
+     "state": "shut off",
+     "disposable": false,
+     "networks": [
+      "services"
+     ]
+    },
+    {
+     "name": "dirty-web",
+     "domain": "dirty",
+     "state": "running",
+     "disposable": true,
+     "networks": [
+      "dirty"
+     ]
+    }
+   ],
+   "external": [],
+   "live": {
+    "loads": {
+     "dev-desk": 0.62,
+     "dirty-web": 0.22
+    },
+    "traffic": {
+     "dev": 2400000,
+     "dirty": 18000,
+     "clean": 0,
+     "services": 0
+    },
+    "focus": {
+     "kind": "machine",
+     "identity": "dev",
+     "name": "dev-desk"
+    },
+    "rules": [
+     {
+      "from": "dev",
+      "to": "services",
+      "name": "ssh"
+     }
+    ]
+   }
+  }
+ ]
+}

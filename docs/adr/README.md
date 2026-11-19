@@ -231,6 +231,12 @@ entered the pipeline.
     when isolated, a heartbeat of source freshness and an atmosphere that
     never carries state.
 
+70. [`0070-sfere-seal-live-layer.md`](0070-sfere-seal-live-layer.md) —
+    proposed: the seal's live layer, where motion means running at one
+    speed, load and traffic are rates the shell computes from raw libvirt
+    counters, and the GPU beam, focus wave and rule pulses follow their
+    sources.
+
 The pre-VM baseline that led to these decisions remains available as
 [`../historical-audit-m0.md`](../historical-audit-m0.md); it is archival evidence,
 not current implementation documentation.
@@ -771,3 +777,18 @@ remain.
     [`sfere_view_contract.py`](../../tests/sfere_view_contract.py)
   - Prerequisites: acceptance of the proposed seal; the seal on Nitro with
     the GPU at home and lent, then Predator replay.
+
+- [ADR 0070](0070-sfere-seal-live-layer.md)
+  - Decision: proposed.
+  - Built: built — raw CPU and interface counters in the Machine inventory,
+    load and traffic rates in the shell, and the seal's orbits, trails,
+    traffic, GPU beam, focus wave and rule pulses.
+  - Activation: default — the common desktop role installs the view; no
+    rule pulse is drawn while the flow matrix allows no flow between
+    networks.
+  - Source: [`SfereView.qml`](../../roles/host_desktop_common/files/quickshell/hyperlab/SfereView.qml),
+    [`machine.py`](../../tools/hyperlabctl/hyperlabctl/commands/machine.py),
+    [`sfere_live_layer_contract.py`](../../tests/sfere_live_layer_contract.py)
+  - Prerequisites: acceptance of the proposed live layer; on Nitro, a loaded
+    Machine, a GPU handoff and focus changes matching `hyperlabctl` and
+    `virsh domstats`, then Predator replay.
