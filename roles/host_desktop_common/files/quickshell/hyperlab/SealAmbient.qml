@@ -163,9 +163,9 @@ Item {
 
                             for (let tick = 0; tick < ambient.tickCount; tick++) {
                                 const angle = tick * 2 * Math.PI / ambient.tickCount;
-                                const long = tick % 15 === 0;
+                                const majorTick = tick % 15 === 0;
                                 const outer = ambient.radius * 1.06;
-                                const inner = outer - ambient.radius * (long ? 0.035 : 0.015);
+                                const inner = outer - ambient.radius * (majorTick ? 0.035 : 0.015);
 
                                 out.push([Qt.point(Math.cos(angle) * outer, Math.sin(angle) * outer),
                                           Qt.point(Math.cos(angle) * inner, Math.sin(angle) * inner)]);

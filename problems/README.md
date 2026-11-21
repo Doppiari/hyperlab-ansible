@@ -555,6 +555,8 @@ proof.
 - [`sfere-seal-focus-moved-electrons.md`](sfere-seal-focus-moved-electrons.md):
   rings were sorted with the GPU holder and focus first, so a change of focus
   moved electrons; rings now keep a stable order.
+- Ubuntu's QML parser rejected the seal's tick-length variable and prevented
+  the host bar from loading. [Diagnosis and fix](sfere-seal-qml-tick-name.md)
 - [`sfere-seal-traffic-missed-unmanaged-domains.md`](sfere-seal-traffic-missed-unmanaged-domains.md):
   traffic summed only product Machines' interfaces; it now reads every active
   domain and calls an unobserved network unknown.

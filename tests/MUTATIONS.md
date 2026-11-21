@@ -6434,6 +6434,15 @@ property; `whole-spoke-to-isolated` and `port-without-slash` leave it right
 and break what is drawn. These observations are software verification
 only.
 
+### Seal tick name on the CI runtime
+
+Save `roles/host_desktop_common/files/quickshell/hyperlab/SealAmbient.qml`,
+then rename both occurrences of `majorTick` to `long`. On Ubuntu 26.04's
+Qt 6.10.2, `python tests/bar_core_focus_contract.py` exits 1 on the Sway
+fixture. Qt expects an identifier at the declaration and cannot load
+`SealAmbient`. Arch's Qt 6.11.2 accepts the mutation. Restore the saved
+file and rerun the same command. Both compositor fixtures pass on Qt 6.10.2.
+
 ## The glass network sphere and its compiled shader
 
 The check is `python tests/network_sphere_contract.py`, which `verify.sh`
