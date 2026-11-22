@@ -1,0 +1,325 @@
+#!/bin/bash
+# Sfere documentation captures: one PNG per shell surface.
+#
+#   tools/docs/capture-shell [--settle SECONDS] [--machine NAME] DIR
+#   tools/docs/capture-shell --demo DIR
+#
+# On a live session the script walks the shell's `navigate` IPC routes and
+# takes one grim capture of the focused output per surface into DIR:
+# shell-<route>.png, and shell-machine-<NAME>.png with --machine. It works on
+# an empty compositor slot, shows the rail while capturing and puts the
+# view, the selected Machine, the open transient, the rail and the slot back
+# at the end, on failure too. A route whose page is switched off is skipped.
+#
+# Navigation only: every shell call is a `navigate` or `bar` route, so
+# nothing is started, stopped, created or changed. The shell has no
+# do-not-disturb of its own and the notification daemon is left alone: check
+# every capture before it is published.
+#
+# With --demo the same surfaces are rendered from the fixture state file
+# tests/fixtures/documentation-demo.json, offscreen and without a session
+# (tools/docs/render_demo.py), as demo-*.png at 1920x1080 and 3840x2160.
+#
+# DIR must be new or empty, a real directory and outside the repository.
+
+set -u
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" || exit 1
+repo="$(cd "${script_dir}/../.." && pwd -P)" || exit 1
+readonly script_dir repo
+readonly adapter=privatestack-compositor-adapter
+readonly transients=" launcher clipboard keys panel "
+
+# What the session looked like before the first change; restore() reads it.
+saved=0
+saved_workspace=""
+saved_transient=""
+saved_machine=""
+saved_rail=""
+saved_slot=""
+
+usage() {
+    printf '%s\n' \
+        "usage: tools/docs/capture-shell [--settle SECONDS] [--machine NAME] DIR" \
+        "       tools/docs/capture-shell --demo DIR" >&2
+    exit 2
+}
+
+fail() {
+    printf 'capture-shell: %s\n' "$1" >&2
+    return 1
+}
+
+# Prints the resolved output directory after making sure it is new or empty,
+# not a symlink and not inside the repository. Nothing is created before the
+# location is accepted.
+prepare_output() {
+    local requested=$1 parent name resolved
+    local -a entries
+
+    [[ -n ${requested} ]] || { fail "the output directory is empty"; return 1; }
+    requested=${requested%/}
+    [[ -n ${requested} ]] || { fail "refusing to write captures into /"; return 1; }
+    [[ ! -L ${requested} ]] || { fail "${requested} is a symlink"; return 1; }
+
+    name="$(basename -- "${requested}")" || return 1
+    [[ ${name} != . && ${name} != .. ]] ||
+        { fail "name the output directory itself"; return 1; }
+    parent="$(cd -- "$(dirname -- "${requested}")" && pwd -P)" ||
+        { fail "the parent of ${requested} does not exist"; return 1; }
+    resolved="${parent%/}/${name}"
+
+    if [[ ${resolved} == "${repo}" || ${resolved} == "${repo}"/* ]]; then
+        fail "refusing to write captures inside the repository"
+        return 1
+    fi
+
+    if [[ -e ${resolved} ]]; then
+        [[ -d ${resolved} ]] || { fail "${requested} is not a directory"; return 1; }
+        mapfile -t entries < <(find "${resolved}" -mindepth 1 -maxdepth 1 -printf '.\n') ||
+            { fail "${requested} cannot be listed"; return 1; }
+        (( ${#entries[@]} == 0 )) || { fail "${requested} is not empty"; return 1; }
+    else
+        mkdir -- "${resolved}" || { fail "${requested} cannot be created"; return 1; }
+    fi
+
+    printf '%s\n' "${resolved}"
+}
+
+require_command() {
+    local name=$1
+
+    command -v "${name}" >/dev/null 2>&1 || { fail "${name} is not installed"; return 1; }
+}
+
+# One shell IPC call; prints its answer. Only navigation targets are named
+# anywhere in this script.
+shell_call() {
+    local answer
+
+    answer="$(qs -c hyperlab ipc call "$@" 2>/dev/null)" ||
+        { fail "the shell did not answer ipc call $*"; return 1; }
+    printf '%s\n' "${answer}"
+}
+
+navigate() {
+    shell_call navigate "$@"
+}
+
+# Prints "WORKSPACE\nTRANSIENT\nMACHINE\nRAIL" from `navigate current`.
+read_current() {
+    local document
+
+    document="$(navigate current)" || return 1
+    python3 -I -c '
+import json, re, sys
+state = json.loads(sys.argv[1])
+if not isinstance(state, dict) or set(state) != {"workspace", "transient", "machine", "rail"}:
+    sys.exit(1)
+for key in ("workspace", "transient"):
+    if not re.fullmatch(r"(?:[a-z][a-z-]{1,30})?", state[key]):
+        sys.exit(1)
+if not re.fullmatch(r"(?:[A-Za-z0-9][A-Za-z0-9_.-]{0,62})?", state["machine"]):
+    sys.exit(1)
+if state["rail"] not in ("visible", "hidden"):
+    sys.exit(1)
+print("\n".join(state[key] or "-" for key in ("workspace", "transient", "machine", "rail")))
+' "${document}" || { fail "the shell reported an unreadable state"; return 1; }
+}
+
+# Prints "ACTIVE\nEMPTY\nOUTPUT": the active slot, the highest empty slot and
+# the focused output, from the compositor adapter.
+read_slots() {
+    local document
+
+    document="$("${adapter}" workspaces-json)" ||
+        { fail "the compositor adapter did not answer"; return 1; }
+    python3 -I -c '
+import json, re, sys
+state = json.loads(sys.argv[1])
+active, occupied, output = state.get("active"), state.get("occupied"), state.get("output")
+if (not isinstance(active, int) or isinstance(active, bool) or not 1 <= active <= 9
+        or not isinstance(occupied, list)
+        or not all(isinstance(slot, int) and not isinstance(slot, bool) for slot in occupied)
+        or not isinstance(output, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", output)):
+    sys.exit(1)
+empty = [slot for slot in range(9, 0, -1) if slot not in occupied and slot != active]
+if not empty:
+    sys.exit(2)
+print(active, empty[0], output, sep="\n")
+' "${document}" || { fail "no readable active slot, focused output or empty slot"; return 1; }
+}
+
+# Puts back what the walk changed. Every step is tried; any failure is
+# reported and makes the whole run fail.
+restore() {
+    local status=0
+
+    (( saved )) || return 0
+    saved=0
+
+    navigate open desktop >/dev/null || status=1
+    "${adapter}" workspace-select "${saved_slot}" >/dev/null ||
+        { fail "could not return to slot ${saved_slot}"; status=1; }
+
+    if [[ ${saved_workspace} != - ]]; then
+        [[ "$(navigate open "${saved_workspace}")" == "${saved_workspace}" ]] ||
+            { fail "could not reopen ${saved_workspace}"; status=1; }
+    fi
+
+    if [[ ${saved_machine} != - ]]; then
+        [[ "$(navigate machine "${saved_machine}")" == "${saved_machine}" ]] ||
+            { fail "could not reselect ${saved_machine}"; status=1; }
+    fi
+
+    if [[ ${saved_transient} != - ]]; then
+        [[ "$(navigate open "${saved_transient}")" == "${saved_transient}" ]] ||
+            { fail "could not reopen ${saved_transient}"; status=1; }
+    fi
+
+    if [[ ${saved_rail} == hidden ]]; then
+        shell_call bar hide >/dev/null || status=1
+    else
+        shell_call bar show >/dev/null || status=1
+    fi
+
+    (( status == 0 )) && printf 'capture-shell: the shell, the rail and slot %s are back\n' \
+        "${saved_slot}"
+    return "${status}"
+}
+
+capture() {
+    local output=$1 file=$2
+
+    # grim waits forever on a locked Hyprland session.
+    timeout 20 grim -o "${output}" "${file}" ||
+        { fail "grim could not capture ${file##*/}"; return 1; }
+    [[ -s ${file} ]] || { fail "grim wrote nothing to ${file##*/}"; return 1; }
+    printf 'captured %s\n' "${file##*/}"
+}
+
+live() {
+    local directory=$1 settle=$2 machine=$3
+    local route answer active empty output reply
+    local -a routes current slots
+
+    for route in qs grim timeout python3 "${adapter}"; do
+        require_command "${route}" || return 1
+    done
+
+    mapfile -t routes < <(navigate routes) || return 1
+    (( ${#routes[@]} > 0 )) || { fail "the shell lists no navigation routes"; return 1; }
+
+    for route in "${routes[@]}"; do
+        [[ ${route} =~ ^[a-z][a-z-]{1,30}$ ]] ||
+            { fail "the shell listed an invalid route"; return 1; }
+    done
+
+    mapfile -t current < <(read_current) || return 1
+    (( ${#current[@]} == 4 )) || { fail "the shell reported an unreadable state"; return 1; }
+    mapfile -t slots < <(read_slots) || return 1
+    (( ${#slots[@]} == 3 )) || { fail "the compositor reported an unreadable state"; return 1; }
+
+    active=${slots[0]}
+    empty=${slots[1]}
+    output=${slots[2]}
+
+    saved_workspace=${current[0]}
+    saved_transient=${current[1]}
+    saved_machine=${current[2]}
+    saved_rail=${current[3]}
+    saved_slot=${active}
+    saved=1
+    trap restore EXIT
+    trap 'exit 130' INT TERM
+
+    [[ "$(navigate open desktop)" == desktop ]] ||
+        { fail "the shell did not return to the desktop"; return 1; }
+    shell_call bar show >/dev/null || return 1
+    "${adapter}" workspace-select "${empty}" >/dev/null ||
+        { fail "could not switch to the empty slot ${empty}"; return 1; }
+    sleep "${settle}" || return 1
+
+    for route in "${routes[@]}"; do
+        if [[ ${transients} == *" ${route} "* ]]; then
+            [[ "$(navigate open desktop)" == desktop ]] ||
+                { fail "the shell did not return to the desktop"; return 1; }
+        fi
+
+        reply="$(navigate open "${route}")" || return 1
+
+        case ${reply} in
+            "${route}")
+                sleep "${settle}" || return 1
+                capture "${output}" "${directory}/shell-${route}.png" || return 1
+                ;;
+            unavailable)
+                printf 'skipped %s: the page is switched off on this host\n' "${route}"
+                ;;
+            *)
+                fail "the shell refused the route ${route}"
+                return 1
+                ;;
+        esac
+    done
+
+    if [[ -n ${machine} ]]; then
+        answer="$(navigate machine "${machine}")" || return 1
+        [[ ${answer} == "${machine}" ]] ||
+            { fail "the shell has no Machine named ${machine}"; return 1; }
+        sleep "${settle}" || return 1
+        capture "${output}" "${directory}/shell-machine-${machine}.png" || return 1
+    fi
+
+    restore || return 1
+    trap - EXIT
+    return 0
+}
+
+main() {
+    local demo=0 settle=1 machine="" directory
+
+    while (( $# > 0 )); do
+        case $1 in
+            --demo)
+                demo=1
+                shift
+                ;;
+            --settle)
+                (( $# >= 2 )) || usage
+                [[ $2 =~ ^[0-9](\.[0-9])?$ ]] || usage
+                settle=$2
+                shift 2
+                ;;
+            --machine)
+                (( $# >= 2 )) || usage
+                [[ $2 =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$ ]] || usage
+                machine=$2
+                shift 2
+                ;;
+            -*)
+                usage
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
+    (( $# == 1 )) || usage
+
+    if (( demo )) && [[ -n ${machine} || ${settle} != 1 ]]; then
+        usage
+    fi
+
+    directory="$(prepare_output "$1")" || return 1
+
+    if (( demo )); then
+        python3 "${script_dir}/render_demo.py" --out "${directory}" || return 1
+        return 0
+    fi
+
+    live "${directory}" "${settle}" "${machine}"
+}
+
+main "$@"

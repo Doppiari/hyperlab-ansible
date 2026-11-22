@@ -83,6 +83,15 @@ FloatingWindow {
         function onWorkspaceRaiseRequested() {
             workspace.shellActions.invoke("workspace-window-focus");
         }
+
+        // Showing the form creates nothing; creating is the form's submit.
+        // A creation in flight keeps its form on screen.
+        function onCreateFormRequested(open) {
+            if (!open && workspace.machineActions.creating)
+                return;
+
+            machineStage.creating = open;
+        }
     }
 
     // Any change that could move a confirmation's target out from under it

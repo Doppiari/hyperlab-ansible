@@ -243,6 +243,7 @@ host_desktop_common_shell_stage:
     - osd
     - panel
     - workspace
+    - navigate
     - bar
   summoned_surfaces:
     - launcher

@@ -182,6 +182,7 @@ def main() -> int:
             "osd",
             "panel",
             "workspace",
+            "navigate",
             "bar",
         ],
         "summoned_surfaces": [

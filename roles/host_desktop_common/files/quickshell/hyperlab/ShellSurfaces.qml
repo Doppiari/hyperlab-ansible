@@ -123,6 +123,11 @@ QtObject {
     signal workspaceClosed()
     signal confirmationCancelled()
 
+    // The Create form inside Machines was asked for, or away, from outside
+    // the workspace. The window host shows or hides the form; nothing is
+    // created until the operator submits it.
+    signal createFormRequested(bool open)
+
     // One host-to-guest clipboard send, aimed at one named Machine. The
     // window host forwards it to the machine bridge; nothing is sent here.
     signal clipboardSendRequested(string machine)
@@ -209,6 +214,20 @@ QtObject {
             surfaces.workspaceRaiseRequested();
 
         return true;
+    }
+
+    // The Create form is a state of the Machines destination, not a page:
+    // the view that owns it answers the request.
+    function openCreateForm() {
+        if (!surfaces.openWorkspacePage("machines", "", false))
+            return false;
+
+        surfaces.createFormRequested(true);
+        return true;
+    }
+
+    function closeCreateForm() {
+        surfaces.createFormRequested(false);
     }
 
     function openSubpage(page) {

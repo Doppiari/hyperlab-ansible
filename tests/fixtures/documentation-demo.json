@@ -1,0 +1,20 @@
+{
+  "machines": [
+    {"name": "clean-desk", "domain": "clean", "state": "running", "lifecycle": "permanent"},
+    {"name": "dev-desk", "domain": "dev", "state": "running", "lifecycle": "permanent"},
+    {"name": "service-db", "domain": "services", "state": "shut off", "lifecycle": "permanent"},
+    {"name": "dirty-web", "domain": "dirty", "state": "shut off", "lifecycle": "permanent"},
+    {"name": "lab-scratch", "domain": "lab", "state": "shut off", "lifecycle": "disposable"}
+  ],
+  "gpu_owner": "dev-desk",
+  "selected": "dev-desk",
+  "focus": [
+    {"id": "host"},
+    {"id": "clean", "machine": "clean-desk"},
+    {"id": "dev", "machine": "dev-desk"},
+    {"id": "services", "machine": "service-db"},
+    {"id": "dirty", "machine": "dirty-web"},
+    {"id": "lab", "machine": "lab-scratch"},
+    {"id": "unknown"}
+  ]
+}

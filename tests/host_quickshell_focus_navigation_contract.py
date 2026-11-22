@@ -31,14 +31,18 @@ def check_routes() -> None:
         # ShellIpc: one external IPC route per destination (workspace
         # sfere, machines, controls, diagnostics, workbench, devices). HyperLabBar:
         # Sfere, Diagnostics and Control Center from the mark (ADR 0067),
-        # and Machines from the emergency stop chip (ADR 0047).
+        # and Machines from the emergency stop chip (ADR 0047). ShellIpc's
+        # navigate target opens pages and selects Machines state-only, and
+        # ShellSurfaces opens the Create form the same way (ADR 0072).
         "openWorkspace": {"HyperLabBar.qml": 4, "ShellIpc.qml": 6,
                           "ShellSurfaces.qml": 1},
         "openWorkspacePage": {"HyperLabBar.qml": 2, "LauncherSurface.qml": 1,
-                              "SystemPanel.qml": 1, "ShellSurfaces.qml": 3},
+                              "SystemPanel.qml": 1, "ShellSurfaces.qml": 4,
+                              "ShellIpc.qml": 1},
         "switchWorkspace": {"WorkspaceSurface.qml": 3},
         "selectMachine": {"MachineStage.qml": 2, "LauncherSurface.qml": 1,
-                          "CreateMachineView.qml": 1, "WorkspaceSurface.qml": 1},
+                          "CreateMachineView.qml": 1, "WorkspaceSurface.qml": 1,
+                          "ShellIpc.qml": 1},
         "workspaceRaiseRequested": {"ShellSurfaces.qml": 1},
         "openSubpage": {"ControlCenterView.qml": 1, "DiagnosticsView.qml": 1},
         "toggleWorkspace": {"HyperLabBar.qml": 1},
