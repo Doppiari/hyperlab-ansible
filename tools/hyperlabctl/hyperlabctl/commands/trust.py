@@ -25,6 +25,22 @@ class TrustCommand(Command):
                 print("GPU trust state is unknown: %s" % reason)
             return 1
         trust = built["trust"]
+        if trust.get("ladder_state") != "recorded":
+            # The recorded rung no longer describes the GPU, or whether it
+            # does could not be read: no level is reported as reachable.
+            outside = trust.get("ladder_state") == "outside-policy"
+            if args.json:
+                print(json.dumps({"claimed": None, "level": None, "known": False,
+                                  "ladder": [], "ladder_state": trust.get("ladder_state"),
+                                  "outside_policy": trust.get("outside_policy") or [],
+                                  "unverified": trust.get("unverified") or []}, indent=2))
+            elif outside:
+                print("GPU state is unknown, reboot to reset: %s holds a device outside "
+                      "the GPU policy" % ", ".join(trust.get("outside_policy") or ["?"]))
+            else:
+                print("GPU trust state is unknown: whether a domain outside the GPU policy "
+                      "holds a device could not be read; run hyperlabctl doctor")
+            return 1
         ladder = sorted((trust.get("ladder") or {}).items(),
                         key=lambda pair: pair[1], reverse=True)
         current = trust.get("level")

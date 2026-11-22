@@ -8,6 +8,11 @@ REMEDIES = {
     "host.profile_unknown": "ansible-playbook playbooks/preflight.yml -K",
     "trust.level_unmapped": "check gpu_trust_levels in group_vars/all/networks.yml "
                             "against /run/gpu-handoff/trust",
+    "trust.gpu_outside_policy": "shut the named domain down, then reboot the host: "
+                                "only a reboot resets the GPU and its rung",
+    "trust.gpu_holders_unverified": "check that virsh -c qemu:///system dumpxml <name> "
+                                    "works for the admin user, then run hyperlabctl "
+                                    "doctor again",
     "memory.overcommitted": "shut a domain down, or lower its allocation in its vm-spec",
     "gpu.id_absent": "ansible-playbook playbooks/preflight.yml -K "
                      "(the profile does not match this machine)",

@@ -237,3 +237,77 @@ interface fixture uses the same spelling for a bridge and a network and
 fails `only_bridge_sources_use_ownership_map`. Restoring the source-type
 check gives the network names in interface order and preserves the raw
 names in the domain listing.
+
+## GPU held outside the handoff policy
+
+The trust section reads every live domain XML and sets `ladder_state`:
+`recorded`, `outside-policy` (a domain in neither GPU policy surface holds a
+passthrough device the hook never saw) or `unverified` (something it needed
+could not be read). The check is `python3 tools/hyperlabctl/tests/run.py`;
+the assertions are in `tests/test_gpu_holders.py`. Each break was made on
+the file, the suite run, the saved copy restored and the suite run green
+again.
+
+| Mutation | File | Break | Result | Assertion that caught it |
+| --- | --- | --- | --- | --- |
+| `unreadable-is-no-holder` | `providers/domains.py` | An unreadable live XML is skipped, as if it held nothing | red | `unreadable_state` expected `unverified`, got `recorded` |
+| `unreadable-entry-false` | `inventory.py` | The unreadable inventory entry says `passthrough: False` | red | `unreadable_state` |
+| `managed-surface-ignored` | `providers/domains.py` | A holder named only in `domains.d` counts as outside policy | red | `managed_holder_state` |
+| `surface-failure-trusted` | `providers/domains.py` | A missing, unsafe, unavailable or colliding `domains.d` counts as readable | red | `surface_missing_state` and the three other surfaces |
+| `paused-skipped` | `providers/domains.py` | Only a running domain counts as a holder | red | `paused_outside` |
+| `unknown-state-skipped` | `providers/domains.py` | A holder whose state cannot be read counts as stopped | red | `unknown_state_holder` |
+| `claim-ignores-outside` | `render.py` | `trust_claim` ignores `ladder_state` | red | `outside_claim` and the projection checks |
+| `missing-ladder-state-believed` | `render.py` | A section without `ladder_state` keeps its rung | red | `ladder_missing_unknown` |
+| `inactive-xml-read` | `inventory.py` | `dumpxml --inactive`, the persistent definition | red | `shape_pci_outside` and every unregistered read |
+| `commandline-not-passthrough` | `domainxml.py` | A QEMU command-line extension is not passthrough | red | `shape_commandline_outside` |
+| `interface-not-passthrough` | `domainxml.py` | A hostdev interface is not passthrough | red | `shape_interface_outside` |
+| `holder-unnamed` | `providers/trust.py` | The doctor problem omits the domain's name | red | `outside_problem_names_domain` |
+| `outside-can-ascend` | `providers/trust.py` | An outside holder leaves `can_ascend` as read from the file | red, after a test was added | `unclaimed_outside_cannot_ascend` |
+
+`outside-can-ascend` stayed green on its first run: the only outside-holder
+fixture had a claimed rung, where `can_ascend` is already false. An unclaimed
+boot with an outside holder now pins it.
+
+Replay from `tools/hyperlabctl` on an otherwise idle tree:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import shutil, subprocess, tempfile
+D = Path('hyperlabctl/providers/domains.py'); R = Path('hyperlabctl/render.py')
+I = Path('hyperlabctl/inventory.py'); X = Path('hyperlabctl/domainxml.py'); T = Path('hyperlabctl/providers/trust.py')
+M = [
+ ('unreadable-is-no-holder', D, [('        if passthrough is None:\n            result["unverified"].append(name)\n            continue\n', '')], 'unreadable_state'),
+ ('unreadable-entry-false', I, [('"passthrough": None,', '"passthrough": False,')], 'unreadable_state'),
+ ('managed-surface-ignored', D, [('        elif name not in managed:', '        else:')], 'managed_holder_state'),
+ ('surface-failure-trusted', D, [('            managed_ok = surface == "ok"', '            managed_ok = True')], 'surface_missing_state'),
+ ('paused-skipped', D, [('        if not passthrough or domain.get("state") == "shut off":', '        if not passthrough or domain.get("state") != "running":')], 'paused_outside'),
+ ('unknown-state-skipped', D, [('        if domain.get("state") == "unknown":\n            result["unverified"].append(name)\n            continue\n', '')], 'unknown_state_holder'),
+ ('claim-ignores-outside', R, [('    if trust.get("ladder_state") == "outside-policy":\n        return {**unknown, "ladder": "outside-policy"}\n    if trust.get("ladder_state") != "recorded":\n        return {**unknown, "ladder": "unverified"}\n', '')], 'outside_claim'),
+ ('missing-ladder-state-believed', R, [('    if trust.get("ladder_state") != "recorded":\n        return {**unknown, "ladder": "unverified"}\n', '')], 'ladder_missing_unknown'),
+ ('inactive-xml-read', I, [('result = ctx.virsh("dumpxml", name)', 'result = ctx.virsh("dumpxml", "--inactive", name)')], 'shape_pci_outside'),
+ ('commandline-not-passthrough', X, [('        or node.tag.startswith("{%s}" % QEMU)\n', '')], 'shape_commandline_outside'),
+ ('interface-not-passthrough', X, [('        or node.tag == "interface" and node.get("type") == "hostdev"\n', '')], 'shape_interface_outside'),
+ ('holder-unnamed', T, [('unknown, reboot to reset" % name,', 'unknown, reboot to reset",')], 'outside_problem_names_domain'),
+ ('outside-can-ascend', T, [('        if holders["state"] != "recorded":\n            section["can_ascend"] = False\n', '')], 'unclaimed_outside_cannot_ascend'),
+]
+cmd = ['python3', 'tests/run.py']
+with tempfile.TemporaryDirectory() as tmp:
+    for name, path, edits, reason in M:
+        backup = Path(tmp) / (name + path.name); shutil.copy2(path, backup)
+        text = path.read_text()
+        for old, new in edits:
+            assert text.count(old) == 1, (name, old); text = text.replace(old, new, 1)
+        try:
+            path.write_text(text)
+            red = subprocess.run(cmd, text=True, capture_output=True, timeout=600)
+            out = red.stdout + red.stderr
+            fails = [l.strip() for l in out.splitlines() if l.strip().startswith('FAIL')]
+            assert red.returncode != 0 and reason in out, (name, red.returncode, fails[:5])
+        finally:
+            shutil.copy2(backup, path)
+        green = subprocess.run(cmd, text=True, capture_output=True, timeout=600)
+        assert green.returncode == 0, (name, 'restore failed')
+        print(f"{name}: red ({len(fails)} failures, incl. {reason}); restored green", flush=True)
+PY
+```

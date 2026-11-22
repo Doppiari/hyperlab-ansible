@@ -47,6 +47,10 @@ def tiles(document):
     trust = document.get("trust")
     if trust is None:
         built.append(_tile("trust", "unknown", "error"))
+    elif trust.get("ladder_state") == "outside-policy":
+        built.append(_tile("trust", "unknown, reboot to reset", "error"))
+    elif trust.get("ladder_state") != "recorded":
+        built.append(_tile("trust", "unknown", "error"))
     elif trust["claimed"]:
         built.append(_tile("trust", "%s / %s" % (trust["name"] or "?", trust["level"]), "warn"))
     else:

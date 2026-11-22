@@ -113,7 +113,15 @@ def as_text(document, color=True):
 
     trust = document.get("trust")
     if trust:
-        if trust["claimed"]:
+        claim = trust_claim(document)
+        if claim["ladder"] == "outside-policy":
+            value = "unknown, reboot to reset (%s holds a device outside the GPU policy)" \
+                % ", ".join(trust.get("outside_policy") or ["?"])
+            tone = "error"
+        elif not claim["known"]:
+            value = "unknown (run hyperlabctl doctor)"
+            tone = "error"
+        elif trust["claimed"]:
             value = "%s (%s), reboot to rise" % (trust["name"] or "?", trust["level"])
             tone = "warn"
         else:
@@ -187,8 +195,12 @@ def as_waybar(document):
         severity = "warn"
 
     # An unreadable trust section is unknown, never "unclaimed".
-    trust_known = trust_claim(document)["known"]
-    if not trust_known:
+    claim = trust_claim(document)
+    if claim["ladder"] == "outside-policy":
+        text = "?"
+        trust_line = "unknown, reboot to reset (%s outside the GPU policy)" \
+            % ", ".join(trust.get("outside_policy") or ["?"])
+    elif not claim["known"]:
         text = "?"
         trust_line = "unknown (trust state could not be read)"
     elif trust.get("claimed"):
@@ -231,7 +243,13 @@ def waybar_field(document, field):
         state = "warn" if claimed else "ok"
         tooltip = ("GPU held at trust %s; only a reboot raises it"
                    % trust.get("level")) if claimed else "GPU unclaimed this boot"
-        if not trust_claim(document)["known"]:
+        claim = trust_claim(document)
+        if claim["ladder"] == "outside-policy":
+            # The hook never saw this holder: no rung describes the GPU.
+            text, state = "?", "error"
+            tooltip = ("GPU state unknown, reboot to reset: %s holds a device "
+                       "outside the GPU policy" % ", ".join(trust.get("outside_policy") or ["?"]))
+        elif not claim["known"]:
             # An unreadable or inconsistent claim is never shown as "unclaimed".
             text, state = "?", "error"
             tooltip = "GPU trust claim could not be read; run hyperlabctl doctor"
@@ -312,18 +330,31 @@ def trust_claim(document):
     section, an unmapped level or an off-ladder identity is `known: false`,
     so a consumer can never present "could not read the restriction" as
     "there is no restriction".
+
+    `ladder` qualifies the record. Only "recorded" (every live domain read,
+    no passthrough holder outside the GPU policy) lets the rung be believed.
+    "outside-policy" is an explicit host statement: the hook never saw a
+    holder, the GPU state is unknown and only a reboot resets it. Anything
+    else is "unverified".
     """
+    unknown = {"known": False, "claimed": False, "identity": None, "level": None}
     trust = document.get("trust")
     if not isinstance(trust, dict) or not isinstance(trust.get("claimed"), bool):
-        return {"known": False, "claimed": False, "identity": None, "level": None}
+        return {**unknown, "ladder": "unverified"}
+    if trust.get("ladder_state") == "outside-policy":
+        return {**unknown, "ladder": "outside-policy"}
+    if trust.get("ladder_state") != "recorded":
+        return {**unknown, "ladder": "unverified"}
     if not trust["claimed"]:
-        return {"known": True, "claimed": False, "identity": None, "level": None}
+        return {"known": True, "claimed": False, "identity": None, "level": None,
+                "ladder": "recorded"}
     name = trust.get("name")
     level = trust.get("level")
     rung = GPU_LADDER.get(name) if isinstance(name, str) else None
     if rung is None or isinstance(level, bool) or level != rung:
-        return {"known": False, "claimed": False, "identity": None, "level": None}
-    return {"known": True, "claimed": True, "identity": name, "level": rung}
+        return {**unknown, "ladder": "unverified"}
+    return {"known": True, "claimed": True, "identity": name, "level": rung,
+            "ladder": "recorded"}
 
 
 def gpu_ownership(document):

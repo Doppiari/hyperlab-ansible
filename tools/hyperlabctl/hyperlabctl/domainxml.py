@@ -12,6 +12,21 @@ from .errors import Unavailable
 HL = "https://github.com/importriri/hyperlab-ansible/hyperlab/1"
 HL_LEGACY = "https://github.com/importriri/privatestack-ansible/hyperlab/1"
 HL_NAMESPACES = (HL, HL_LEGACY)
+QEMU = "http://libvirt.org/schemas/domain/qemu/1.0"
+
+
+def _passthrough(root):
+    """Whatever the prepare preflight refuses for a domain outside GPU policy.
+
+    A PCI hostdev, a hostdev interface or any QEMU command-line extension,
+    found anywhere in the document, by structure and namespace URI.
+    """
+    return any(
+        node.tag == "hostdev" and node.get("type") == "pci"
+        or node.tag == "interface" and node.get("type") == "hostdev"
+        or node.tag.startswith("{%s}" % QEMU)
+        for node in root.iter()
+    )
 
 
 def _pci_address(node):
@@ -90,6 +105,7 @@ def parse_domain(xml_text):
         "interface_sources": sources,
         "hostdevs": hostdevs,
         "vfio": bool(hostdevs),
+        "passthrough": _passthrough(root),
         "managed": metadata is not None,
         "product_managed": (
             None

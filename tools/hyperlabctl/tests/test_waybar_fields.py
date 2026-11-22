@@ -20,7 +20,7 @@ def test_every_field_preserves_status_keys_with_explicit_vms_extension():
         if field == "vms":
             expected += ["machines", "machines_available"]
         if field == "trust":
-            expected += ["claimed", "identity", "known", "level"]
+            expected += ["claimed", "identity", "known", "ladder", "level"]
         if field == "gpu":
             expected += ["bound", "known", "owner"]
         equals("keys_of_%s" % field, sorted(payload), sorted(expected))
@@ -132,17 +132,17 @@ def test_trust_projection_never_turns_an_unreadable_claim_into_unclaimed():
         ("missing_section", {}, False, False),
         ("section_not_object", {"trust": []}, False, False),
         ("empty_section", {"trust": {}}, False, False),
-        ("claimed_not_bool", {"trust": {"claimed": "yes", "name": "dev", "level": 2}},
+        ("claimed_not_bool", {"trust": {"ladder_state": "recorded", "claimed": "yes", "name": "dev", "level": 2}},
          False, False),
-        ("services_claim", {"trust": {"claimed": True, "name": "services", "level": 2}},
+        ("services_claim", {"trust": {"ladder_state": "recorded", "claimed": True, "name": "services", "level": 2}},
          False, False),
-        ("dev_wrong_rung", {"trust": {"claimed": True, "name": "dev", "level": 3}}, False, False),
-        ("bool_rung", {"trust": {"claimed": True, "name": "dirty", "level": True}},
+        ("dev_wrong_rung", {"trust": {"ladder_state": "recorded", "claimed": True, "name": "dev", "level": 3}}, False, False),
+        ("bool_rung", {"trust": {"ladder_state": "recorded", "claimed": True, "name": "dirty", "level": True}},
          False, False),
-        ("valid_unclaimed", {"trust": {"claimed": False, "name": None, "level": None}},
+        ("valid_unclaimed", {"trust": {"ladder_state": "recorded", "claimed": False, "name": None, "level": None}},
          True, False),
-        ("valid_dev", {"trust": {"claimed": True, "name": "dev", "level": 2}}, True, True),
-        ("valid_lab", {"trust": {"claimed": True, "name": "lab", "level": 0}}, True, True),
+        ("valid_dev", {"trust": {"ladder_state": "recorded", "claimed": True, "name": "dev", "level": 2}}, True, True),
+        ("valid_lab", {"trust": {"ladder_state": "recorded", "claimed": True, "name": "lab", "level": 0}}, True, True),
     )
     for label, built, known, claimed in cases:
         projected = trust_claim(built)

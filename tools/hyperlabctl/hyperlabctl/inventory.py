@@ -102,6 +102,7 @@ def domains(ctx):
                     {"name": name, "state": "unknown", "memory_mb": None,
                      "vcpus": None,
                      "networks": None, "hostdevs": [], "vfio": None,
+                     "passthrough": None,
                      "managed": None, "product_managed": None,
                      "image": None, "image_sha256": None,
                      "device_profile": None, "lifecycle": None,

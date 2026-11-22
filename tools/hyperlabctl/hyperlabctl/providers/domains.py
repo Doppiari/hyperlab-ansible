@@ -9,7 +9,7 @@ import re
 import stat
 from pathlib import Path
 
-from ..errors import Unavailable
+from ..errors import HyperlabError, Unavailable
 from ..inventory import bridge_networks
 from ..inventory import domains as all_domains
 from .base import Provider
@@ -205,6 +205,67 @@ def observe_managed_gpu_policies(
         result[name] = profile
 
     return result, "ok"
+
+
+def observe_pci_holders(ctx):
+    """Which live domains hold a passthrough device outside both GPU policies.
+
+    The qemu hook decides only at prepare. A device attached to a running
+    domain never reaches it, so the rung it recorded may be cleaner than the
+    GPU's real history. This reads every domain's live XML (`virsh dumpxml`
+    without `--inactive`, so attached devices are included) and compares
+    each holder with the two surfaces the hook reads: the static
+    gpu_domain_profiles and the root-owned domains.d policy.
+
+    `state` is "recorded" only when every domain was read and no holder is
+    outside policy. "outside-policy" names holders the hook would refuse;
+    only a host reboot resets the GPU then. "unverified" means a domain, the
+    domain list or a needed policy surface could not be read: unknown, never
+    clean.
+    """
+    result = {"state": "recorded", "outside_policy": [], "unverified": []}
+    try:
+        listed = all_domains(ctx)
+    except HyperlabError:
+        result["state"] = "unverified"
+        return result
+
+    profiles = ctx.config.var("gpu_domain_profiles", {}) or {}
+    managed = None
+    for domain in listed:
+        name = domain["name"]
+        passthrough = domain.get("passthrough")
+        if passthrough is None:
+            result["unverified"].append(name)
+            continue
+        if not passthrough or domain.get("state") == "shut off":
+            continue
+        if domain.get("state") == "unknown":
+            result["unverified"].append(name)
+            continue
+        if name in profiles:
+            continue
+        if managed is None:
+            policies, surface = observe_managed_gpu_policies(
+                ctx.config.gpu_handoff_managed_dir,
+                ctx.config.var("gpu_trust_levels", {}) or {},
+            )
+            # The hook refuses every prepare while both surfaces name one
+            # domain: a collision maps nothing.
+            if surface == "ok" and set(policies) & set(profiles):
+                surface = "collision"
+            managed = policies if surface == "ok" else {}
+            managed_ok = surface == "ok"
+        if not managed_ok:
+            result["unverified"].append(name)
+        elif name not in managed:
+            result["outside_policy"].append(name)
+
+    if result["outside_policy"]:
+        result["state"] = "outside-policy"
+    elif result["unverified"]:
+        result["state"] = "unverified"
+    return result
 
 
 class DomainProvider(Provider):
