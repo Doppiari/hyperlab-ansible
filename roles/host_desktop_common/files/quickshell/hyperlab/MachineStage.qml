@@ -664,6 +664,7 @@ Item {
                         border.color: stage.theme.textPrimary
 
                         readonly property string membership: stage.inventoryAvailable ? "external" : "membership unknown"
+                        readonly property string stateCaption: membership + " · " + stage.icons.machineStateWord(modelData.state)
                         readonly property string networkText: typeof modelData.networks?.join === "function"
                             ? modelData.networks.join(", ") || "none" : "unknown"
                         readonly property string allocation: "Memory "
@@ -687,26 +688,44 @@ Item {
                                 }
                                 ShellLabel {
                                     width: parent.width - outsideMark.width - parent.spacing
+                                        - (compactStatus.visible ? compactStatus.width + parent.spacing : 0)
                                     tokens: stage.tokens
                                     role: stage.layout === "grid" ? "title" : "body"
                                     text: modelData.name
                                     color: stage.theme.textPrimary
+                                }
+                                Row {
+                                    id: compactStatus
+                                    visible: stage.layout === "list"
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: stage.tokens.spaceXs
+                                    ShellLabel {
+                                        tokens: stage.tokens
+                                        role: "meta"
+                                        text: "OS unknown · Read only ·"
+                                        color: stage.theme.textSecondary
+                                    }
+                                    ShellLabel {
+                                        tokens: stage.tokens
+                                        role: "meta"
+                                        text: stateCaption
+                                        color: stage.theme.textSecondary
+                                    }
                                 }
                             }
                             ShellLabel {
                                 width: parent.width
                                 tokens: stage.tokens
                                 role: "meta"
-                                text: (stage.inventoryAvailable ? "external" : "membership unknown")
-                                    + " · " + stage.icons.machineStateWord(modelData.state)
+                                visible: stage.layout === "grid"
+                                text: stateCaption
                                 color: stage.theme.textSecondary
                             }
                             ShellLabel {
                                 width: parent.width
-                                visible: stage.layout === "grid"
                                 tokens: stage.tokens
                                 role: "mono"
-                                text: allocation
+                                text: stage.layout === "grid" ? allocation : allocation + " · Network " + networkText
                                 color: stage.theme.textSecondary
                             }
                             ShellLabel {

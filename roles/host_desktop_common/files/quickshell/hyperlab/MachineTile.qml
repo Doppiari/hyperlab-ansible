@@ -30,7 +30,8 @@ ShellCard {
         : tile.relation === "configured" ? "Passthrough configured"
         : tile.relation === "none" ? "No passthrough" : "Passthrough unknown"
     readonly property string footer: tile.machine.lifecycle === "disposable"
-        ? "Disposable · discarded at shutdown"
+        ? (tile.machine.runtime_present === true && tile.machine.runtime_drift === false
+            ? "Disposable · discarded at shutdown" : "Disposable configured · discard unknown")
             + (tile.relation === "held" || tile.relation === "configured" ? " · " + tile.hardwareText : "")
         : tile.hardwareText
     readonly property color wash: tile.theme.knownProvenance(tile.machine.provenance)

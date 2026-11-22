@@ -39,6 +39,28 @@ unreadable definition or duplicate owner leaves the mapping unknown.
 A matching set of product metadata can establish the observed attachment
 while the existing runtime check still reports configuration drift.
 
+## When the observed facts disagree
+
+The disposable footer previously used the registry lifecycle even on a
+configuration-drift row. A permanent runtime could therefore promise to
+discard writes. Both layouts now require the inventory to confirm a
+present, matching runtime before showing that promise.
+
+Malformed shell attachment arrays also remain unknown. A valid empty
+array still establishes the absence of attachments.
+
+An unplaced stopped Machine had made the running count unknown everywhere.
+The band now evaluates uncertainty about running separately from uncertainty
+about the total. It also compares the reported mode with the reviewed
+outbound policy. A NAT mode alone had advertised internet access on networks
+with no matching policy.
+
+The compact external layout hid the observed allocation, attachment and
+read-only footer once a large inventory selected it automatically. Its two
+lines now show those facts. Network polls had also replaced the focused
+delegate. The band keeps a delegate for each retained network name while
+its displayed facts change.
+
 ## Regression
 
 The showcase contract exercises null interfaces, absent facts, stale reads,

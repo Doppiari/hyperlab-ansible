@@ -395,13 +395,18 @@ With the Networks opt-in enabled, the band shows one card per declared
 network in palette order, with its subnet, live gateway and DHCP range,
 forwarding mode, configured GPU level and outbound policy. Lab can serve
 DHCP at its gateway while having **No route out**. Known NAT networks read
-**Internet via NAT**. Unknown modes have unknown outbound policy.
+**Internet via NAT** when the reported mode agrees with the flow matrix.
+A network absent from the matrix or a mode that conflicts with it shows
+**Outbound unknown**. The card still shows the reported mode.
 
 A lit sphere means a registry Machine attached to that network is running.
 A dark sphere means it has Machines and none are running. An outline means
 the network has no Machines. Each state has a count in words. Stale and
 unavailable inventories show **machines unknown**. An unreadable attachment
-limits the count to confirmed Machines and prevents an empty outline.
+limits the total to confirmed Machines and prevents an empty outline.
+If all unplaced Machines are known to be stopped, the running count on
+an occupied network is still exact. The focused card follows its network
+through refreshes, including changes to its DHCP range.
 Arrow keys move between networks. Enter or a click filters to a network.
 Activate the same card again or press Escape to clear the filter. On wide
 outputs the band spans the inventory and the selected Machine pane.
@@ -412,7 +417,14 @@ in several groups. The mark and subtle wash on a card still follow its
 reviewed provenance. The card shows the name, manifest OS, runtime state,
 allocated memory, vCPUs, observed networks and lifecycle or passthrough
 facts. The context header uses the same small mark. Unknown values are
-labelled. An observed empty interface list reads **none**.
+labelled. An observed empty interface list reads **none**. An interface
+backed by a bridge uses the network whose libvirt definition names that
+bridge. An unreadable or ambiguous mapping leaves the attachment unknown.
+A bridge observation can place a Machine whose runtime shows configuration
+drift. Its card retains the drift warning and its action checks still apply.
+The discard-at-shutdown footer requires a matching disposable runtime.
+Otherwise the footer describes the configured lifecycle and says discard
+is unknown.
 [ADR 0071](adr/0071-machines-network-band.md)
 
 The final **Not managed · outside Sfere** group is read-only and neutral.

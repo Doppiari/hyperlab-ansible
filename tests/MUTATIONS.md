@@ -6608,3 +6608,20 @@ Restore the saved file and run the same check again.
 Each of the 26 breaks failed its contract. Restoring the saved file
 byte-for-byte made the same command pass. The rule-height case failed
 on the QML binding warning even though the fixture process exited normally.
+
+The same showcase contract exercises poll replies and the compact layout.
+
+| Break | Expected failure |
+| --- | --- |
+| Ignore the runtime match flags in the grid footer. | A disposable registry record with a permanent runtime promises discard. |
+| Ignore the same flags in the dense footer. | The compact drift row promises discard. |
+| Use the bridge source verbatim for the attachment. | The Dev filter loses the product row and external row attached through its bridge. |
+| Accept a second network claiming the same bridge. | The external attachment acquires a network from an ambiguous map. |
+| Use an incomplete total to mark the running count unknown. | Clean and Services lose their exact zero and dark cores in the thirty-Machine fixture. |
+| Ignore every unplaced Machine when counting running Machines. | Changing the unplaced Machine to running leaves a false dark core. |
+| Give all NAT rows the affirmative outbound caption. | A conflicting Lab row or an unreviewed network advertises internet access. |
+| Pass malformed managed attachments through the projection. | Searching a malformed row loses its unknown group or raises a QML exception. |
+| Coerce external attachment entries to strings. | A malformed raw interface becomes a named network. |
+| Hide the compact external allocation line. | Explicit or automatic list mode loses visible memory, vCPU or network. |
+| Replace the network observation on identical replies. | The unchanged poll emits a replacement notification. |
+| Clear and repopulate the network delegates on a changed reply. | Dev loses keyboard focus between an arrow and Enter. |

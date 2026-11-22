@@ -147,7 +147,8 @@ Rectangle {
         tokens: row.tokens
         role: "meta"
         text: row.machine.lifecycle === "disposable"
-            ? "Disposable · discarded at shutdown"
+            ? (row.machine.runtime_present === true && row.machine.runtime_drift === false
+                ? "Disposable · discarded at shutdown" : "Disposable configured · discard unknown")
                 + (row.relation === "held" || row.relation === "configured" ? " · " + row.hardwareText : "")
             : row.hardwareText
         color: row.theme.textQuiet

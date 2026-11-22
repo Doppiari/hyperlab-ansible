@@ -18,6 +18,19 @@ Column {
     readonly property bool current: band.shellState.machinesAvailable
         && band.shellState.sourceState(band.shellState.machinesSourceState, band.shellState.machinesObservedAt) === "ok"
     readonly property bool incomplete: band.shellState.machines.some(row => !Array.isArray(row.networks))
+    // A Machine whose interfaces could not be read can increase any total.
+    // It can increase the running count only if its state permits that.
+    function observedState(row) {
+        return row.state === "configuration-drift" ? row.observed_state : row.state;
+    }
+
+    function mayBeRunning(row) {
+        return !["shut off", "shutoff", "paused", "pmsuspended", "crashed", "blocked",
+                 "idle", "in shutdown", "not-created"].includes(band.observedState(row));
+    }
+
+    readonly property bool unplacedMayRun: band.shellState.machines.some(row =>
+        !Array.isArray(row.networks) && band.mayBeRunning(row))
     readonly property int columns: Math.max(1, Math.min(networks.length,
         Math.floor((width + grid.spacing) / (230 + grid.spacing))))
 
@@ -28,6 +41,21 @@ Column {
 
     function modeWord(mode) {
         return mode === "nat" ? "NAT" : mode === "isolated" ? "Isolated" : mode || "unknown";
+    }
+
+    // Keep delegates keyed by network name when a poll updates facts or order.
+    ListModel { id: names }
+    onNetworksChanged: {
+        const wanted = networks.map(net => net.name);
+        for (let index = names.count - 1; index >= 0; --index) {
+            if (!wanted.includes(names.get(index).networkName)) names.remove(index);
+        }
+        for (let index = 0; index < wanted.length; ++index) {
+            let old = index;
+            while (old < names.count && names.get(old).networkName !== wanted[index]) ++old;
+            if (old === names.count) names.insert(index, {networkName: wanted[index]});
+            else if (old !== index) names.move(old, index, 1);
+        }
     }
 
     spacing: band.tokens.spaceSm
@@ -87,23 +115,24 @@ Column {
 
         Repeater {
             id: entries
-            model: band.networks
+            model: names
             delegate: ShellCard {
                 id: entry
                 required property int index
-                required property var modelData
-                readonly property string name: modelData.name
+                readonly property var modelData: band.networks[index] ?? {}
+                readonly property string name: modelData.name ?? ""
                 readonly property var attached: band.shellState.machines.filter(row =>
                     Array.isArray(row.networks) && row.networks.includes(entry.name))
-                readonly property int running: attached.filter(row => row.state === "running").length
-                readonly property bool unknownRunning: attached.some(row => row.state === "unknown")
+                readonly property int running: attached.filter(row => band.observedState(row) === "running").length
+                readonly property bool unknownRunning: band.unplacedMayRun
+                    || attached.some(row => band.observedState(row) !== "running" && band.mayBeRunning(row))
                 readonly property bool complete: band.current && !band.incomplete
                 readonly property bool empty: complete && !attached.length
                 readonly property string summary: !band.current ? "machines unknown"
                     : !attached.length ? (empty ? "no machines" : "machines unknown")
                     : (band.incomplete ? "≥" : "") + attached.length
                         + (attached.length === 1 ? " machine · " : " machines · ")
-                        + (unknownRunning || band.incomplete ? (running ? "≥" + running : "unknown") : running)
+                        + (unknownRunning ? (running ? "≥" + running : "unknown") : running)
                         + " running"
                 readonly property int paletteIndex: band.rank(name)
                 readonly property color tone: paletteIndex < band.order.indexOf("unclassified")
@@ -114,10 +143,12 @@ Column {
                     ["Mode", band.modeWord(modelData.forward)],
                     ["DHCP", modelData.dhcp === false ? "off" : modelData.dhcp
                         ? modelData.dhcp.start + " – " + modelData.dhcp.end : "unknown"],
-                    ["GPU level", modelData.gpuLevel]
+                    ["GPU level", modelData.gpuLevel ?? "unknown"]
                 ]
-                readonly property string outbound: modelData.forward === "isolated" ? "No route out"
-                    : modelData.forward === "nat" ? "Internet via NAT" : "unknown"
+                // The last column of docs/network-flows.md, conditional on the reported mode.
+                readonly property string outbound: name === "lab" && modelData.forward === "isolated" ? "No route out"
+                    : ["clean", "dev", "services", "dirty", "hl-lab-testbed"].includes(name)
+                        && modelData.forward === "nat" ? "Internet via NAT" : "unknown"
 
                 objectName: "band-entry-" + name
                 width: Math.floor((grid.width - grid.spacing * (grid.columns - 1)) / grid.columns)
@@ -161,7 +192,7 @@ Column {
                                 objectName: "network-core"
                                 anchors.fill: parent
                                 visible: band.current && entry.attached.length > 0
-                                    && (entry.running > 0 || (entry.complete && !entry.unknownRunning))
+                                    && (entry.running > 0 || !entry.unknownRunning)
                                 colour: entry.tone
                                 character: entry.paletteIndex < band.order.indexOf("unclassified")
                                     ? entry.paletteIndex + 1 : 1

@@ -394,7 +394,9 @@ Scope {
         let accepted = false;
         if (current) {
             const rows = exitCode === 0 ? state.validNetworks(state.parseJson(raw)) : null;
-            state.networksObserved = rows === null ? [] : rows;
+            const observed = rows ?? [];
+            if (JSON.stringify(observed) !== JSON.stringify(state.networksObserved))
+                state.networksObserved = observed;
             state.networksSourceState = rows === null ? "unavailable" : "ok";
             state.networksObservedAt = rows === null ? 0 : Date.now();
             accepted = rows !== null;
@@ -1272,6 +1274,11 @@ Scope {
         return "Unreadable domain";
     }
 
+    function observedAttachments(names) {
+        return Array.isArray(names) && names.every(name => typeof name === "string"
+            && name.trim().length > 0 && !/[\x00-\x1f\x7f]/.test(name)) ? names : null;
+    }
+
     function applyOutsideDomainsPayload(raw) {
         const parsed = state.parseJson(raw);
 
@@ -1297,7 +1304,7 @@ Scope {
         state.observedDomains = parsed.machines.map(row => ({
             "name": row.name,
             "state": row.state,
-            "networks": Array.isArray(row.networks) ? row.networks.map(String) : null,
+            "networks": state.observedAttachments(row.networks),
             "memory_mb": Number.isInteger(row.memory_mb) && row.memory_mb > 0 ? row.memory_mb : null,
             "vcpus": Number.isInteger(row.vcpus) && row.vcpus > 0 ? row.vcpus : null,
             "provenance": "unclassified",
@@ -1397,7 +1404,9 @@ Scope {
             !state.machinesAvailable
             || signature !== state.machinesSignature;
 
-        state.machines = parsed.machines;
+        state.machines = parsed.machines.map(row => Object.assign({}, row, {
+            networks: state.observedAttachments(row.networks)
+        }));
         state.machinesSignature = signature;
         state.machinesAvailable = true;
         state.machinesSourceState = "ok";

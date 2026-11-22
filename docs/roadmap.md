@@ -573,7 +573,9 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
 
 - [x] native Machines showcase with a keyboard-filterable network band,
       observed attachment groups, sphere-free Machine cards and a read-only
-      external group (software-verified, [ADR 0071](adr/0071-machines-network-band.md),
+      external group. Polls preserve keyboard focus, bridge-backed attachments
+      follow the observed owner, and discard wording requires runtime agreement
+      (software-verified, [ADR 0071](adr/0071-machines-network-band.md),
       `tests/machine_showcase_contract.py`)
 - [ ] Machines showcase accepted on Nitro: compare band values with network
       definitions and cards with the Machine inventory, including selection
