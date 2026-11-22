@@ -84,7 +84,8 @@ def fixture() -> tuple[list[dict], dict]:
     built = {
         "domains": runtime, "gpu": {"held_by": None},
         "trust": {"claimed": True, "level": 2, "name": "dev",
-                  "ladder": {"clean": 3, "dev": 2, "dirty": 1, "lab": 0}},
+                  "ladder": {"clean": 3, "dev": 2, "dirty": 1, "lab": 0},
+                  "ladder_state": "recorded", "outside_policy": [], "unverified": []},
         "networks": {"missing": [], "inactive": ["lab"]}, "problems": [],
     }
     return records, built

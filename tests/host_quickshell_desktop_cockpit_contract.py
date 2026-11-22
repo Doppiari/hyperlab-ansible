@@ -497,6 +497,7 @@ def main() -> int:
     claim = render.waybar_field(
         {
             "trust": {
+                "ladder_state": "recorded",
                 "claimed": True,
                 "name": "dev",
                 "level": 2,
@@ -515,6 +516,7 @@ def main() -> int:
     bogus = render.waybar_field(
         {
             "trust": {
+                "ladder_state": "recorded",
                 "claimed": True,
                 "name": "root",
                 "level": 9,
@@ -531,7 +533,7 @@ def main() -> int:
     )
 
     unclaimed = render.waybar_field(
-        {"trust": {"claimed": False}},
+        {"trust": {"ladder_state": "recorded", "claimed": False}},
         "trust",
     )
 
