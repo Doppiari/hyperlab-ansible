@@ -228,3 +228,12 @@ the test's only interface was the unmapped one, so skipping it left the same
 empty answer as refusing it. The test now gives the Machine a placed
 interface on the same network too, and only refusing it leaves that network
 out.
+
+### Bridge-backed Machine attachments
+
+In the domain provider, resolve every interface source through the bridge
+map, including explicit network sources. Run the CLI test suite. The mixed
+interface fixture uses the same spelling for a bridge and a network and
+fails `only_bridge_sources_use_ownership_map`. Restoring the source-type
+check gives the network names in interface order and preserves the raw
+names in the domain listing.

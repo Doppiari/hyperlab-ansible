@@ -379,6 +379,10 @@ def machine_cards(document):
             relation = "none"
             assignment = "No passthrough configured"
         networks = domain.get("networks")
+        network = domain.get("network")
+        if "attached_networks" in domain:
+            networks = domain["attached_networks"]
+            network = networks[0] if networks else None
         result.append({
             "name": domain["name"],
             "state": domain["state"],
@@ -387,7 +391,7 @@ def machine_cards(document):
             "gpu_relation": relation,
             "memory_mb": domain.get("memory_mb"),
             "vcpus": domain.get("vcpus"),
-            "network": domain.get("network"),
+            "network": network,
             "networks": list(networks) if isinstance(networks, list) else None,
             # Tri-state: None when the domain could not be read.
             "managed": _known_bool(domain.get("managed")),

@@ -2,6 +2,7 @@ import world
 from harness import check, equals
 from hyperlabctl import document
 from hyperlabctl.providers.memory import budget
+from hyperlabctl.render import machine_cards
 
 RUNNING_VFIO = [{"name": "win11clean-valley", "state": "running",
                  "memory_mb": 6144, "vfio": True}]
@@ -38,6 +39,22 @@ def test_running_domain_is_never_blocked():
     equals("running_not_blocked", win["blocked"], None)
     equals("running_marked_vfio", win["vfio"], True)
     equals("running_network", win["network"], "clean")
+
+
+def test_bridge_resolution_preserves_direct_network_sources_and_raw_names():
+    ctx = world.build(domains=RUNNING_VFIO)
+    virsh = [ctx.config.virsh_bin, "-c", ctx.config.libvirt_uri, "-q"]
+    name = RUNNING_VFIO[0]["name"]
+    ctx.runner.register(virsh + ["dumpxml", name], f"<domain><name>{name}</name><devices>"
+                        "<interface type='bridge'><source bridge='virbr-dev'/></interface>"
+                        "<interface type='network'><source network='virbr-dev'/></interface></devices></domain>")
+    ctx.runner.register(virsh + ["net-list", "--all", "--name"], "dev\nvirbr-dev")
+    for network, bridge in (("dev", "virbr-dev"), ("virbr-dev", "other-bridge")):
+        ctx.runner.register(virsh + ["net-dumpxml", network],
+                            f"<network><name>{network}</name><bridge name='{bridge}'/></network>")
+    built = document.build(ctx, only={"domains"})
+    equals("raw_source_names", built["domains"][0]["networks"], ["virbr-dev", "virbr-dev"])
+    equals("only_bridge_sources_use_ownership_map", machine_cards(built)[0]["networks"], ["dev", "virbr-dev"])
 
 
 def test_gpu_bound_to_vfio_is_reported_as_bound():

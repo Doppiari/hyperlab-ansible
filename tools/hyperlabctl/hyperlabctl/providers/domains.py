@@ -10,6 +10,7 @@ import stat
 from pathlib import Path
 
 from ..errors import Unavailable
+from ..inventory import bridge_networks
 from ..inventory import domains as all_domains
 from .base import Provider
 
@@ -297,12 +298,20 @@ class DomainProvider(Provider):
                         else "not-required"
                     )
 
+            sources = domain.get("interface_sources", [])
+            attachment = {}
+            if any(kind == "bridge" for kind, _ in sources):
+                owners = bridge_networks(ctx)
+                resolved = [name if kind == "network" else (owners or {}).get(name) for kind, name in sources]
+                attachment["attached_networks"] = resolved if None not in resolved else None
+
             listed.append({
                 "name": domain["name"],
                 "state": domain["state"],
                 "memory_mb": wanted,
                 "network": domain["networks"][0] if domain["networks"] else None,
                 "networks": domain["networks"],
+                **attachment,
                 "vcpus": domain.get("vcpus"),
                 "vfio": domain["vfio"],
                 "managed": domain.get("managed"),

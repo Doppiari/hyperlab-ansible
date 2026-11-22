@@ -54,14 +54,15 @@ def parse_domain(xml_text):
             memory_kib = value if unit in ("kib", "k") else value * 1024
             break
 
-    networks = []
+    sources = []
     for interface in root.findall("./devices/interface"):
         source = interface.find("source")
         if source is None:
             continue
-        name = source.get("network") or source.get("bridge")
-        if name:
-            networks.append(name)
+        if source.get("network"):
+            sources.append(("network", source.get("network")))
+        elif source.get("bridge"):
+            sources.append(("bridge", source.get("bridge")))
 
     hostdevs = []
     for hostdev in root.findall("./devices/hostdev"):
@@ -85,7 +86,8 @@ def parse_domain(xml_text):
         "name": name_node.text if name_node is not None else None,
         "memory_mb": None if memory_kib is None else memory_kib // 1024,
         "vcpus": vcpus,
-        "networks": networks,
+        "networks": [name for _, name in sources],
+        "interface_sources": sources,
         "hostdevs": hostdevs,
         "vfio": bool(hostdevs),
         "managed": metadata is not None,

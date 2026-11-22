@@ -17,7 +17,7 @@ from typing import Any
 
 from .. import document as doc
 from ..errors import ContractError, HyperlabError, Unavailable
-from ..inventory import domain_names, network_names
+from ..inventory import bridge_networks, domain_names
 from ..machine_factory import (
     image_os_label,
     materialize_machine,
@@ -42,6 +42,7 @@ from ..machine_registry import (
     withdraw_machine,
     withdraw_published,
 )
+from ..providers.domains import network_identity
 from ..render import DomainSpheres, machine_cards
 from .base import Command
 
@@ -231,7 +232,7 @@ def _intent_row(
     }
 
 
-def _runtime_matches_machine(
+def _runtime_metadata_matches(
     runtime: dict[str, Any],
     record: dict[str, Any],
 ) -> bool:
@@ -246,8 +247,6 @@ def _runtime_matches_machine(
         == record["lifecycle"]
         and runtime.get("device_profile")
         == record["device_capability"]
-        and runtime.get("trust_profile")
-        == record["network_profile"]
         and runtime.get("gpu_handoff_profile")
         == record["gpu_handoff_profile"]
         and (
@@ -262,6 +261,11 @@ def _runtime_matches_machine(
             == "not-required"
         )
     )
+
+
+def _runtime_matches_machine(runtime: dict[str, Any], record: dict[str, Any]) -> bool:
+    return (runtime.get("trust_profile") == record["network_profile"]
+            and _runtime_metadata_matches(runtime, record))
 
 
 def build_product_inventory(
@@ -362,6 +366,16 @@ def build_product_inventory(
                         ),
                     }
                 )
+
+                # A bridge source can identify the observed attachment while
+                # the direct-network runtime check above still reports drift.
+                # Publish only diagnostic facts for an otherwise matching record.
+                attached = runtime.get("attached_networks")
+                if attached and _runtime_metadata_matches(runtime, record) and network_identity(
+                    dict(runtime, networks=attached), {record["network_profile"]}
+                ):
+                    row["networks"] = attached
+                    row["network"] = attached[0]
 
             else:
                 row = machine_cards(
@@ -534,39 +548,6 @@ def _interface_sources(ctx, name: str) -> dict[str, tuple[str, str] | None] | No
     return sources
 
 
-def _bridge_networks(ctx) -> dict[str, str] | None:
-    """Every libvirt network's bridge -> its name, from net-dumpxml; None
-    when any network cannot be read."""
-
-    try:
-        names = network_names(ctx)
-    except HyperlabError:
-        return None
-
-    bridges: dict[str, str] = {}
-
-    for name in names:
-        result = ctx.virsh("net-dumpxml", name)
-
-        if not result.ok:
-            return None
-
-        try:
-            root = ET.fromstring(result.stdout)
-        except ET.ParseError:
-            return None
-
-        bridge = root.find("bridge")
-
-        if root.tag != "network" or root.findtext("name") != name:
-            return None
-
-        if bridge is not None and bridge.get("name"):
-            bridges[bridge.get("name")] = name
-
-    return bridges
-
-
 def runtime_counters(
     ctx,
     machines: list[dict[str, Any]],
@@ -637,7 +618,7 @@ def runtime_counters(
 
             if kind == "bridge":
                 if bridges is None:
-                    bridges = _bridge_networks(ctx)
+                    bridges = bridge_networks(ctx)
 
                 if bridges is None:
                     everywhere = True

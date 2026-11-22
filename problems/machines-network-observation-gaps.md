@@ -29,6 +29,16 @@ withholds an empty outline or a dark core when occupancy or running state is
 undetermined. Stale inventory withholds the core and labels the counts
 unknown. The host name has a separate [source gap](sfere-seal-host-name-has-no-source.md).
 
+## Bridge-backed interfaces
+
+A libvirt interface can name a bridge directly. Comparing that string
+with a network name hid external attachments and misplaced registered
+Machines. The domain reader keeps the source type. The same network XML
+map used for traffic counters supplies bridge ownership for display. An
+unreadable definition or duplicate owner leaves the mapping unknown.
+A matching set of product metadata can establish the observed attachment
+while the existing runtime check still reports configuration drift.
+
 ## Regression
 
 The showcase contract exercises null interfaces, absent facts, stale reads,
