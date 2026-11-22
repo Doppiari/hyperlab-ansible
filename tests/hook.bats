@@ -19,10 +19,18 @@ import os
 import sys
 from pathlib import Path
 source, hook, helper, policy = map(Path, sys.argv[1:])
-hook.write_text(source.read_text().replace('/etc/gpu-handoff/xml-preflight.py', str(helper))
+# A literal that is not substituted would make the copy run the installed
+# helper or policy instead of this tree's: refuse to set up rather than run.
+text = source.read_text()
+for installed in ('/etc/gpu-handoff/xml-preflight.py', '/etc/gpu-handoff/looking-glass.json'):
+    if text.count(installed) != 1:
+        sys.exit(f'hook must name {installed} exactly once')
+hook.write_text(text.replace('/etc/gpu-handoff/xml-preflight.py', str(helper))
                 .replace('/etc/gpu-handoff/looking-glass.json', str(policy)))
-helper_source = source.parent / 'xml-preflight.py'
-helper.write_text(helper_source.read_text().replace('POLICY_OWNER = 0', f'POLICY_OWNER = {os.getuid()}'))
+helper_source = (source.parent / 'xml-preflight.py').read_text()
+if helper_source.count('POLICY_OWNER = 0') != 1:
+    sys.exit('helper must set POLICY_OWNER = 0 exactly once')
+helper.write_text(helper_source.replace('POLICY_OWNER = 0', f'POLICY_OWNER = {os.getuid()}'))
 hook.chmod(source.stat().st_mode)
 PYTHON
     printf '%s\n' '{"device":"/dev/kvmfr0","size_bytes":67108864}' > "${XML_POLICY}"

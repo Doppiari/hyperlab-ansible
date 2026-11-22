@@ -2,20 +2,30 @@
 """Exercise installed-path XML preflight on isolated hook and policy fixtures."""
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
+import yaml
 from ansible.parsing.dataloader import DataLoader
 from ansible.template import Templar, trust_as_template
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools/hyperlabctl"))
+
+from hyperlabctl.machine_factory import (  # noqa: E402
+    materialize_machine,
+    write_projected_vm_spec,
+)
+
 ROLE = ROOT / "roles/gpu_handoff"
 QEMU = "http://libvirt.org/schemas/domain/qemu/1.0"
 PLAIN = "<domain type='kvm'><name>ordinary</name><devices/></domain>"
@@ -32,14 +42,18 @@ class HookFixture:
         self.root = directory
         self.state = directory / "state"
         self.helper = directory / "xml-preflight.py"
-        self.policy = directory / "looking-glass.json"
+        # The policy has its own parent so that a redirected directory can be
+        # substituted without touching the fixture's other inputs.
+        self.policy_dir = directory / "policy"
+        self.policy_dir.mkdir()
+        self.policy = self.policy_dir / "looking-glass.json"
         self.hook = directory / "qemu"
         source = (ROLE / "files/qemu").read_text()
         for installed, fixture in (
             ("/etc/gpu-handoff/xml-preflight.py", self.helper),
             ("/etc/gpu-handoff/looking-glass.json", self.policy),
         ):
-            assert installed in source, f"hook does not invoke fixed installed path {installed}"
+            assert source.count(installed) == 1, f"hook does not invoke fixed installed path {installed} once"
             source = source.replace(installed, str(fixture))
         self.hook.write_text(source)
         self.hook.chmod(0o755)
@@ -142,6 +156,46 @@ def reviewed_xml() -> str:
     ):
         ET.SubElement(block, f"{{{QEMU}}}arg", {"value": value})
     return ET.tostring(root, encoding="unicode")
+
+
+def template_domain_xml(directory: Path) -> tuple[str, str]:
+    """Render a workstation-dev-standard Machine through the product path.
+
+    ADR 0019 selects this Template for the first GPU lease; its default run
+    is without the GPU. The Template stays draft and its image unsealed in
+    the tree, so a copy marks both ready only to let the real Machine factory,
+    VM spec projection, guest planner and domain template produce the XML
+    that libvirt would hand the hook at prepare.
+    """
+    for name in ("images", "templates", "vm-specs", "group_vars", "schemas"):
+        shutil.copytree(ROOT / name, directory / name,
+                        ignore=shutil.ignore_patterns(".generated"))
+    template_path = directory / "templates/workstation-dev-standard.yml"
+    template = yaml.safe_load(template_path.read_text())
+    assert template["presentation"]["looking_glass_mode"] == "disabled", template
+    assert template["defaults"]["gpu_handoff_profile"] is None, template
+    template["status"] = "ready"
+    template_path.write_text(yaml.safe_dump(template, sort_keys=False))
+    image_path = directory / f"images/{template['image']}.yml"
+    image = yaml.safe_load(image_path.read_text())
+    image.update(status="sealed", sha256="a" * 64, source_sha256="a" * 64)
+    image_path.write_text(yaml.safe_dump(image, sort_keys=False))
+    machine = materialize_machine(directory, template_id="workstation-dev-standard",
+                                  machine_id="dev-02", owner="hyperlab",
+                                  created_at="2026-11-22T00:00:00Z")
+    assert machine["gpu_handoff_profile"] is None, machine
+    spec = importlib.util.spec_from_file_location("guest_plan_for_hook", ROOT / "tools/guest_plan.py")
+    assert spec is not None and spec.loader is not None
+    planner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(planner)
+    plan = planner.build_plan(directory, write_projected_vm_spec(directory, machine),
+                              directory / "store")
+    assert plan["device_profile"] == "standard" and not plan["looking_glass"], plan
+    env = Environment(loader=FileSystemLoader(str(ROOT / "roles/guest/templates")),
+                      undefined=StrictUndefined, autoescape=False, keep_trailing_newline=True)
+    xml = env.get_template("domain.xml.j2").render(guest_plan=plan, guest_resolved_memory_mb=4096,
+                                                   guest_vfio={})
+    return plan["name"], xml
 
 
 def main() -> None:
@@ -259,6 +313,57 @@ def main() -> None:
         fixture.env = clean_env
         for directory in (shadow, fixture.root):
             (directory / "json.py").unlink()
+        # One fixture per guard that another refusal would otherwise mask.
+        duplicate_name = VFIO.replace("<devices>", "<name>arch-dev-vfio</name><devices>", 1)
+        fixture.refuses(duplicate_name, "domain name mismatch")
+        tail = ET.fromstring(xml)
+        tail.find(f"{{{QEMU}}}commandline")[3].tail = "-device vfio-pci,host=01:00.0"
+        fixture.refuses(ET.tostring(tail, encoding="unicode"), "unreviewed QEMU command-line")
+        fixture.helper.rename(fixture.root / "redirected-helper.py")
+        fixture.helper.symlink_to(fixture.root / "redirected-helper.py")
+        fixture.refuses(xml, "XML preflight missing, redirected or unreadable")
+        fixture.helper.unlink()
+        (fixture.root / "redirected-helper.py").rename(fixture.helper)
+        fixture.policy_dir.rename(fixture.root / "redirected-policy")
+        fixture.policy_dir.symlink_to(fixture.root / "redirected-policy")
+        fixture.refuses(xml, "unsafe Looking Glass policy: redirected directory")
+        fixture.policy_dir.unlink()
+        (fixture.root / "redirected-policy").rename(fixture.policy_dir)
+        compact = json.dumps(json.loads(policy), separators=(",", ":"))
+        for size, accepted in ((4096, True), (4097, False)):
+            fixture.policy.write_text(compact + " " * (size - len(compact)))
+            assert fixture.policy.stat().st_size == size
+            if accepted:
+                fixture.reset_state(False)
+                result = fixture.run(xml)
+                assert result.returncode == 0, f"4096-byte policy refused: {result.stderr}"
+            else:
+                fixture.refuses(xml, "invalid Looking Glass policy: too large")
+        fixture.policy.unlink()
+        os.mkfifo(fixture.policy, 0o644)
+        fixture.refuses(xml, "unsafe Looking Glass policy: expected a readable root-owned regular file")
+        fixture.policy.unlink()
+        fixture.policy.write_text(policy)
+        fixture.policy.chmod(0o644)
+        # ADR 0019's first lease Template: its rendered default run is an
+        # unmapped standard domain, accepted without touching the ladder.
+        rendered = fixture.root / "rendered"
+        rendered.mkdir()
+        name, standard = template_domain_xml(rendered)
+        parsed = ET.fromstring(standard)
+        assert not [node for node in parsed.iter() if node.tag.startswith(f"{{{QEMU}}}")
+                    or node.tag == "hostdev"], "workstation-dev-standard renders passthrough"
+        for seeded in (False, True):
+            fixture.reset_state(seeded)
+            result = fixture.run(standard, name)
+            assert result.returncode == 0, f"rendered workstation-dev-standard refused: {result.stderr}"
+            if seeded:
+                assert (fixture.state / "trust").read_bytes() == b"3\n"
+                assert sorted(p.name for p in fixture.state.iterdir()) == ["trust"]
+            else:
+                assert not fixture.state.exists(), "standard Template run created ladder state"
+        fixture.refuses(standard.replace("<devices>", "<devices><hostdev type='pci'/>", 1),
+                        "PCI passthrough without a reviewed GPU handoff policy", name)
         fixture.reset_state(False)
         assert fixture.run("", phase="release").returncode == 0
         assert not fixture.state.exists()

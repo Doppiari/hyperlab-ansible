@@ -181,6 +181,15 @@ can do through libvirt. This hook guards managed policy and accidental or
 unreviewed starts. It does not sandbox a hostile host owner, replace libvirt
 authorization, establish a GPU lease or prove GPU reset sanitization.
 
+The prepare preflight reads only the domain XML libvirt passes on stdin. Three
+routes to a PCI device stay outside it, and each needs the same libvirt
+authority: the `<emulator>` binary a domain names is not inspected, so a
+wrapper could add its own arguments; an `<interface type='network'>` is not
+resolved to its network's forward mode, so a network that forwards in
+`hostdev` mode is not seen as passthrough; and a device attached to a running
+domain (`virsh attach-device`) never reaches the hook, because libvirt's qemu
+hook has no phase for a hot-plug.
+
 ## The ceiling rule
 
 A handoff profile may lower, never raise, the class that a ranked network

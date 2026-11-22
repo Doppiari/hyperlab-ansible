@@ -6015,6 +6015,88 @@ with tempfile.TemporaryDirectory(prefix="gpu-xml-mutations-") as temporary:
 PY
 ```
 
+### Guards another refusal would mask, and the standard Template
+
+Each guard below was correct, but no fixture failed when it alone was
+removed: a later edit could have dropped it unnoticed. The XML contract now
+has one fixture per guard, and the bats setup refuses to run when a fixed
+installed path is not substituted exactly once, so a suite run as root can
+never exercise the installed helper or policy instead of this tree's. The
+contract also renders a `workstation-dev-standard` Machine (ADR 0019's first
+lease Template, default run without the GPU) through the Machine factory,
+VM spec projection, guest planner and domain template, and requires the hook
+to accept it without creating or changing ladder state. That case is a
+positive control; the refusal paths it could hide are Q1, Q4 and Q5.
+
+Each break was observed red (exit 1, with the predicted reason) and the
+restored check green (exit 0). No mutation stayed green.
+
+| Case | Invariant broken | Observed red check |
+|---|---|---|
+| Q19 | Accept more than one `<name>` | XML contract duplicate-name fixture accepted |
+| Q20 | Follow a symlinked helper | XML contract redirected helper ran the reviewed XML |
+| Q21 | Follow a redirected policy directory | XML contract redirected-directory fixture accepted |
+| Q22 | Read a policy of any size | XML contract 4097-byte policy accepted |
+| Q23 | Read a non-regular policy | XML contract FIFO policy refused for the wrong reason |
+| Q24 | Ignore text after an argument | XML contract tail fixture accepted |
+| Q25 | Rename an installed path literal in the hook | Bats setup refuses; every test fails |
+
+Replay from the repository root, as above:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+helper = Path('roles/gpu_handoff/files/xml-preflight.py')
+hook = Path('roles/gpu_handoff/files/qemu')
+contract = ['python', 'tests/gpu_handoff_xml_contract.py']
+mutations = [
+    ('Q19-allow-duplicate-name', helper,
+     [('require(len(names) == 1 and', 'require(len(names) >= 1 and')],
+     contract, 'domain name mismatch'),
+    ('Q20-follow-helper-symlink', hook,
+     [(' || -L "${XML_PREFLIGHT}" ]]', ' ]]')],
+     contract, 'XML preflight missing, redirected or unreadable'),
+    ('Q21-follow-policy-parent-symlink', helper,
+     [('    require(not any(parent.is_symlink() for parent in path.parents),\n'
+       '            "unsafe Looking Glass policy: redirected directory")\n', '')],
+     contract, 'redirected directory'),
+    ('Q22-unbounded-policy', helper,
+     [('    require(len(raw) <= 4096, "invalid Looking Glass policy: too large")\n', '')],
+     contract, 'too large'),
+    ('Q23-accept-non-regular-policy', helper,
+     [('require(stat.S_ISREG(info.st_mode) and info.st_uid', 'require(info.st_uid')],
+     contract, 'regular file'),
+    ('Q24-ignore-argument-tail', helper,
+     [('\n                    and not (node.tail or "").strip() for node in args),', ' for node in args),')],
+     contract, 'unreviewed QEMU command-line'),
+    ('Q25-unchecked-bats-substitution', hook,
+     [('/etc/gpu-handoff/looking-glass.json', '/etc/gpu-handoff/looking-glass-policy.json')],
+     ['bats', '--filter', 'missing or malformed', 'tests/hook.bats'], 'looking-glass.json exactly once'),
+]
+with tempfile.TemporaryDirectory(prefix="gpu-xml-mutations-") as temporary:
+    for name, path, edits, command, reason in mutations:
+        backup = Path(temporary) / (name + "-" + path.name)
+        shutil.copy2(path, backup)
+        mutated = path.read_text()
+        for old, new in edits:
+            assert mutated.count(old) == 1, (name, old)
+            mutated = mutated.replace(old, new, 1)
+        try:
+            path.write_text(mutated)
+            red = subprocess.run(command, text=True, capture_output=True, check=False, timeout=300)
+            assert red.returncode != 0 and reason in red.stdout + red.stderr, (name, red)
+        finally:
+            shutil.copy2(backup, path)
+        green = subprocess.run(command, text=True, capture_output=True, check=False, timeout=300)
+        assert green.returncode == 0, (name, green)
+        print(f"{name}: red; restored green")
+PY
+```
+
 ## Palette output variant names
 
 The Quickshell writer deliberately includes the current variant in its top-level
