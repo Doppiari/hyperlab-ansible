@@ -108,7 +108,10 @@ Item {
     readonly property var filteredOutside: stage.shellState.outsideDomains.filter(row => {
         const running = row.state === "running";
         const needle = stage.query.trim().toLowerCase();
-        return !stage.networkFilter && (stage.stateFilter !== "running" || running)
+        if (stage.networkFilter && !(Array.isArray(row.networks) && row.networks.includes(stage.networkFilter)))
+            return false;
+
+        return (stage.stateFilter !== "running" || running)
             && (stage.stateFilter !== "stopped" || !running)
             && (needle.length === 0
                 || (row.name + " " + (stage.inventoryAvailable ? "external" : "membership unknown")

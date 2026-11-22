@@ -416,7 +416,9 @@ labelled. An observed empty interface list reads **none**.
 [ADR 0071](adr/0071-machines-network-band.md)
 
 The final **Not managed · outside Sfere** group is read-only and neutral.
-Its cards show observed allocation and interfaces. The raw domain source
+Its cards show observed allocation and interfaces. Filtering a network keeps
+external domains with a matching attachment in this group. The network's
+activity count covers registry Machines only. The raw domain source
 has no manifest OS. If registry membership becomes unavailable, these
 rows instead say **membership unknown**.
 

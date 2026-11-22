@@ -164,6 +164,12 @@ CHECKS = r'''
                   "band selection did not filter Machine groups");
             keyEvents.keyClick(Qt.Key_Return);
             check(stage.filtered.length === 6, "second activation did not clear network filter");
+            entry("clean").activate();
+            keyEvents.wait(30);
+            const filteredExternal = find(stage, "external-machine-outside-desk");
+            check(filteredExternal && filteredExternal.visible && filteredExternal.activated === undefined
+                  && visibleText(entry("clean"), "1 machine · 0 running"),
+                  "filter lost an attached read-only domain or counted it as managed");
             keyEvents.mouseClick(entry("lab"));
             check(stage.filtered.length === 2 && stage.groups[0].identity === "lab",
                   "pointer did not filter to isolated network");
@@ -495,9 +501,13 @@ def native(output: Path | None) -> None:
                 if case["id"] not in {"no-machines", "five-networks", "thirty", "isolated"}:
                     continue
                 rows = seal.rows_for(case)
-                outside = json.dumps(rows + case["external"])
+                observed = rows if case["id"] == "thirty" else rows + case["external"]
+                outside = json.dumps(observed)
                 body = f"sharedState.applyOutsideDomainsPayload(JSON.stringify({{machines_available:true, machines:{outside}}}));"
-                body += f'check(stage.total === {len(rows) + len(case["external"])}, "capture population changed");'
+                if case["id"] == "thirty":
+                    body += 'check(stage.total === 30, "thirty-Machine capture must show exactly 30 domains");'
+                else:
+                    body += f'check(stage.total === {len(observed)}, "capture population changed");'
                 if case["id"] == "five-networks":
                     body += 'tile("dev-desk").activated();'
                 if case.get("enter"):

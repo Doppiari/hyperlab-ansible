@@ -19,7 +19,10 @@ discarded even the allocations that the raw source did provide.
 
 Keep absent facts unknown. Pass through positive integer allocations for
 external domains. The read-only group keeps its neutral identity even when
-an observed interface belongs to a product network.
+an observed interface belongs to a product network. The earlier provenance
+filter hid every external domain. With an attachment filter, that would
+hide domains on the selected network. Match the raw attachment while
+retaining the separate group and managed-only band counts.
 
 An incomplete inventory shows confirmed counts as lower bounds. The band
 withholds an empty outline or a dark core when occupancy or running state is

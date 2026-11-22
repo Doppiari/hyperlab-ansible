@@ -6572,8 +6572,9 @@ Run `python tests/machine_showcase_contract.py` with each break applied
 individually. It renders the native view against the network formatter
 and the managed and external Machine inventories. The installation case
 uses `python tests/host_quickshell_shared_shell_contract.py`. The product-heading
-case uses `python tests/external_machine_visibility_contract.py`. Restore the
-saved file and run the same check again.
+case uses `python tests/external_machine_visibility_contract.py`. The
+capture population case uses the showcase contract with `--render-dir DIR`.
+Restore the saved file and run the same check again.
 
 | Break | Change | Expected failure |
 | --- | --- | --- |
@@ -6601,7 +6602,9 @@ saved file and run the same check again.
 | Rule height during refresh | Derive the seal label height from its laid-out content height and line count. | Refreshing the shared network source produces a QML height binding loop. |
 | Dense allocation | Draw only memory in the compact row while keeping its full accessible name. | The visible row loses labelled vCPU and network facts. |
 | Missing product name | Always append the product suffix, including when identity is unreadable. | The external group heading invents a suffix for missing identity. |
+| External network filter | Hide every external domain when a network is selected. | The separate read-only card disappears despite its observed attachment. |
+| Capture population | Include the extra raw domain in the thirty-Machine render. | The rendered workspace reports 31 domains. |
 
-Each of the 24 breaks failed its contract. Restoring the saved file
+Each of the 26 breaks failed its contract. Restoring the saved file
 byte-for-byte made the same command pass. The rule-height case failed
 on the QML binding warning even though the fixture process exited normally.
