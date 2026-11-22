@@ -218,7 +218,9 @@ exercise five occupied workspaces with long, unconfirmed Machine names.
   The GPU entry shows a
   current owner, a retained boot claim, or an unreadable source — and stays
   silent when ownership is known and nothing holds it, because a free GPU at
-  idle is not news.
+  idle is not news. When the host reports a domain outside the GPU policy
+  holding a passthrough device the hook never saw, the boot claim reads
+  **Unknown, reboot to reset** instead of the recorded rung.
 
 ## Sfere seal
 

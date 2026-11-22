@@ -455,6 +455,16 @@ Details: [C10 — Machine Factory](#c10--machine-factory).
       `tests/arch_dev_vfio_hardware_gate_contract.py`; software-verified).
       The trusted host session's libvirt authority is root-equivalent; the
       hook and become prompt do not confine a hostile host owner.
+- [x] a passthrough device held by a running domain outside both GPU policy
+      surfaces (a hot-plug the hook never sees) is a `hyperlabctl doctor`
+      error naming it, and the shell shows the GPU state as unknown, reboot
+      to reset; an unreadable live XML is unknown, never clean
+      (`tools/hyperlabctl/tests/test_gpu_holders.py`,
+      `tests/host_quickshell_runtime_contract.py`; software-verified). Not
+      refused and not remembered after the holder stops
+      ([open record](../problems/gpu-held-outside-the-handoff-policy.md))
+- [ ] physical check on Nitro: hot-plug the GPU into an unmapped throwaway
+      domain and read the doctor report and the shell
 - [ ] a Machine declares `gpu_capable`; owning the GPU is a host-owned lease
       for one run, so a dev Machine can start without the GPU and restart
       with it for Blender or CUDA

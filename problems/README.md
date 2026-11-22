@@ -494,6 +494,10 @@ proof.
 - [`external-machines-hidden-and-coloured.md`](external-machines-hidden-and-coloured.md):
   native Machines hid external domains and undercounted running state, while
   recovery assigned DEV without a reviewed spec.
+- [`gpu-held-outside-the-handoff-policy.md`](gpu-held-outside-the-handoff-policy.md):
+  a device attached to a running domain never reaches the qemu hook, so the
+  recorded rung outlived the GPU's real history; doctor and the shell now
+  report the holder as unknown, reboot to reset. Open: nothing remembers it.
 - [`bar-core-hidden-under-fullscreen-guest.md`](bar-core-hidden-under-fullscreen-guest.md):
   a fullscreen guest covers the bar core and focus item; only the ADR 0039
   ring remains, in colour alone and without a hollow Unknown. Open.

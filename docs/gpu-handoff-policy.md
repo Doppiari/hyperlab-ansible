@@ -190,6 +190,19 @@ resolved to its network's forward mode, so a network that forwards in
 domain (`virsh attach-device`) never reaches the hook, because libvirt's qemu
 hook has no phase for a hot-plug.
 
+The last route is reported, not refused. `hyperlabctl doctor` reads every
+domain's live XML (`virsh dumpxml` without `--inactive`) and compares each
+domain that is not shut off and carries a PCI hostdev, a hostdev interface or
+a QEMU command-line extension with both policy surfaces. A holder in neither
+is an error naming it (`trust.gpu_outside_policy`), and the trust section's
+`ladder_state` becomes `outside-policy`: the shell and `hyperlabctl trust`
+then show the GPU state as **unknown, reboot to reset** instead of the
+recorded rung. A domain whose live XML, the domain list or a needed policy
+surface cannot be read makes it `unverified` (`trust.gpu_holders_unverified`):
+unknown, never clean. The report lasts only while the holder runs; nothing
+records it afterwards
+([open record](../problems/gpu-held-outside-the-handoff-policy.md)).
+
 ## The ceiling rule
 
 A handoff profile may lower, never raise, the class that a ranked network

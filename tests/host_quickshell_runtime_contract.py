@@ -2644,8 +2644,8 @@ def backend_trust_payloads() -> dict[str, str]:
     from hyperlabctl import document
     from hyperlabctl.render import waybar_field
 
-    def payload(trust, error=None):
-        ctx = world.build(trust=trust)
+    def payload(trust, error=None, domains=None):
+        ctx = world.build(trust=trust, domains=domains)
         target = str(ctx.config.gpu_handoff_state)
         real = Path.read_text
 
@@ -2654,9 +2654,19 @@ def backend_trust_payloads() -> dict[str, str]:
                 raise error
             return real(self, *args, **kwargs)
 
-        with mock.patch.object(Path, "read_text", read_text):
+        # The managed GPU policy surface is root-owned on the host; the
+        # fixture answers it as readable and empty, never from /etc.
+        with mock.patch.object(Path, "read_text", read_text), mock.patch(
+            "hyperlabctl.providers.domains.observe_managed_gpu_policies",
+            return_value=({}, "ok"),
+        ):
             built = document.build(ctx, only={"trust"})
         return json.dumps(waybar_field(built, "trust"))
+
+    # A running domain in neither GPU policy surface holds a PCI hostdev,
+    # attached after its prepare: the hook recorded DEV/2 without seeing it.
+    rogue = [{"name": "rogue-tmp", "state": "running", "memory_mb": 1024,
+              "network": "lab", "vfio": True}]
 
     return {
         "dev": payload(2),
@@ -2664,6 +2674,7 @@ def backend_trust_payloads() -> dict[str, str]:
         "permission": payload(2, PermissionError(errno.EACCES, "Permission denied")),
         "io": payload(2, OSError(errno.EIO, "Input/output error")),
         "malformed": payload("garbage"),
+        "outside": payload(2, domains=rogue),
     }
 
 
@@ -3008,6 +3019,24 @@ TRUST_PROVIDER_PATH = """
             check(sharedState.gpuOwnership.known
                   && sharedState.gpuOwnership.owner === "",
                   "a trust read failure changed GPU ownership");
+
+            // A passthrough holder outside the GPU policy replaces the
+            // recorded rung: the GPU state is unknown until a reboot.
+            sharedState.applyTrustPayload(payloads.dev);
+            sharedState.applyTrustPayload(payloads.outside);
+            check(sharedState.trustClaimState === "ok"
+                  && !sharedState.trustClaim.claimed
+                  && sharedState.trustClaim.outsidePolicy === true
+                  && sharedState.trustClaim.level === -1,
+                  "an outside-policy holder kept the recorded rung");
+            check(claimText.text === "Unknown, reboot to reset",
+                  "an outside-policy holder rendered as: " + claimText.text);
+            check(badge.visible && badge.stateText === "Unknown, reboot to reset",
+                  "the rail hid an outside-policy holder: " + badge.stateText);
+            sharedState.applyTrustPayload(payloads.io);
+            check(!sharedState.trustClaim.claimed
+                  && claimText.text.indexOf("rung") < 0,
+                  "a read failure after outside-policy restored a rung");
 """
 
 

@@ -6097,6 +6097,67 @@ with tempfile.TemporaryDirectory(prefix="gpu-xml-mutations-") as temporary:
 PY
 ```
 
+### The shell under a GPU held outside the policy
+
+`tests/host_quickshell_runtime_contract.py` feeds the shell a real backend
+trust payload (TrustProvider, document build and `waybar_field`, as
+`hyperlabctl watch --field trust` publishes it) for a running domain outside
+both GPU policy surfaces that holds a PCI hostdev, after a recorded DEV/2
+claim. The shell must drop the rung, read **Unknown, reboot to reset** on the
+Boot claim row and the rail badge, and not bring a rung back when the next
+read fails. Each break was observed red with the predicted message and the
+restored contract green.
+
+| Case | Invariant broken | Observed red check |
+|---|---|---|
+| S1 | ShellState ignores the outside-policy statement | "an outside-policy holder kept the recorded rung" |
+| S2 | The Boot claim row keeps its normal text | "an outside-policy holder rendered as" |
+| S3 | The rail badge keeps its normal text | "the rail hid an outside-policy holder" |
+
+Replay from the repository root:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+base = Path('roles/host_desktop_common/files/quickshell/hyperlab')
+state, badge, instrument = base / 'ShellState.qml', base / 'GpuBadge.qml', base / 'OwnershipInstrument.qml'
+contract = ['python3', 'tests/host_quickshell_runtime_contract.py']
+mutations = [
+    ('S1-outside-policy-ignored', state,
+     [('            && parsed.ladder === "outside-policy"\n', '            && parsed.ladder === "never"\n')],
+     'an outside-policy holder kept the recorded rung'),
+    ('S2-row-keeps-claim-text', instrument,
+     [('                    if (instrument.claimOutsidePolicy)\n                        return "Unknown, reboot to reset";\n\n', '')],
+     'an outside-policy holder rendered as'),
+    ('S3-rail-quiet', badge,
+     [('        if (badge.claimOutsidePolicy)\n            return "Unknown, reboot to reset";\n\n', '')],
+     'the rail hid an outside-policy holder'),
+]
+with tempfile.TemporaryDirectory() as temporary:
+    for name, path, edits, reason in mutations:
+        backup = Path(temporary) / (name + path.name)
+        shutil.copy2(path, backup)
+        text = path.read_text()
+        for old, new in edits:
+            assert text.count(old) == 1, (name, old)
+            text = text.replace(old, new, 1)
+        try:
+            path.write_text(text)
+            red = subprocess.run(contract, text=True, capture_output=True, check=False, timeout=900)
+            assert red.returncode != 0 and reason in red.stdout + red.stderr, (name, red.stdout[-800:], red.stderr[-800:])
+        finally:
+            shutil.copy2(backup, path)
+        print(f"{name}: red; restored", flush=True)
+    green = subprocess.run(contract, text=True, capture_output=True, check=False, timeout=900)
+    assert green.returncode == 0, green.stdout[-800:]
+    print("restored contract green")
+PY
+```
+
 ## Palette output variant names
 
 The Quickshell writer deliberately includes the current variant in its top-level

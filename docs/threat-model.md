@@ -67,6 +67,17 @@ start remain unbuilt ([ADR 0018](adr/0018-disposable-discards-on-stop.md)).
   authority ([GPU handoff policy](gpu-handoff-policy.md),
   `tests/gpu_handoff_xml_contract.py`).
 
+- **A passthrough device hot-plugged by a host-session actor.** libvirt's
+  qemu hook has no phase for a hot-plug, so `virsh attach-device` can give a
+  running domain outside the GPU policy a PCI device the ladder never sees,
+  and the recorded rung stays cleaner than the GPU's real history. The hook
+  cannot refuse it. `hyperlabctl doctor` reads every live domain XML and
+  reports such a holder as an error naming it; the shell then shows the GPU
+  state as unknown, reboot to reset, and an unreadable live XML as unknown,
+  never as clean. The report lasts only while the holder runs: nothing
+  records it afterwards, and only a host reboot resets the GPU
+  ([`../problems/gpu-held-outside-the-handoff-policy.md`](../problems/gpu-held-outside-the-handoff-policy.md)).
+
 - **An escape from QEMU.** Every QEMU process runs as the same user with
   no MAC confinement, so code that escapes one Machine's QEMU can open every
   other Machine's disk
@@ -118,6 +129,7 @@ here so a reviewer sees them in one place:
 
 - [`qemu-processes-share-one-identity.md`](../problems/qemu-processes-share-one-identity.md) — above.
 - [`looking-glass-input-isolation.md`](../problems/looking-glass-input-isolation.md) — above.
+- [`gpu-held-outside-the-handoff-policy.md`](../problems/gpu-held-outside-the-handoff-policy.md) — above.
 - [`runtime-inventory-self-heal.md`](../problems/runtime-inventory-self-heal.md) —
   an on-demand action can find its ephemeral SSH inventory gone; an unsafe
   inventory is refused, and regenerating a missing one only through the

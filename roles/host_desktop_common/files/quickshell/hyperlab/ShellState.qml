@@ -1050,7 +1050,8 @@ Scope {
     property var trustClaim: ({
         "claimed": false,
         "identity": "",
-        "level": -1
+        "level": -1,
+        "outsidePolicy": false
     })
 
     // The one question every renderer asks before reading `trustClaim`:
@@ -1065,7 +1066,34 @@ Scope {
     // not an affirmative, internally consistent observation: malformed JSON,
     // arrays, error payloads, missing `known`, an off-ladder identity (which
     // includes SERVICES) or a rung that is not the identity's canonical rung.
+    //
+    // One unknown is itself an observation: the host saying that a domain
+    // outside the GPU policy holds a passthrough device the hook never saw.
+    // No rung describes the GPU then, so the recorded one is dropped rather
+    // than kept, and only a reboot resets it.
     function validTrustObservation(parsed) {
+        if (
+            parsed !== null
+            && typeof parsed === "object"
+            && !Array.isArray(parsed)
+            && parsed.ladder === "outside-policy"
+        ) {
+            if (
+                parsed.known !== false
+                || parsed.claimed !== false
+                || (parsed.identity !== null && parsed.identity !== undefined)
+                || (parsed.level !== null && parsed.level !== undefined)
+            )
+                return null;
+
+            return {
+                "claimed": false,
+                "identity": "",
+                "level": -1,
+                "outsidePolicy": true
+            };
+        }
+
         if (
             parsed === null
             || typeof parsed !== "object"
@@ -1086,7 +1114,8 @@ Scope {
             return {
                 "claimed": false,
                 "identity": "",
-                "level": -1
+                "level": -1,
+                "outsidePolicy": false
             };
         }
 
@@ -1102,7 +1131,8 @@ Scope {
         return {
             "claimed": true,
             "identity": identity,
-            "level": rung
+            "level": rung,
+            "outsidePolicy": false
         };
     }
 
