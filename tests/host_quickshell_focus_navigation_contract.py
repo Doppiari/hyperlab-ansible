@@ -104,6 +104,10 @@ SCENARIO = r'''
             check(raises() === 1, "external reopen lost its raise");
             let baseline = raises();
 
+            // The dense list virtualizes offscreen network groups. Search for
+            // this Machine, whose attachment is unknown, before exercising it.
+            const stage = find(workspaceSurface, "machine-stage");
+            stage.query = "fixture-000";
             // Exercise the actual grid/dense delegate signal, not a copied call.
             const card = findWhere(workspaceSurface, item => item.visible
                 && item.machine && item.machine.name === "fixture-000"
@@ -118,6 +122,8 @@ SCENARIO = r'''
             check(raises() === baseline, "machine delegate refocused");
             sharedSurfaces.clearMachineSelection();
             check(raises() === baseline, "clearing selection refocused");
+
+            stage.query = "";
 
             // A card under the seal is internal navigation into the same window.
             sharedSurfaces.switchWorkspace("sfere");

@@ -95,9 +95,13 @@ outside this set, or an incomplete `dom_*` table, resolves to neutral text —
 never to a borrowed colour. Diagnostics reports an incomplete table rather than
 letting the shell quietly invent one.
 
-A Machine is drawn as a sphere in its domain colour
-([ADR 0064](adr/0064-spheres-are-machines.md)), by the one shell component
-`MachineSphere.qml`. Its colours come only from `provenanceColor()` and the
+Machine cards pair a provenance mark with its word. The still spheres above
+them represent networks. [Machines network band](adr/0071-machines-network-band.md)
+
+The bar uses `MachineSphere.qml` to draw a focused Machine in its domain
+colour. [Machine spheres](adr/0064-spheres-are-machines.md)
+
+Its colours come only from `provenanceColor()` and the
 appearance text tone, so a theme or scheme never changes a classified sphere,
 the host grey or the bar core. The exception is the neutral outline of an
 external or unclassified Machine: it is the appearance text tone, so its

@@ -145,6 +145,7 @@ def main() -> int:
             "WorkspaceSurface.qml",
             "WorkspaceFrame.qml",
             "MachineStage.qml",
+            "NetworkBand.qml",
             "SfereView.qml",
             "SealFloor.qml",
             "SealAmbient.qml",

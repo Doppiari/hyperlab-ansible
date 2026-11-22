@@ -128,9 +128,11 @@ Rectangle {
         // Three lines are kept for every rule, so selecting another network
         // never resizes the panel and the seal above it.
         ShellLabel {
+            id: ruleLabel
             objectName: "sfere-panel-rule"
             width: parent.width
-            height: Math.max(implicitHeight, contentHeight / Math.max(1, lineCount) * 3)
+            height: Math.max(implicitHeight, ruleMetrics.height * lineHeight * 3)
+            FontMetrics { id: ruleMetrics; font: ruleLabel.font }
             tokens: panel.tokens
             role: "meta"
             wrapMode: Text.Wrap
@@ -200,7 +202,6 @@ Rectangle {
                         theme: panel.theme
                         icons: panel.icons
                         machine: card.modelData
-                        sphereVisible: false
                         selected: card.name === panel.highlighted
                         onActivated: panel.machineRequested(card.name)
                     }

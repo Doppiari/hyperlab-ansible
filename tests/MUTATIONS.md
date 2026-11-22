@@ -5682,6 +5682,10 @@ that comparison independently refuses any accent-dependent sphere. The first
 test-first run refused the missing ADR before the component was rewritten.
 
 ## Machines showcase with spheres
+
+The sphere cases below record the former Machines design. For the network
+band and current Machine cards, see [Machines network band](#machines-network-band).
+
 `tests/machine_showcase_contract.py` executes the production view with the
 real Theme, Tokens, ShellState and selection coordinator. Its six registry
 Machines span four domains; the seventh domain is external. Runtime checks
@@ -6561,3 +6565,43 @@ a rule it cannot read, and a self-test injects rules to prove it.
 hyperlabctl side of the counters is catalogued in
 `tools/hyperlabctl/MUTATIONS.md` ("Raw runtime counters"). These
 observations are software verification only.
+
+## Machines network band
+
+Run `python tests/machine_showcase_contract.py` with each break applied
+individually. It renders the native view against the network formatter
+and the managed and external Machine inventories. The installation case
+uses `python tests/host_quickshell_shared_shell_contract.py`. The product-heading
+case uses `python tests/external_machine_visibility_contract.py`. Restore the
+saved file and run the same check again.
+
+| Break | Change | Expected failure |
+| --- | --- | --- |
+| DHCP off | Replace the live range with **off**. | The displayed DHCP value differs from the source. |
+| Stopped lit | Light the core for every occupied network. | The drawn core disagrees with the running count. |
+| Filled empty | Fill the empty outline with its network colour. | The empty outline has a nonzero fill alpha. |
+| Isolated outbound | Give an isolated network the NAT caption. | The outbound value differs from the isolated fixture. |
+| Unsorted band | Reverse the palette comparison. | Drawn entries are out of order. |
+| Missing network | Drop the first network before sorting. | The drawn entries omit a declared network. |
+| Host flow | Replace the host's gateway restriction with access to any service. | The visible reachability sentence changes. |
+| Unlabelled subnet | Omit the subnet label from the accessible name. | The screen reader loses the value's label. |
+| Arrow focus | Set the Right key offset to zero. | The next network fails to take focus. |
+| Filter toggle | Always filter to the activated name. | A second Enter fails to clear the filter. |
+| Guessed membership | Compare the Machine's provenance when filtering its groups. | The multi-homed Machine disappears from an observed network. |
+| Group subnet | Replace the group's subnet with **unknown**. | The header differs from the network definition. |
+| Tile sphere | Add a MachineSphere to the tile. | A Machine presentation declares a sphere. |
+| Tile colour | Use a hexadecimal colour on a Machine label. | The colour-literal check rejects the tile. |
+| Footer | Clear the visible footer. | The tile loses the lifecycle or GPU wording. |
+| External allocation | Drop the external domain's observed vCPU count. | Its read-only card disagrees with the raw inventory. |
+| Unread attachment | Treat absence from the confirmed set as proof of emptiness. | An unreadable attachment produces an empty outline. |
+| Stale light | Accept stale Machine data for computing sphere state. | A stale running Machine lights the band. |
+| Constant GPU level | Replace the reported numeric level with 3. | The labelled level differs from the network source. |
+| Band not installed | Remove NetworkBand.qml from the installed surface list. | The shared shell installation contract rejects the manifest. |
+| Narrow selected band | Size the band to the inventory column when the Machine pane is open. | The band no longer spans the workspace above the pane. |
+| Rule height during refresh | Derive the seal label height from its laid-out content height and line count. | Refreshing the shared network source produces a QML height binding loop. |
+| Dense allocation | Draw only memory in the compact row while keeping its full accessible name. | The visible row loses labelled vCPU and network facts. |
+| Missing product name | Always append the product suffix, including when identity is unreadable. | The external group heading invents a suffix for missing identity. |
+
+Each of the 24 breaks failed its contract. Restoring the saved file
+byte-for-byte made the same command pass. The rule-height case failed
+on the QML binding warning even though the fixture process exited normally.

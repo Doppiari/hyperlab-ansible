@@ -2,13 +2,14 @@
 //
 // The dense alternative to the card grid, used when an inventory is large
 // enough that a grid stops being readable. It carries the same facts in the
-// same host projection, with a sphere beside the name, operating system,
+// same host projection, with an identity mark beside the name, operating system,
 // state, memory allocation and GPU relationship.
 
 import QtQuick
 
 Rectangle {
     id: row
+    objectName: "machine-list-row-" + row.machine.name
 
     required property var tokens
     required property var theme
@@ -22,6 +23,11 @@ Rectangle {
     readonly property string relation:
         String(row.machine.gpu_relation)
 
+    readonly property string hardwareText:
+        row.relation === "held" ? "Holds the GPU"
+        : row.relation === "configured" ? "Passthrough configured"
+        : row.relation === "none" ? "No passthrough" : "Passthrough unknown"
+
     readonly property string memoryText:
         typeof row.machine.memory_mb === "number"
         ? (row.machine.memory_mb >= 1024
@@ -29,7 +35,11 @@ Rectangle {
                 row.machine.memory_mb % 1024 === 0 ? 0 : 1
               ) + " GiB"
             : row.machine.memory_mb + " MiB")
-        : "Unknown"
+        : "unknown"
+
+    readonly property string allocation: "Memory " + row.memoryText
+        + " · vCPU " + (row.machine.vcpus ?? "unknown") + " · Network "
+        + (typeof row.machine.networks?.join === "function" ? row.machine.networks.join(", ") || "none" : "unknown")
 
     radius: row.tokens.radiusControl
 
@@ -54,6 +64,7 @@ Rectangle {
         String(row.machine.name)
         + ", " + row.theme.provenanceLabel(row.machine.provenance)
         + ", " + row.icons.machineStateWord(row.machine.state)
+        + ", OS " + (row.machine.os || "unknown") + ", " + row.allocation + ", " + gpuRelation.text
     Accessible.onPressAction: row.activated()
 
     Behavior on color {
@@ -63,29 +74,27 @@ Rectangle {
     }
 
     Row {
+        id: identityLine
+        readonly property real labelWidth: Math.max(0, width - mark.width - chip.width - spacing * 3)
         anchors.left: parent.left
         anchors.right: gpuRelation.left
         anchors.leftMargin: row.tokens.spaceMd
         anchors.rightMargin: row.tokens.spaceMd
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: row.tokens.spaceLg
+        anchors.top: parent.top
+        anchors.topMargin: row.tokens.spaceXs
+        spacing: row.tokens.spaceMd
 
-        MachineSphere {
-            objectName: "machine-list-sphere-" + row.machine.name
+        ProvenanceMarker {
+            id: mark
             anchors.verticalCenter: parent.verticalCenter
             tokens: row.tokens
             theme: row.theme
-            machineName: String(row.machine.name)
-            domain: String(row.machine.provenance)
-            state: String(row.machine.state)
-            disposable: row.machine.lifecycle === "disposable"
-            gpuOwner: row.relation === "held"
-            size: row.tokens.spaceHuge
+            identity: row.machine.provenance
         }
 
         ShellLabel {
             anchors.verticalCenter: parent.verticalCenter
-            width: Math.max(120, row.width * 0.28)
+            width: identityLine.labelWidth * 0.62
             tokens: row.tokens
             role: "body"
             font.weight: Font.Medium
@@ -96,7 +105,7 @@ Rectangle {
         // From the host's image manifest, never from the guest.
         ShellLabel {
             anchors.verticalCenter: parent.verticalCenter
-            width: Math.max(90, row.width * 0.14)
+            width: identityLine.labelWidth * 0.38
             tokens: row.tokens
             role: "meta"
             text:
@@ -107,20 +116,25 @@ Rectangle {
         }
 
         StateChip {
+            id: chip
             anchors.verticalCenter: parent.verticalCenter
             tokens: row.tokens
             theme: row.theme
             icons: row.icons
             state: String(row.machine.state)
         }
+    }
 
-        ShellLabel {
-            anchors.verticalCenter: parent.verticalCenter
-            tokens: row.tokens
-            role: "mono"
-            text: row.memoryText
-            color: row.theme.textSecondary
-        }
+    ShellLabel {
+        anchors.left: identityLine.left
+        anchors.right: parent.right
+        anchors.rightMargin: row.tokens.spaceMd
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: row.tokens.spaceXs
+        tokens: row.tokens
+        role: "mono"
+        text: row.allocation
+        color: row.theme.textSecondary
     }
 
     ShellLabel {
@@ -128,14 +142,14 @@ Rectangle {
 
         anchors.right: parent.right
         anchors.rightMargin: row.tokens.spaceMd
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenter: identityLine.verticalCenter
+        width: Math.min(implicitWidth, row.width / 3)
         tokens: row.tokens
         role: "meta"
-        text:
-            row.relation === "held"
-            ? "Holds the GPU"
-            : (row.relation === "configured" ? "Passthrough configured"
-                : (row.relation === "unknown" ? "Passthrough unknown" : ""))
+        text: row.machine.lifecycle === "disposable"
+            ? "Disposable · discarded at shutdown"
+                + (row.relation === "held" || row.relation === "configured" ? " · " + row.hardwareText : "")
+            : row.hardwareText
         color: row.theme.textQuiet
     }
 

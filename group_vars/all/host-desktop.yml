@@ -207,6 +207,7 @@ host_desktop_common_shell_stage:
     - WorkspaceSurface.qml
     - WorkspaceFrame.qml
     - MachineStage.qml
+    - NetworkBand.qml
     - SfereView.qml
     - SealFloor.qml
     - SealAmbient.qml

@@ -1,4 +1,4 @@
-// One inventory Machine, with the host-confirmed sphere and allocation.
+// One inventory Machine, with its host-confirmed identity, attachments and allocation.
 // Selection opens its existing pane; this tile performs no Machine action.
 import QtQuick
 
@@ -7,34 +7,38 @@ ShellCard {
 
     required property var icons
     required property var machine
-    // The Sfere seal's panel shows the card without its sphere: the network
-    // sphere above it already says where the Machine is.
-    property bool sphereVisible: true
-
     signal navigationRequested(int key)
 
     readonly property string relation: String(tile.machine.gpu_relation)
     readonly property string memoryText: {
         const value = tile.machine.memory_mb;
-        if (typeof value !== "number") return "Unknown";
+        if (typeof value !== "number") return "unknown";
         return value >= 1024
             ? (value / 1024).toFixed(value % 1024 === 0 ? 0 : 1) + " GiB"
             : value + " MiB";
     }
-    readonly property string resourceText:
-        tile.memoryText + " · "
-        + (typeof tile.machine.vcpus === "number" ? tile.machine.vcpus : "Unknown")
-        + " vCPU · " + sphere.domainWord
+    readonly property string networkText: typeof tile.machine.networks?.join !== "function" ? "unknown"
+        : tile.machine.networks.join(", ") || "none"
+    readonly property string osLabel: "OS " + (tile.machine.os || "unknown")
+    readonly property var facts: [
+        ["Memory", tile.memoryText],
+        ["vCPU", typeof tile.machine.vcpus === "number" ? String(tile.machine.vcpus) : "unknown"],
+        ["Network", tile.networkText]
+    ]
     readonly property string hardwareText:
         tile.relation === "held" ? "Holds the GPU"
         : tile.relation === "configured" ? "Passthrough configured"
-        : tile.relation === "unknown" ? "Passthrough unknown" : ""
-    readonly property color wash:
-        sphere.knownDomain ? tile.theme.mix(tile.theme.provenanceColor(sphere.domain), tile.theme.raised, 0.07)
-                           : tile.theme.raised
+        : tile.relation === "none" ? "No passthrough" : "Passthrough unknown"
+    readonly property string footer: tile.machine.lifecycle === "disposable"
+        ? "Disposable · discarded at shutdown"
+            + (tile.relation === "held" || tile.relation === "configured" ? " · " + tile.hardwareText : "")
+        : tile.hardwareText
+    readonly property color wash: tile.theme.knownProvenance(tile.machine.provenance)
+        ? tile.theme.mix(tile.theme.provenanceColor(tile.machine.provenance), tile.theme.raised, 0.07)
+        : tile.theme.raised
 
     objectName: "machine-tile-" + tile.machine.name
-    height: tile.tokens.cardHeight
+    height: Math.max(tile.tokens.cardHeight, content.implicitHeight + padding * 2)
     interactive: true
     color:
         tile.selected
@@ -42,75 +46,99 @@ ShellCard {
         : (tile.actionable && (tile.hovered || tile.pressed)
             ? tile.theme.mix(tile.theme.textPrimary, tile.wash, 0.05)
             : tile.wash)
-    accessibleName:
-        sphere.Accessible.name + ", allocation " + tile.resourceText
-        + (tile.hardwareText.length > 0 ? ", " + tile.hardwareText : "")
+    accessibleName: tile.machine.name + ", " + tile.osLabel + ", "
+        + tile.theme.provenanceLabel(tile.machine.provenance) + ", " + tile.icons.machineStateWord(tile.machine.state)
+        + ", " + tile.facts.map(fact => fact.join(" ")).join(", ") + ", " + tile.footer
+        + (tile.footer.includes(tile.hardwareText) ? "" : ", " + tile.hardwareText)
 
-    Row {
-        id: identity
+    Column {
+        id: content
         width: parent.width
-        spacing: tile.tokens.spaceMd
-
-        MachineSphere {
-            id: sphere
-            visible: tile.sphereVisible
-            tokens: tile.tokens
-            theme: tile.theme
-            machineName: String(tile.machine.name)
-            domain: String(tile.machine.provenance)
-            state: String(tile.machine.state)
-            disposable: tile.machine.lifecycle === "disposable"
-            gpuOwner: tile.relation === "held"
-            size: tile.tokens.spaceSection
-        }
-
-        StateChip {
-            anchors.verticalCenter: parent.verticalCenter
-            tokens: tile.tokens
-            theme: tile.theme
-            icons: tile.icons
-            state: String(tile.machine.state)
-        }
-    }
-
-    ShellLabel {
-        id: nameLabel
-        anchors.top: identity.bottom
-        anchors.topMargin: tile.tokens.spaceSm
-        width: parent.width
-        tokens: tile.tokens
-        role: "title"
-        text: String(tile.machine.name)
-        color: tile.theme.textPrimary
-    }
-
-    ShellLabel {
-        id: allocation
-        anchors.top: nameLabel.bottom
-        anchors.topMargin: tile.tokens.spaceXs
-        width: parent.width
-        tokens: tile.tokens
-        role: "mono"
-        text: tile.resourceText
-        color: tile.theme.textSecondary
-    }
-
-    Row {
-        anchors.top: allocation.bottom
-        anchors.topMargin: tile.tokens.spaceXs
         spacing: tile.tokens.spaceSm
-        visible: tile.hardwareText.length > 0
 
-        ShellIcon {
-            anchors.verticalCenter: parent.verticalCenter
+        Row {
+            width: parent.width
+            spacing: tile.tokens.spaceSm
+            ProvenanceMarker {
+                anchors.verticalCenter: parent.verticalCenter
+                tokens: tile.tokens
+                theme: tile.theme
+                identity: tile.machine.provenance
+            }
+            ShellLabel {
+                width: parent.width - os.width - tile.tokens.markerSize - parent.spacing * 2
+                tokens: tile.tokens
+                role: "title"
+                text: tile.machine.name
+                color: tile.theme.textPrimary
+            }
+            ShellLabel {
+                id: os
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.min(implicitWidth, parent.width / 3)
+                tokens: tile.tokens
+                role: "meta"
+                text: tile.machine.os || tile.osLabel
+                color: tile.theme.textQuiet
+                Accessible.name: tile.osLabel
+            }
+        }
+        Item {
+            width: parent.width
+            height: chip.height
+            ShellLabel {
+                anchors.verticalCenter: parent.verticalCenter
+                tokens: tile.tokens
+                role: "label"
+                text: tile.theme.provenanceLabel(tile.machine.provenance)
+                color: tile.theme.provenanceColor(tile.machine.provenance)
+            }
+            StateChip {
+                id: chip
+                anchors.right: parent.right
+                tokens: tile.tokens
+                theme: tile.theme
+                icons: tile.icons
+                state: String(tile.machine.state)
+            }
+        }
+        Row {
+            width: parent.width
+            spacing: tile.tokens.spaceMd
+            Repeater {
+                model: tile.facts
+                delegate: Column {
+                    required property var modelData
+                    width: (parent.width - parent.spacing * 2) / 3
+                    ShellLabel {
+                        tokens: tile.tokens
+                        role: "meta"
+                        text: modelData[0]
+                        color: tile.theme.textQuiet
+                    }
+                    ShellLabel {
+                        width: parent.width
+                        tokens: tile.tokens
+                        role: "mono"
+                        text: modelData[1]
+                        color: tile.theme.textPrimary
+                        Accessible.name: modelData.join(" ")
+                    }
+                }
+            }
+        }
+        ShellDivider {
+            width: parent.width
             tokens: tile.tokens
-            text: tile.icons.gpu
-            color: tile.theme.textSecondary
+            theme: tile.theme
+            vertical: false
         }
         ShellLabel {
+            width: parent.width
             tokens: tile.tokens
             role: "meta"
-            text: tile.hardwareText
+            wrapMode: Text.WordWrap
+            text: tile.footer
             color: tile.theme.textSecondary
         }
     }

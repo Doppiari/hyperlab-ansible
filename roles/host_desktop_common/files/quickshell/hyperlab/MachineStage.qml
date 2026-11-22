@@ -1,9 +1,8 @@
 // HyperLab Machines workspace (V447-C9.3).
 //
 // The inventory and the machine an operator is working on, in one page. The
-// inventory is grouped by host-resolved provenance, with sphere tiles, a
-// count per group and an explicit Unclassified group
-// last. Other libvirt domains remain read-only in their own Not managed
+// inventory is grouped by observed network attachments, with one count per group.
+// Other libvirt domains remain read-only in their own Not managed
 // group, without gaining product membership or operational controls.
 //
 // Every fact is the host inventory projection. Empty, filtered and
@@ -29,6 +28,7 @@ Item {
 
     property string query: ""
     property string layoutMode: "auto"
+    property string networkFilter: ""
     property string stateFilter: "all"
 
     // The Create view replaces the inventory while it is open; it is built
@@ -66,6 +66,11 @@ Item {
         ? stage.tokens.contextPaneWide
         : stage.tokens.contextPaneCompact
 
+    Keys.onEscapePressed: event => {
+        event.accepted = stage.networkFilter.length > 0 && !stage.creating;
+        if (event.accepted) stage.networkFilter = "";
+    }
+
     readonly property var filtered: {
         const needle = stage.query.trim().toLowerCase();
         const out = [];
@@ -73,6 +78,9 @@ Item {
         for (let index = 0; index < stage.shellState.machines.length; index++) {
             const row = stage.shellState.machines[index];
             const running = String(row.state) === "running";
+
+            if (stage.networkFilter && !(Array.isArray(row.networks) && row.networks.includes(stage.networkFilter)))
+                continue;
 
             if (stage.stateFilter === "running" && !running)
                 continue;
@@ -84,6 +92,7 @@ Item {
                 const haystack =
                     String(row.name).toLowerCase()
                     + " " + String(row.provenance).toLowerCase()
+                    + " " + (row.networks || []).join(" ").toLowerCase()
                     + " " + String(row.state).toLowerCase();
 
                 if (haystack.indexOf(needle) < 0)
@@ -99,7 +108,7 @@ Item {
     readonly property var filteredOutside: stage.shellState.outsideDomains.filter(row => {
         const running = row.state === "running";
         const needle = stage.query.trim().toLowerCase();
-        return (stage.stateFilter !== "running" || running)
+        return !stage.networkFilter && (stage.stateFilter !== "running" || running)
             && (stage.stateFilter !== "stopped" || !running)
             && (needle.length === 0
                 || (row.name + " " + (stage.inventoryAvailable ? "external" : "membership unknown")
@@ -107,26 +116,27 @@ Item {
     })
 
     readonly property var groups: {
-        const out = [];
-
-        for (
-            let order = 0;
-            order < stage.shellState.provenanceOrder.length;
-            order++
-        ) {
-            const identity = stage.shellState.provenanceOrder[order];
-            const rows = [];
-
-            for (let index = 0; index < stage.filtered.length; index++) {
-                if (String(stage.filtered[index].provenance) === identity)
-                    rows.push(stage.filtered[index]);
+        const groups = new Map();
+        for (const row of stage.filtered) {
+            const networks = Array.isArray(row.networks)
+                ? (row.networks.length ? row.networks : [""]) : [null];
+            for (const name of new Set(networks)) {
+                if (stage.networkFilter && stage.networkFilter !== name) continue;
+                if (!groups.has(name)) {
+                    const net = band.networks.find(item => item.name === name);
+                    groups.set(name, {
+                        identity: name,
+                        title: name === null ? "Network unknown" : name === "" ? "No network"
+                            : name.charAt(0).toUpperCase() + name.slice(1),
+                        description: name ? "Subnet " + (net && net.subnet || "unknown")
+                            + " · Mode " + band.modeWord(net && net.forward) : "",
+                        machines: []
+                    });
+                }
+                groups.get(name).machines.push(row);
             }
-
-            if (rows.length > 0)
-                out.push({ "identity": identity, "machines": rows });
         }
-
-        return out;
+        return Array.from(groups.values()).sort((a, b) => band.rank(a.identity) - band.rank(b.identity));
     }
 
     readonly property string inventoryState:
@@ -206,9 +216,8 @@ Item {
         }
     }
 
-    Row {
+    Item {
         anchors.fill: parent
-        spacing: 0
         visible: !stage.creating
 
         WorkspaceFrame {
@@ -216,10 +225,7 @@ Item {
             objectName: "machine-inventory-summary"
 
             visible: !stage.paneOnly
-            width:
-                stage.hasSelection && stage.wide
-                ? parent.width - stage.paneWidth - 1
-                : parent.width
+            width: parent.width
             height: parent.height
 
             tokens: stage.tokens
@@ -356,8 +362,23 @@ Item {
             ]
 
             Column {
-                width: frame.bodyWidth
+                id: inventoryColumn
+                width: frame.bodyWidth - (stage.hasSelection && stage.wide ? stage.paneWidth + 1 : 0)
                 spacing: stage.tokens.spaceLg
+
+                NetworkBand {
+                    id: band
+                    width: frame.bodyWidth
+                    tokens: stage.tokens
+                    theme: stage.theme
+                    shellState: stage.shellState
+                    networkFilter: stage.networkFilter
+                    onFilterRequested: name => stage.networkFilter = name
+                    onNetworksChanged: {
+                        if (!networks.some(net => net.name === stage.networkFilter))
+                            stage.networkFilter = "";
+                    }
+                }
 
                 // Unavailable and empty are different sentences, and a filter
                 // that hides everything is a third.
@@ -379,16 +400,6 @@ Item {
                     visible: stage.inventoryAvailable && stage.shellState.machines.length === 0
                     spacing: stage.tokens.spaceMd
 
-                    MachineSphere {
-                        objectName: "empty-host-sphere"
-                        tokens: stage.tokens
-                        theme: stage.theme
-                        machineName: "Host"
-                        domain: "host"
-                        isHost: true
-                        state: "running"
-                        size: stage.tokens.spaceSection * 2
-                    }
                     ShellLabel {
                         tokens: stage.tokens
                         role: "heading"
@@ -453,23 +464,22 @@ Item {
                         property alias tiles: tileRepeater
                         objectName: "machine-group-" + modelData.identity
 
-                        width: frame.bodyWidth
+                        width: inventoryColumn.width
                         spacing: stage.tokens.spaceMd
 
                         SectionHeader {
                             width: parent.width
                             tokens: stage.tokens
                             theme: stage.theme
-                            label: stage.theme.provenanceLabel(
-                                modelData.identity
-                            )
+                            label: modelData.title
+                            description: modelData.description
 
                             trailing: [
                                 ShellLabel {
                                     anchors.verticalCenter: parent.verticalCenter
                                     tokens: stage.tokens
                                     role: "mono"
-                                    text: String(modelData.machines.length)
+                                    text: modelData.machines.length + (modelData.machines.length === 1 ? " Machine" : " Machines")
                                     color: stage.theme.textSecondary
                                 }
                             ]
@@ -487,7 +497,7 @@ Item {
                                     id: machineTile
                                     required property var modelData
 
-                                    width: stage.cardWidth(frame.bodyWidth)
+                                    width: stage.cardWidth(inventoryColumn.width)
                                     tokens: stage.tokens
                                     theme: stage.theme
                                     icons: stage.icons
@@ -520,12 +530,26 @@ Item {
                 // Virtualized list. Every machine stays reachable regardless
                 // of how many there are.
                 ListView {
+                    id: denseList
+                    readonly property var rows: {
+                        const result = [];
+                        if (stage.layout === "list") {
+                            for (const group of stage.groups) {
+                                group.machines.forEach((row, index) => result.push(Object.assign({}, row, {
+                                    heading: index === 0 ? group.title : "",
+                                    detail: group.description,
+                                    count: group.machines.length
+                                })));
+                            }
+                        }
+                        return result;
+                    }
                     width: parent.width
                     visible: stage.layout === "list" && stage.filtered.length > 0
                     height:
                         visible
                         ? Math.min(
-                            stage.filtered.length * stage.tokens.listRowHeight,
+                            (denseList.rows.length + stage.groups.length) * stage.tokens.listRowHeight,
                             Math.max(
                                 stage.tokens.listRowHeight,
                                 stage.height - stage.tokens.workspaceHeaderHeight
@@ -534,7 +558,7 @@ Item {
                           )
                         : 0
 
-                    model: stage.filtered
+                    model: denseList.rows
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
                     cacheBuffer: stage.tokens.listRowHeight * 4
@@ -543,10 +567,24 @@ Item {
                         required property var modelData
 
                         width: ListView.view.width
-                        height: stage.tokens.listRowHeight
+                        height: stage.tokens.listRowHeight + denseHeading.height
 
+                        SectionHeader {
+                            id: denseHeading
+                            width: parent.width
+                            height: visible ? stage.tokens.listRowHeight : 0
+                            visible: modelData.heading.length > 0
+                            tokens: stage.tokens
+                            theme: stage.theme
+                            label: modelData.heading
+                            description: modelData.detail + (modelData.detail ? " · " : "")
+                                + modelData.count + (modelData.count === 1 ? " Machine" : " Machines")
+                        }
                         MachineListRow {
-                            anchors.fill: parent
+                            anchors.top: denseHeading.bottom
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
                             anchors.bottomMargin: 1
                             tokens: stage.tokens
                             theme: stage.theme
@@ -572,9 +610,9 @@ Item {
                     tokens: stage.tokens
                     theme: stage.theme
                     label: stage.inventoryAvailable
-                        ? "Not managed" : "Observed domains · membership unavailable"
-                    description: "Read-only · "
-                        + (stage.inventoryAvailable ? "lifecycle external" : "membership unknown") + " · "
+                        ? "Not managed" + (stage.shellState.productName ? " · outside " + stage.shellState.productName : "")
+                        : "Observed domains · membership unavailable"
+                    description: (stage.inventoryAvailable ? "Read only · external" : "Read only · membership unknown") + " · "
                         + stage.filteredOutside.length + " domains"
                 }
 
@@ -595,7 +633,7 @@ Item {
                     width: parent.width + (stage.layout === "grid" ? stage.tokens.cardGap : 0)
                     visible: stage.filteredOutside.length > 0
                     cellWidth: stage.layout === "grid"
-                        ? stage.cardWidth(frame.bodyWidth) + stage.tokens.cardGap : width
+                        ? stage.cardWidth(inventoryColumn.width) + stage.tokens.cardGap : width
                     cellHeight: stage.layout === "grid"
                         ? stage.tokens.cardHeight + stage.tokens.cardGap : stage.tokens.listRowHeight
                     height: visible ? Math.min(
@@ -618,38 +656,39 @@ Item {
                         Accessible.name: modelData.name + ", "
                             + (stage.inventoryAvailable ? "external" : "membership unknown")
                             + ", " + stage.icons.machineStateWord(modelData.state)
+                            + ", OS unknown, " + allocation + ", Network " + networkText + ", Read only"
                         border.width: stage.tokens.borderSize
                         border.color: stage.theme.textPrimary
 
-                        MachineSphere {
-                            id: outsideSphere
-                            x: stage.layout === "grid" ? stage.tokens.cardPadding : stage.tokens.spaceSm
-                            y: stage.layout === "grid" ? stage.tokens.cardPadding : stage.tokens.spaceSm
-                            tokens: stage.tokens
-                            theme: stage.theme
-                            machineName: modelData.name
-                            domain: "unclassified"
-                            state: stage.inventoryAvailable ? "external" : "unclassified"
-                            size: stage.layout === "grid" ? stage.tokens.spaceSection : stage.tokens.spaceHuge
-                        }
+                        readonly property string membership: stage.inventoryAvailable ? "external" : "membership unknown"
+                        readonly property string networkText: typeof modelData.networks?.join === "function"
+                            ? modelData.networks.join(", ") || "none" : "unknown"
+                        readonly property string allocation: "Memory "
+                            + (modelData.memory_mb === null ? "unknown" : modelData.memory_mb + " MiB")
+                            + " · vCPU " + (modelData.vcpus ?? "unknown")
                         Column {
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.top: parent.top
-                            anchors.leftMargin: stage.layout === "grid"
-                                ? stage.tokens.cardPadding : outsideSphere.size + stage.tokens.spaceMd
-                            anchors.rightMargin: stage.layout === "grid"
-                                ? stage.tokens.cardPadding : stage.tokens.spaceSm
-                            anchors.topMargin: stage.layout === "grid"
-                                ? stage.tokens.cardPadding + outsideSphere.size + stage.tokens.spaceMd
-                                : stage.tokens.spaceSm
+                            anchors.fill: parent
+                            anchors.margins: stage.layout === "grid" ? stage.tokens.cardPadding : stage.tokens.spaceXs
                             spacing: stage.tokens.spaceXs
-                            ShellLabel {
+                            Row {
                                 width: parent.width
-                                tokens: stage.tokens
-                                role: "label"
-                                text: modelData.name
-                                color: stage.theme.textPrimary
+                                spacing: stage.tokens.spaceSm
+                                Rectangle {
+                                    id: outsideMark
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: stage.tokens.markerSize
+                                    height: width
+                                    color: stage.theme.alpha(stage.theme.textPrimary, 0)
+                                    border.color: stage.theme.textPrimary
+                                    border.width: stage.tokens.borderSize
+                                }
+                                ShellLabel {
+                                    width: parent.width - outsideMark.width - parent.spacing
+                                    tokens: stage.tokens
+                                    role: stage.layout === "grid" ? "title" : "body"
+                                    text: modelData.name
+                                    color: stage.theme.textPrimary
+                                }
                             }
                             ShellLabel {
                                 width: parent.width
@@ -664,8 +703,31 @@ Item {
                                 visible: stage.layout === "grid"
                                 tokens: stage.tokens
                                 role: "mono"
-                                text: "Unknown · Unknown vCPU · "
-                                    + (stage.inventoryAvailable ? "external" : "membership unknown")
+                                text: allocation
+                                color: stage.theme.textSecondary
+                            }
+                            ShellLabel {
+                                width: parent.width
+                                visible: stage.layout === "grid"
+                                tokens: stage.tokens
+                                role: "mono"
+                                text: "Network " + networkText
+                                color: stage.theme.textSecondary
+                            }
+                            ShellLabel {
+                                width: parent.width
+                                visible: stage.layout === "grid"
+                                tokens: stage.tokens
+                                role: "meta"
+                                text: "OS unknown"
+                                color: stage.theme.textQuiet
+                            }
+                            ShellLabel {
+                                width: parent.width
+                                visible: stage.layout === "grid"
+                                tokens: stage.tokens
+                                role: "meta"
+                                text: "Read only · " + membership
                                 color: stage.theme.textSecondary
                             }
                         }
@@ -688,15 +750,22 @@ Item {
 
         Rectangle {
             visible: stage.hasSelection && stage.wide
-            width: visible ? 1 : 0
-            height: parent.height
+            anchors.right: contextPane.left
+            y: contextPane.y
+            width: 1
+            height: contextPane.height
             color: stage.theme.hairline
         }
 
         MachineContextPane {
+            id: contextPane
             visible: stage.hasSelection
+            anchors.right: parent.right
             width: stage.paneOnly ? parent.width : stage.paneWidth
-            height: parent.height
+            // As the band scrolls away, the pane keeps the fixed heading clear.
+            y: stage.paneOnly ? 0 : Math.min(stage.height, Math.max(stage.tokens.workspaceHeaderHeight + 1,
+                frame.bodyTop + band.height + inventoryColumn.spacing))
+            height: parent.height - y
 
             tokens: stage.tokens
             theme: stage.theme

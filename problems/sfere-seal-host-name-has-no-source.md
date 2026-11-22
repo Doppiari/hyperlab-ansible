@@ -26,6 +26,9 @@ The left blade reads "EVERY PATH PASSES" and the right one "HOST"; the label
 above the keystone says "Host" and "every path passes here". Both are true
 of every host, so nothing pretends to know a name it was not given.
 
+The Machines band labels the same gap **Host name unknown**. Its reachability
+sentence comes from the flow matrix.
+
 ## To close it
 
 Add the host's name to a read the shell already makes (the status bridge's

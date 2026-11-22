@@ -537,6 +537,11 @@ proof.
   outer spheres shared inner spheres' angles, so a line to the host seemed to
   join two Machines; every sphere in a sector now has its own angle.
 
+- An unreadable network attachment could make an empty or stopped count look
+  certain. The band distinguishes observed counts from missing membership.
+  [Machines network observation gaps](machines-network-observation-gaps.md)
+- Updating the shared network inventory could trigger a QML binding loop in
+  the seal panel's rule label. [Rule label height](seal-rule-height-bound-to-layout.md)
 - [`sfere-seal-host-name-has-no-source.md`](sfere-seal-host-name-has-no-source.md):
   the seal's blades should read the host's name, but no read the shell makes
   carries it; they carry only words true of every host until one does.

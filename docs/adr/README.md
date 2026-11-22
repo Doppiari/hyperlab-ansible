@@ -237,6 +237,10 @@ entered the pipeline.
     counters, and the GPU beam, focus wave and rule pulses follow their
     sources.
 
+71. [`0071-machines-network-band.md`](0071-machines-network-band.md) —
+    proposed: show network activity over Machine cards and group the
+    registry by observed interfaces.
+
 The pre-VM baseline that led to these decisions remains available as
 [`../historical-audit-m0.md`](../historical-audit-m0.md); it is archival evidence,
 not current implementation documentation.
@@ -792,3 +796,12 @@ remain.
   - Prerequisites: acceptance of the proposed live layer; on Nitro, a loaded
     Machine, a GPU handoff and focus changes matching `hyperlabctl` and
     `virsh domstats`, then Predator replay.
+
+- [ADR 0071](0071-machines-network-band.md)
+  - Decision: proposed.
+  - Built: built — network band, attachment groups and labelled Machine cards.
+  - Activation: default — the Machines workspace uses the cards. Band data
+    follows the existing Networks opt-in.
+  - Source: [`NetworkBand.qml`](../../roles/host_desktop_common/files/quickshell/hyperlab/NetworkBand.qml),
+    [`machine_showcase_contract.py`](../../tests/machine_showcase_contract.py)
+  - Prerequisites: comparison with libvirt and the Machine inventory on Nitro.

@@ -2,7 +2,7 @@
 """Execute the native Machines showcase and render its GTK comparison.
 
 Only host transports are substituted by the shared offscreen Qt harness.
-The fixture is six registry Machines in four domains and one external domain;
+The network definitions are rendered from the role and read by the CLI formatter;
 no host inventory, service, compositor or Machine action is accessed.
 """
 from __future__ import annotations
@@ -16,6 +16,7 @@ import shutil
 import sys
 
 import host_quickshell_runtime_contract as runtime
+import sfere_view_contract as seal
 from host_quickshell_qml_wiring_contract import blocks, components, resolve, strip_noise
 from machine_sphere_contract import string_literals
 from recovery_gpu_ladder_contract import descendants, gtk_display, load_manager, run_gtk_worker
@@ -54,13 +55,14 @@ def source_contract() -> None:
             and "state" not in resolve("Theme", catalogue, "declared"),
             "QML wiring gave a non-Item the Item.state property")
     paths = [runtime.QML / name for name in (
-        "MachineStage.qml", "MachineTile.qml", "MachineListRow.qml", "MachineContextPane.qml")]
+        "MachineStage.qml", "MachineTile.qml", "MachineListRow.qml", "MachineContextPane.qml", "NetworkBand.qml")]
     for path in paths:
         require(path.is_file(), f"{path.name} is missing")
         source = path.read_text(encoding="utf-8")
-        if path.name == "MachineTile.qml":
-            require(len(list(blocks(strip_noise(source), "MachineSphere", False))) == 1,
-                    "MachineTile must contain one MachineSphere")
+        if path.name != "NetworkBand.qml":
+            for kind in ("MachineSphere", "NetworkSphere", "SphereStill"):
+                require(not list(blocks(strip_noise(source), kind, False)),
+                        f"{path.name} draws a {kind} on a Machine")
         literals = string_literals(source)
         require(not any(re.search(r"#[0-9a-fA-F]{3,8}\b|\b(?:rgb|hsl|hsv)a?\(", word)
                         for word in literals), f"colour literal in {path.name}")
@@ -74,9 +76,14 @@ def source_contract() -> None:
 
 SETUP = r'''
             sharedTokens.reducedMotion = true;
+            const networks = @@NETWORKS@@;
+            sharedState.applyFeatures('{"networks_view_enabled":true}');
             sharedState.applyOutsideDomainsPayload(JSON.stringify({
                 machines_available: true, machines: sharedState.machines.concat([@@EXTERNAL@@]) }));
             sharedSurfaces.openWorkspace("machines");
+            check(sharedState.networkFixtureLaunches.length === 1, "Machines must issue one network read");
+            check(sharedState.networksInFlight, "Machines did not request the opt-in network inventory");
+            sharedState.networkFixtureComplete(JSON.stringify(networks), 0);
             const stage = find(workspaceSurface, "machine-stage");
             function nodes(root, predicate) {
                 let out = predicate(root) ? [root] : [];
@@ -111,29 +118,87 @@ CHECKS = r'''
                         && item.visible).map(item => item.objectName).join(",")
                   === "machine-group-clean,machine-group-dev,machine-group-services,machine-group-lab",
                   "drawn groups differ from the nonempty inventory groups");
+            const band = find(stage, "network-band");
+            function entry(name) { return find(band, "band-entry-" + name); }
+            const entries = nodes(band, item => item.objectName.startsWith("band-entry-"));
+            check(entries.length === networks.length && networks.every(net => entry(net.name))
+                  && entries.map(card => card.modelData.name).join(",") === "clean,dev,services,dirty,lab",
+                  "band order or network membership changed");
+            if (window.firstFailure >= 0) {
+                Qt.exit(40 + window.firstFailure);
+                return;
+            }
+            for (const net of networks) {
+                const card = entry(net.name);
+                const attached = sharedState.machines.filter(row => row.networks.includes(net.name));
+                const running = attached.filter(row => row.state === "running").length;
+                const ball = find(card, "network-core");
+                const outline = find(card, "network-outline");
+                check(ball.visible === (attached.length > 0) && ball.stillForm
+                      && ball.lit === (running > 0 ? 1 : 0) && ball.time === 0
+                      && Qt.colorEqual(ball.colour, sharedTheme.palette["dom_" + net.name])
+                      && Qt.colorEqual(outline.border.color, sharedTheme.palette["dom_" + net.name])
+                      && outline.visible === !attached.length && outline.color.a === 0 && outline.border.width > 0,
+                      "drawn network sphere disagrees with managed inventory");
+                const count = attached.length === 0 ? "no machines" : attached.length
+                    + (attached.length === 1 ? " machine · " : " machines · ") + running + " running";
+                check(visibleText(card, count), "network count differs from Machine inventory");
+                for (const [label, value] of [["Subnet", net.subnet], ["Gateway", net.gateway],
+                        ["DHCP", net.dhcp.start + " – " + net.dhcp.end],
+                        ["GPU level", net.trust === null ? "none" : String(net.trust)],
+                        ["Mode", net.forward === "isolated" ? "Isolated" : "NAT"],
+                        ["Outbound", net.forward === "isolated" ? "No route out" : "Internet via NAT"]]) {
+                    check(visibleText(card, value) && card.Accessible.name.includes(label + " " + value),
+                          "band " + label + " differs from source for " + net.name);
+                }
+            }
+            check(band.Accessible.role === Accessible.List
+                  && visibleText(band, "Host name unknown · reaches every network · from a network only DHCP and DNS on its own gateway, nothing else unless a rule says so"),
+                  "missing host reachability or keyboard list");
+            entry("clean").forceActiveFocus();
+            keyEvents.keyClick(Qt.Key_Right);
+            check(entry("dev").activeFocus, "arrow did not focus next network");
+            keyEvents.keyClick(Qt.Key_Return);
+            check(stage.filtered.length === 2 && stage.filteredOutside.length === 0
+                  && stage.groups.length === 1 && stage.groups[0].identity === "dev",
+                  "band selection did not filter Machine groups");
+            keyEvents.keyClick(Qt.Key_Return);
+            check(stage.filtered.length === 6, "second activation did not clear network filter");
+            keyEvents.mouseClick(entry("lab"));
+            check(stage.filtered.length === 2 && stage.groups[0].identity === "lab",
+                  "pointer did not filter to isolated network");
+            keyEvents.keyClick(Qt.Key_Escape);
+            check(stage.filtered.length === 6 && sharedSurfaces.workspaceOpen,
+                  "Escape did not clear the network filter");
             for (const row of sharedState.machines) {
                 const card = tile(row.name);
                 check(card && card.visible, "Machine tile missing");
                 if (!card) continue;
-                const ball = sphere(card);
-                check(ball !== undefined, "tile has no MachineSphere");
-                if (!ball) continue;
-                check(ball.domain === row.provenance && ball.state === row.state
-                      && ball.disposable === (row.lifecycle === "disposable")
-                      && ball.gpuOwner === (row.gpu_relation === "held"),
-                      "tile sphere lost confirmed Machine facts");
-                check(card.Accessible.name.indexOf(row.name) >= 0 && card.activeFocusOnTab,
-                      "tile has no accessible name or keyboard focus");
-                check(visibleText(card, stage.icons.machineStateWord(row.state))
-                      && visibleText(card, row.name)
-                      && visibleText(card, "8 GiB · 4 vCPU · " + row.provenance),
-                      "tile lost state, name or allocation line");
+                check(!sphere(card), "tile draws a Machine sphere");
+                check(card.Accessible.name.includes(row.name) && card.activeFocusOnTab
+                      && card.Accessible.name.includes("Memory 8 GiB") && card.Accessible.name.includes("vCPU 4")
+                      && card.Accessible.name.includes("Network " + row.networks[0]),
+                      "tile lost labelled allocation or keyboard focus");
+                const footer = row.gpu_relation === "held" ? "Holds the GPU"
+                    : row.lifecycle === "disposable" ? "Disposable · discarded at shutdown"
+                    : row.gpu_relation === "configured" ? "Passthrough configured" : "No passthrough";
+                check([stage.icons.machineStateWord(row.state), row.name, row.os,
+                       "8 GiB", "4", row.networks[0], footer].every(word => visibleText(card, word)),
+                      "tile lost state, name, OS, allocation or footer");
                 check(card.width >= 300 && card.width <= 420 && card.height >= 150,
                       "tile dimensions escape the reviewed range");
                 check(!Qt.colorEqual(card.color, sharedTheme.raised), "tile has no domain wash");
                 check(Qt.colorEqual(card.color,
                       sharedTheme.mix(sharedTheme.provenanceColor(row.provenance), sharedTheme.raised, 0.07)),
                       "tile domain wash must remain the subtle seven-percent mix");
+            }
+            for (const group of stage.groups) {
+                const section = find(stage, "machine-group-" + group.identity);
+                const net = networks.find(row => row.name === group.identity);
+                check(visibleText(section, "Subnet " + net.subnet + " · Mode "
+                                  + (net.forward === "nat" ? "NAT" : "Isolated"))
+                      && visibleText(section, group.machines.length + (group.machines.length === 1 ? " Machine" : " Machines")),
+                      "group lost its subnet, mode or count");
             }
             const cards = sharedState.machines.map(row => tile(row.name));
             for (let left = 0; left < cards.length; left++) {
@@ -183,22 +248,18 @@ CHECKS = r'''
             keyEvents.mouseMove(window.contentItem, 0, 0);
             hoverCard.enabled = true;
             const external = find(stage, "external-machine-outside-desk");
-            check(external && external.visible && sphere(external), "external tile has no sphere");
+            check(external && external.visible && !sphere(external), "external tile draws a sphere or is missing");
             if (external) {
-                check(external.color.a === 0 && Qt.colorEqual(external.border.color, sharedTheme.textPrimary)
-                      && !sphere(external).classified && sphere(external).domainWord === "external",
+                check(external.color.a === 0 && Qt.colorEqual(external.border.color, sharedTheme.textPrimary),
                       "external tile borrowed a domain colour or fill");
-                check(visibleText(external, "Unknown · Unknown vCPU · external"),
-                      "external allocation must remain unknown when the projection omits it");
+                check(visibleText(external, "Memory 8192 MiB · vCPU 4")
+                      && visibleText(external, "Network clean") && visibleText(external, "Read only · external"),
+                      "external allocation, attachment or read-only footer disagrees with projection");
                 check(external.Accessible.name.indexOf("outside-desk") >= 0
                       && !external.activeFocusOnTab && external.activated === undefined,
                       "external tile lost accessibility or gained selection");
                 check(external.width === tile("clean-desk").width,
                       "external and managed grid tile widths must match");
-                const outsideInset = sphere(external).mapToItem(external, 0, 0);
-                const managedInset = sphere(tile("clean-desk")).mapToItem(tile("clean-desk"), 0, 0);
-                check(outsideInset.x === managedInset.x && outsideInset.y === managedInset.y,
-                      "external sphere inset must align with managed grid tiles");
                 const last = tile("lab-desk").mapToItem(stage, 0, 0);
                 check(external.mapToItem(stage, 0, 0).y > last.y,
                       "external group must follow every managed group");
@@ -230,22 +291,20 @@ CHECKS = r'''
             sharedState.applyOutsideDomainsPayload(JSON.stringify({machines_available: true,
                 machines: sharedState.machines.concat([@@EXTERNAL@@])}));
             keyEvents.wait(30);
+            const unselectedWidth = band.width;
             tile("dev-desk").activated();
             keyEvents.wait(30);
-            const header = find(stage, "machine-context-sphere");
-            check(header && header.size > sphere(tile("dev-desk")).size
-                  && header.domain === "dev" && header.state === "running" && header.gpuOwner,
-                  "context header has no matching larger sphere");
+            const selectedBandBottom = band.mapToItem(stage, 0, band.height);
+            const header = find(stage, "machine-context-header");
+            check(header && visibleText(header, "dev-desk") && !sphere(header),
+                  "context header must follow the selected Machine without a sphere");
+            check(band.width === unselectedWidth
+                  && header.mapToItem(stage, 0, 0).y >= selectedBandBottom.y,
+                  "selected Machine pane must sit below the full-width network band");
             tile("lab-test").activated();
             keyEvents.wait(30);
-            const labHeader = find(stage, "machine-context-sphere");
-            const labSphere = sphere(tile("lab-test"));
-            check(labHeader && labHeader.size > labSphere.size
-                  && labHeader.machineName === "lab-test"
-                  && labHeader.domain === labSphere.domain && labHeader.state === labSphere.state
-                  && labHeader.disposable === labSphere.disposable && labHeader.disposable
-                  && labHeader.gpuOwner === labSphere.gpuOwner && !labHeader.gpuOwner,
-                  "context header must follow the selected disposable shut-off LAB Machine");
+            check(visibleText(header, "lab-test") && !sphere(header),
+                  "context header did not follow selection");
             check(sharedMachineActions.operations.length === 0, "selection started a Machine");
             sharedSurfaces.clearMachineSelection();
             keyEvents.wait(30);
@@ -315,12 +374,16 @@ CHECKS = r'''
             stage.stateFilter = "all";
             stage.layoutMode = "list";
             keyEvents.wait(30);
-            check(nodes(stage, item => item.objectName.indexOf("machine-list-sphere-") === 0
-                        && item.visible).length === 6, "dense rows lost their spheres");
+            const dense = nodes(stage, item => item.objectName.startsWith("machine-list-row-") && item.visible);
+            check(dense.length === 6 && dense.every(item => !sphere(item)), "dense rows missing or draw spheres");
+            for (const row of dense) {
+                const facts = "Memory 8 GiB · vCPU 4 · Network " + row.machine.networks.join(", ");
+                check(visibleText(row, facts) && row.Accessible.name.includes(facts),
+                      "dense row lost its labelled allocation or observed networks");
+            }
             update([]);
-            check(find(stage, "empty-host-sphere").visible
-                  && find(stage, "empty-host-sphere").isHost,
-                  "empty registry has no host sphere");
+            check(find(band, "band-host").visible && visibleText(entry("lab"), "no machines"),
+                  "empty registry has no host line or empty network");
             const creates = nodes(stage, item => item.visible && item.accessibleName !== undefined
                                   && /^(New Machine|Create a Machine)$/.test(item.accessibleName));
             check(creates.length === 1 && creates[0].accessibleName === "Create a Machine",
@@ -329,31 +392,65 @@ CHECKS = r'''
                   "empty registry hid first-Machine guidance or external inventory");
             sharedState.applyOutsideDomainsPayload(JSON.stringify({machines_available: true, machines: []}));
             keyEvents.wait(30);
-            check(nodes(stage, item => item.visible && typeof item.activated === "function").length === 1
+            check(nodes(stage, item => item.visible && typeof item.activated === "function"
+                        && !item.objectName.startsWith("band-entry-")).length === 1
                   && !search.visible, "an empty view must expose only the creation action");
             creates[0].activated();
             check(stage.creating, "empty creation action did not open the existing Create view");
             stage.creating = false;
             sharedState.applyMachinePayload("{}");
-            check(!find(stage, "empty-host-sphere").visible
+            check(!find(stage, "machine-empty-state").visible
                   && visibleText(stage, "Machine inventory cannot be read"),
                   "unavailable inventory was presented as empty");
             update(@@ROWS@@);
             stage.query = "absent-name";
             keyEvents.wait(30);
             check(visibleText(stage, "No machine matches this filter")
-                  && !find(stage, "empty-host-sphere").visible,
+                  && !find(stage, "machine-empty-state").visible,
                   "filtered inventory was presented as empty");
             stage.query = "";
             const unknown = Object.assign({}, @@ROWS@@[0], {memory_mb: null, vcpus: null,
-                provenance: "unclassified", state: "crashed", gpu_relation: "unknown"});
+                provenance: "unclassified", networks: null, state: "crashed", gpu_relation: "unknown"});
             update([unknown]);
             const unknownTile = tile(unknown.name);
-            check(visibleText(unknownTile, "Unknown · Unknown vCPU · unclassified")
+            check(unknownTile.Accessible.name.includes("Memory unknown, vCPU unknown, Network unknown")
                   && visibleText(unknownTile, "Crashed") && visibleText(unknownTile, "Passthrough unknown")
-                  && !sphere(unknownTile).classified && Qt.colorEqual(unknownTile.color, sharedTheme.raised),
+                  && !sphere(unknownTile) && Qt.colorEqual(unknownTile.color, sharedTheme.raised),
                   "missing facts became a classified or plausible default");
+            check(visibleText(entry("lab"), "machines unknown")
+                  && !find(entry("lab"), "network-outline").visible,
+                  "unreadable attachment became an empty network");
+            update([Object.assign({}, @@ROWS@@[1], {networks: ["lab", "services"]})]);
+            entry("lab").activate();
+            check(stage.groups.length === 1 && stage.groups[0].identity === "lab"
+                  && tile("dev-desk") && visibleText(entry("services"), "1 machine · 1 running"),
+                  "band filter or membership follows provenance instead of attachment");
+            entry("lab").activate();
+            sharedState.machinesObservedAt -= 180000;
+            check(visibleText(entry("lab"), "machines unknown") && !find(entry("lab"), "network-core").visible
+                  && !find(entry("lab"), "network-outline").visible, "stale inventory claims a network state");
             update(@@ROWS@@);
+            const extra = {name: "fixture-link", subnet: null, gateway: null, dhcp: false, trust: 0,
+                           forward: null, state: "inactive"};
+            sharedState.requestNetworks();
+            sharedState.networkFixtureComplete(JSON.stringify([extra, Object.assign({}, networks[0], {
+                gateway: false, dhcp: null, trust: 1
+            })]), 0);
+            keyEvents.wait(30);
+            const changed = entry(networks[0].name);
+            check(changed && changed.Accessible.name.includes("GPU level 1")
+                  && changed.Accessible.name.includes("DHCP unknown") && visibleText(changed, "none")
+                  && entry("fixture-link").Accessible.name.includes("DHCP off")
+                  && visibleText(entry("fixture-link"), "unknown")
+                  && nodes(band, item => item.objectName.startsWith("band-entry-")).length === 2,
+                  "network re-read lost observed values, unknowns or source membership");
+            entry("fixture-link").activate();
+            sharedState.applyFeatures('{"networks_view_enabled":false}');
+            check(!sharedState.networksReadable && !sharedState.requestNetworks()
+                  && stage.networkFilter === "" && visibleText(band, "Network inventory off"),
+                  "disabling the source left network rows or a hidden filter");
+            sharedState.applyFeatures('{"networks_view_enabled":true}');
+            sharedState.networkFixtureComplete(JSON.stringify(networks), 0);
             sharedState.applyOutsideDomainsPayload(JSON.stringify({machines_available: true,
                 machines: @@ROWS@@.concat([@@EXTERNAL@@])}));
             check(stage.total === 7 && stage.filteredOutside.length === 1,
@@ -364,43 +461,49 @@ CHECKS = r'''
 def native(output: Path | None) -> None:
     runner = shutil.which("qmlscene6") or shutil.which("qmlscene")
     require(runner is not None, "Qt QML runner is required")
+    root = (runtime.QML / "shell.qml").read_text()
+    binding = re.search(r"networksMachinesVisible:\s*(.*?)\n\s*networksMapVisible:", root, re.S)
+    require(binding is not None, "missing Machines network visibility binding")
+    setup = SETUP.replace("@@NETWORKS@@", json.dumps(seal.network_rows()))
+
+    def scenario(width: int, height: int, rows: list[dict], body: str, destination: str,
+                 owner: str = "dev-desk") -> None:
+        source, messages = runtime.scenario_source(width, height, rows, setup + body, out=destination,
+            gpu={"text": owner, "class": "", "known": True, "owner": owner, "bound": bool(owner)})
+        source = source.replace("import QtQuick.Window", "import QtQuick.Window\nimport QtTest")
+        source = source.replace("ShellState { id: sharedState }", "ShellState { id: sharedState\n"
+                                "networksMachinesVisible: " + binding[1] + "\n}\nTestCase { id: keyEvents; when: false }")
+        runtime.run(runner, directory, f"showcase {width}x{height}", source, messages)
+        if destination:
+            require(len(set(png_pixels(Path(destination), (width, height)))) > 32, "native render is blank")
+
     directory = runtime.stage()
     try:
         for width, height in ((1440, 900), (1920, 1080)):
             destination = str(output / f"native-showcase-{width}x{height}.png") if output else ""
-            source, messages = runtime.scenario_source(width, height, ROWS, SETUP + CHECKS, out=destination,
-                                                       gpu={"text": "dev-desk", "class": "", "known": True,
-                                                            "owner": "dev-desk", "bound": True})
-            source = source.replace("import QtQuick.Window", "import QtQuick.Window\nimport QtTest")
-            source = source.replace("ShellState { id: sharedState }", "ShellState { id: sharedState }\n"
-                                    "    TestCase { id: keyEvents; when: false }")
-            runtime.run(runner, directory, f"showcase {width}x{height}", source, messages)
+            scenario(width, height, ROWS, CHECKS, destination)
             if output:
-                pixels = png_pixels(Path(destination), (width, height))
-                require(len(set(pixels)) > 32, "native render is blank")
                 captures = {
-                    "lower": """
-                        let view = find(stage, "external-machine-list").parent;
-                        while (view && view.contentY === undefined) view = view.parent;
-                        check(view !== null, "showcase has no scroll viewport");
-                        if (view) view.contentY = Math.max(0, view.contentHeight - view.height);
-                    """,
+                    "lower": 'const view = viewportFor(tile("lab-desk")); view.contentY = view.contentHeight - view.height;',
                     "selected": 'tile("dev-desk").activated();',
-                    "empty": """
-                        sharedState.applyOutsideDomainsPayload(JSON.stringify({
-                            machines_available: true, machines: []}));
-                        update([]);
-                    """,
+                    "empty": 'sharedState.applyOutsideDomainsPayload(JSON.stringify({machines_available:true, machines:[]})); update([]);',
                 }
                 for label, body in captures.items():
-                    destination = str(output / f"native-showcase-{width}x{height}-{label}.png")
-                    source, messages = runtime.scenario_source(width, height, ROWS, SETUP + body, out=destination,
-                                                               gpu={"text": "dev-desk", "class": "", "known": True,
-                                                                    "owner": "dev-desk", "bound": True})
-                    source = source.replace("import QtQuick.Window", "import QtQuick.Window\nimport QtTest")
-                    source = source.replace("ShellState { id: sharedState }", "ShellState { id: sharedState }\n"
-                                            "    TestCase { id: keyEvents; when: false }")
-                    runtime.run(runner, directory, f"showcase capture {label} {width}x{height}", source, messages)
+                    scenario(width, height, ROWS, body, str(output / f"native-showcase-{width}x{height}-{label}.png"))
+        if output:
+            for case in json.loads(seal.FIXTURE.read_text())["cases"]:
+                if case["id"] not in {"no-machines", "five-networks", "thirty", "isolated"}:
+                    continue
+                rows = seal.rows_for(case)
+                outside = json.dumps(rows + case["external"])
+                body = f"sharedState.applyOutsideDomainsPayload(JSON.stringify({{machines_available:true, machines:{outside}}}));"
+                body += f'check(stage.total === {len(rows) + len(case["external"])}, "capture population changed");'
+                if case["id"] == "five-networks":
+                    body += 'tile("dev-desk").activated();'
+                if case.get("enter"):
+                    body += 'find(stage, "band-entry-lab").activate();'
+                    body += 'check(stage.networkFilter === "lab" && stage.groups.length === 0, "isolated selection failed");'
+                scenario(1920, 1080, rows, body, str(output / (case["id"] + "-1920x1080.png")), case["gpu_owner"])
     finally:
         shutil.rmtree(directory)
 

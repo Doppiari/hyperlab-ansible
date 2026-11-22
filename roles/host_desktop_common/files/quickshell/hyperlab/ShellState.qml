@@ -253,9 +253,10 @@ Scope {
     property bool networksViewEnabled: false
     // Injected once by the root, independent of presentation instances.
     property bool networksPageVisible: false
+    property bool networksMachinesVisible: false
     property bool networksMapVisible: false
     readonly property bool networksReadable:
-        state.networksViewEnabled && (state.networksPageVisible || state.networksMapVisible)
+        state.networksViewEnabled && (state.networksPageVisible || state.networksMapVisible || state.networksMachinesVisible)
 
     readonly property int networksTimeoutMs: 15000
     property int networksGeneration: 0
@@ -370,6 +371,9 @@ Scope {
             names.push(row.name);
             rows.push({"name": row.name, "state": row.state,
                        "subnet": row.subnet, "forward": row.forward,
+                       "gpuLevel": row.trust === null ? "none"
+                           : Number.isInteger(row.trust) && row.trust >= 0 && row.trust <= 3
+                               ? String(row.trust) : "unknown",
                        "gateway": row.gateway,
                        "dhcp": row.dhcp === null || row.dhcp === false ? row.dhcp
                            : {"start": row.dhcp.start, "end": row.dhcp.end}});
@@ -1294,6 +1298,8 @@ Scope {
             "name": row.name,
             "state": row.state,
             "networks": Array.isArray(row.networks) ? row.networks.map(String) : null,
+            "memory_mb": Number.isInteger(row.memory_mb) && row.memory_mb > 0 ? row.memory_mb : null,
+            "vcpus": Number.isInteger(row.vcpus) && row.vcpus > 0 ? row.vcpus : null,
             "provenance": "unclassified",
             "managed": row.managed === true
                 ? true

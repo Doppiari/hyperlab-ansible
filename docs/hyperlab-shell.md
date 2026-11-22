@@ -337,15 +337,11 @@ and Nitro/Predator acceptance remain open.
 
 ## Machines
 
-Product inventory grouped by host-resolved provenance, with a count per group
-and an explicit Unclassified group last. Every other observed libvirt domain
-appears below in **Not managed**, with lifecycle **external**, name and state.
-Those tiles have a neutral sphere and border with transparent fill, never a
-domain colour or HOST grey, and carry no selection, power or console actions.
-The dense layout keeps the same neutral outline and sphere. The same raw
-inventory stays in Diagnostics. This is visibility without adoption
-([ADR 0060](adr/0060-external-machine-visibility.md): accepted population
-change; proposed external visual state).
+The network band sits above the registry Machines, grouped by observed
+network attachment. Other libvirt domains appear in the final **Not managed
+· outside Sfere** group. Both layouts give them a neutral outline and
+read-only facts. Diagnostics uses the same raw domain inventory.
+[External Machine visibility](adr/0060-external-machine-visibility.md)
 
 The Machines header, Session and Diagnostics use raw libvirt running state,
 including external domains and product configuration drift: **0 managed
@@ -389,40 +385,47 @@ VM pill, with a separate 30-second command timeout for the full document
 build. Command failure, timeout and malformed JSON show **VM ?**. Installed
 read latency still needs measurement on Nitro.
 
-Product tiles are 300–420 units wide, grouped in the palette's domain order
-(CLEAN, DEV, SERVICES, DIRTY, LAB, then Unclassified), followed by Not managed.
-Empty groups are omitted. Each tile starts with a `MachineSphere` and a state
-word, followed by its name and **memory · vCPU · domain** allocation line.
-A 7% wash mixes the resolved domain's palette colour over the raised surface.
-Hover and press add the shared card's neutral feedback over that wash;
-selection takes precedence. Passthrough
-configuration or ownership is written below; ownership also docks the GPU
-mark on the sphere, and disposable lifecycle adds its dashed ring.
-Unclassified Machines keep a neutral sphere and surface without a domain
-wash. External tiles remain unfilled even if their network names a domain.
-Their existing read-only projection omits memory and vCPU, so the allocation
-line says **Unknown · Unknown vCPU · external**; network attachment supplies
-neither an allocation nor an identity. External grid tiles use the same
-column widths and sphere padding as product tiles.
+The host line describes the policy in the flow matrix. The host can reach
+every network. Guests have DHCP and DNS at their own gateway. Other
+guest-initiated access to the host requires a rule. The current shell
+sources supply no host name, so the line reads **Host name unknown**.
+[Allowed network flows](network-flows.md)
 
-The operating system in dense rows and the pane comes from the Machine's
-checked-in image manifest (`os_variant`), read by the host: `Arch Linux`,
-`Debian 13`, `Fedora 44`, `Windows 11`. A guest cannot rename itself there.
-An unknown variant reads **OS unknown** in the row and **Unknown** in the pane.
+With the Networks opt-in enabled, the band shows one card per declared
+network in palette order, with its subnet, live gateway and DHCP range,
+forwarding mode, configured GPU level and outbound policy. Lab can serve
+DHCP at its gateway while having **No route out**. Known NAT networks read
+**Internet via NAT**. Unknown modes have unknown outbound policy.
 
-Memory and vCPU describe **allocation**, never consumption; the accessible
-name also labels them as allocation. A value the host did not publish says
-Unknown; `networks: null` (the domain could not be read) and `networks: []`
-(the domain declares none) are different facts and
-never share a sentence.
+A lit sphere means a registry Machine attached to that network is running.
+A dark sphere means it has Machines and none are running. An outline means
+the network has no Machines. Each state has a count in words. Stale and
+unavailable inventories show **machines unknown**. An unreadable attachment
+limits the count to confirmed Machines and prevents an empty outline.
+Arrow keys move between networks. Enter or a click filters to a network.
+Activate the same card again or press Escape to clear the filter. On wide
+outputs the band spans the inventory and the selected Machine pane.
 
-Large inventories switch to a virtualized list, so every machine stays
-reachable. There is no two-row cap and no self-referential "view all" tile.
+Managed cards are grouped by observed attachment. Each nonempty group shows
+its subnet, mode and count. A Machine with several interfaces can appear
+in several groups. The mark and subtle wash on a card still follow its
+reviewed provenance. The card shows the name, manifest OS, runtime state,
+allocated memory, vCPUs, observed networks and lifecycle or passthrough
+facts. The context header uses the same small mark. Unknown values are
+labelled. An observed empty interface list reads **none**.
+[ADR 0071](adr/0071-machines-network-band.md)
 
-Selecting a tile opens the existing machine pane, whose header shows the
-same sphere at a larger size. Tab reaches every product tile; Left/Right
+The final **Not managed · outside Sfere** group is read-only and neutral.
+Its cards show observed allocation and interfaces. The raw domain source
+has no manifest OS. If registry membership becomes unavailable, these
+rows instead say **membership unknown**.
+
+Large inventories switch to a virtualized list. Each compact row keeps
+allocated memory, vCPU and observed networks together on its second line. There is no two-row cap and no self-referential "view all" tile.
+
+Selecting a tile opens the existing machine pane. Tab reaches every product tile; Left/Right
 follow tile order, and Up/Down move to the closest column in the preceding
-or following drawn row, across domain groups. Focus scrolls into view, and
+or following drawn row, across network groups. Focus scrolls into view, and
 Enter or Space opens the pane. Filtering still applies to both populations.
 Every tile has an accessible name; external tiles are read-only groups and
 never enter the action tab order. **Selection never starts anything.**
@@ -433,8 +436,7 @@ the source and deployment inventory. Existing installations may retain an
 unreferenced `MachineModule.qml`: the source-copy task does not prune
 destination files.
 
-A readable empty registry shows the host's grey sphere and one **Create a
-Machine** action, which opens the same Create view as **New Machine** in a
+A readable empty registry shows one **Create a Machine** action beneath the network band, which opens the same Create view as **New Machine** in a
 populated inventory. If no domains are present, the filter and layout switch
 are hidden. Existing external domains remain below that guidance.
 Unavailable inventory and a filter with no matches keep their separate
@@ -443,7 +445,9 @@ messages and never become the empty-host view.
 `python tests/machine_showcase_contract.py` executes the production QML with
 six synthetic Machines across four domains and one external domain, including
 real Qt key events. Its optional `--render-dir DIRECTORY` writes native
-1440×900 and 1920×1080 captures and a GTK comparison using the same fixture.
+1440×900 and 1920×1080 captures and a GTK comparison. The four network
+fixtures at 1920×1080 cover zero Machines, five networks, thirty Machines
+and the isolated network selected.
 Only transports are substituted; physical acceptance on Nitro remains open.
 
 ### The selected machine
@@ -672,11 +676,11 @@ When enabled, **Networks** shows every declared network from
 `hyperlabctl --json net list`: name, **Configured subnet**, **Configured
 forwarding**, and **Libvirt observation** (`active`, `inactive` or `missing`).
 Null configuration values read Unknown. Inactive and missing networks stay
-in the list; the CLI's numeric trust field is discarded. Each row also
+in the list. The Machines band labels the CLI's configured level **GPU level**. Each row also
 carries the live definition's `gateway` and `dhcp` range, which `net list`
 reads with `virsh net-dumpxml` (never from `group_vars`): a value, `false`
 when the definition declares none, `null` when it could not be read. The
-Sfere seal shows them; a missing key or a value of another type refuses the
+Sfere seal and Machines band show them; a missing key or a value of another type refuses the
 whole answer. Configuration is
 intent, and an active libvirt network does not prove firewall rules, DNS
 separation, reachability, a VPN, a host trust claim or a GPU lease. Network
@@ -686,12 +690,12 @@ physical acceptance.
 `ShellState` owns the one read-only request through
 `privatestack-hyperlab network-inventory`, whose fixed command is exactly
 `hyperlabctl --json net list`. It reads on opening and on the existing
-30-second slow cadence only while that enabled page or the Sfere seal is
-visible. Both consumers share the same reader and opt-in. Only one
+30-second slow cadence while the enabled Networks page, Sfere workspace or Machines workspace is
+open. All three share the same reader and opt-in. Only one
 bridge process may be in flight. Opening or reopening shows **Reading declared
 networks** until the first reply or completion deadline, regardless of shell
 uptime. A 15-second completion deadline marks an unanswered or failed start
-unavailable and signals the bridge process to stop. Hiding both consumers or
+unavailable and signals the bridge process to stop. Closing the last consumer or
 disabling also signals that bridge to stop. Cancellation does not terminate the CLI or its
 descendants as a process group; a child read can outlive the bridge. Each
 flight keeps its request generation through cancellation; hiding, disabling
@@ -1163,12 +1167,12 @@ Nitro acceptance under both compositors or Predator replay.
 
 ### Machines
 
-Every Machine is a sphere and the host is the grey symbol at the centre
-([ADR 0064](adr/0064-spheres-are-machines.md), accepted operator decision).
-`MachineSphere.qml` is the one drawing of a Machine. The Machines showcase
-uses it on product tiles, dense rows, neutral external tiles, the selected
-Machine header and the empty host view; the bar's focus item uses it too.
-Other surfaces adopt it separately. Its inputs are `domain`, `state`,
+The bar's focus item uses the Machine sphere defined by ADR 0064. In the
+Machines workspace, still spheres represent networks and a neutral sphere
+identifies the host. Machine cards use small marks. [ADR 0064](adr/0064-spheres-are-machines.md),
+[ADR 0071](adr/0071-machines-network-band.md)
+
+`MachineSphere.qml` draws a Machine wherever a Machine sphere is used. Its inputs are `domain`, `state`,
 `disposable`, `gpuOwner`, `size`, `machineName` and `isHost`, with the
 shell's `theme` and `tokens`. The ADR's operator decision fixes the table
 below; how the component reads it (the outline tone, the libvirt words, the

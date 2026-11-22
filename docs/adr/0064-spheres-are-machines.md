@@ -178,10 +178,12 @@ inputs, the accessible name and the absence of any colour literal or host
 service in the component. Its `--contact-sheet` option writes the review sheet of all
 states and domains at 16 to 128 pixels.
 
-The Machines showcase uses the component on tiles, dense rows, external
-outlines, the selected Machine header and the empty host view. Other surfaces
-adopt it separately. The bar core, the window borders and the rename of
-files, paths or strings are outside this record. Software checks do not establish that the
-domains are told apart at 16 pixels on a real display or that the spheres
+The original Machines showcase used the component on tiles, rows and the
+selected Machine header. The current showcase uses spheres for networks and
+marks for Machines. [ADR 0071](0071-machines-network-band.md)
+
+The bar's focus item still uses the Machine sphere. The bar core, window
+borders and the rename of files, paths or strings are outside this record.
+Software checks do not establish that the domains are told apart at 16 pixels on a real display or that the spheres
 match the reference renders: that is the operator's review of the contact
 sheet, and Nitro and Predator acceptance stay open.

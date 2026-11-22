@@ -46,6 +46,8 @@ Item {
         : frame.tokens.workspacePadding
 
     readonly property int bodyWidth: bodyHolder.width
+    // Position of the scrollable content relative to the frame.
+    readonly property real bodyTop: viewport.parent.y + viewport.y - viewport.contentY
 
     signal sectionRequested(string identifier)
 

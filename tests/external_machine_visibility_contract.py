@@ -218,8 +218,13 @@ NATIVE = '''
                 check(visibleText(stage, row.name), "a managed Machine is not rendered");
             check(find(stage, "machine-inventory-summary").subtitle.indexOf("0 managed running · 1 external running") >= 0,
                   "Machines summary omitted the external running count");
-            check(find(stage, "external-machines-heading").label === "Not managed",
+            const heading = find(stage, "external-machines-heading");
+            const identity = sharedState.productRaw;
+            check(heading.label === "Not managed · outside " + sharedState.productName,
                   "external domains have no separate group");
+            sharedState.productRaw = "";
+            check(heading.label === "Not managed", "external heading invented a missing product name");
+            sharedState.productRaw = identity;
             function checkReadOnly(rows, lifecycle, caption) {
                 const list = find(stage, "external-machine-list");
                 list.forceLayout();
