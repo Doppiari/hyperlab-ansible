@@ -241,6 +241,10 @@ entered the pipeline.
     proposed: show network activity over Machine cards and group the
     registry by observed interfaces.
 
+72. [`0072-navigation-ipc-for-captures.md`](0072-navigation-ipc-for-captures.md)
+    — proposed: one navigation-only IPC route per section of the shell, so
+    documentation captures need no input simulation and no running Machine.
+
 The pre-VM baseline that led to these decisions remains available as
 [`../historical-audit-m0.md`](../historical-audit-m0.md); it is archival evidence,
 not current implementation documentation.
@@ -805,3 +809,17 @@ remain.
   - Source: [`NetworkBand.qml`](../../roles/host_desktop_common/files/quickshell/hyperlab/NetworkBand.qml),
     [`machine_showcase_contract.py`](../../tests/machine_showcase_contract.py)
   - Prerequisites: comparison with libvirt and the Machine inventory on Nitro.
+
+- [ADR 0072](0072-navigation-ipc-for-captures.md)
+  - Decision: proposed.
+  - Built: built — the `navigate` IPC target, the live capture script and
+    the offscreen demo renders.
+  - Activation: on request — the common desktop role installs the target
+    with the shell; it acts only when a caller names a route, and the
+    script runs only when the operator starts it.
+  - Source: [`ShellIpc.qml`](../../roles/host_desktop_common/files/quickshell/hyperlab/ShellIpc.qml),
+    [`capture-shell`](../../tools/docs/capture-shell),
+    [`render_demo.py`](../../tools/docs/render_demo.py),
+    [`documentation_capture_contract.py`](../../tests/documentation_capture_contract.py)
+  - Prerequisites: acceptance of the record; on Nitro, one live capture run
+    on an empty slot that leaves the shell where it was.

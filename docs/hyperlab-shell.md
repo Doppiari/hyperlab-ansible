@@ -1102,6 +1102,69 @@ on the desktop entry's path. Adding an application is a reviewed edit of
 that list. Rofi stays on `SUPER + D` as a transitional launcher for
 anything outside the catalogue, with no Sfere route.
 
+## Documentation captures
+
+Every surface can be reached and captured without a pointer, input
+simulation, a started Machine or the bridges
+([ADR 0072](adr/0072-navigation-ipc-for-captures.md)).
+
+**Navigation IPC.** The `navigate` target of `ShellIpc.qml` opens any
+section of the navigation model by a fixed route id:
+
+| Route | Surface |
+| --- | --- |
+| `sfere`, `machines`, `workbench`, `devices` | the destination |
+| `create` | the Create form inside Machines |
+| `controls-session`, `controls-audio`, `controls-appearance` | Control Center sections |
+| `controls-networks`, `controls-nitro` | the opt-in pages, `unavailable` while switched off |
+| `diagnostics-overview`, `diagnostics-isolation`, `diagnostics-inventory`, `diagnostics-session` | Diagnostics sections |
+| `launcher`, `clipboard`, `keys` | the palette, the clipboard chooser, the host key sheet |
+| `panel` | the system panel |
+| `desktop` | the idle desktop: the workspace and transients closed |
+
+```sh
+qs -c hyperlab ipc call navigate routes            # every route id
+qs -c hyperlab ipc call navigate open controls-audio
+qs -c hyperlab ipc call navigate machine dev-desk  # select a Machine by name
+qs -c hyperlab ipc call navigate current           # where the shell is, as JSON
+```
+
+`open` answers the route id once the coordinator shows it, `unavailable`
+for a switched-off page and `refused` for anything else; `machine` answers
+the name only for a Machine of the current inventory. A refusal changes
+nothing. GPU ownership has no page of its own: it is
+`diagnostics-isolation` and the Sfere view. The target is navigation only.
+It calls the coordinator's open, close and select functions and nothing
+else, never asks the compositor for a raise or a slot, and withdraws an
+armed confirmation the same way a click on a destination does. `create`
+shows the form and creates nothing; `machines` hides the form again unless
+a creation is in flight. `documentation_capture_contract.py` checks the
+coverage of the navigation model, the calls each route can reach and every
+route at runtime.
+
+**Live captures.** `tools/docs/capture-shell DIR` lists the routes, switches
+to the highest empty compositor slot, shows the rail and takes one `grim`
+capture of the focused output per route (`shell-<route>.png`; with
+`--machine NAME` also the selected Machine), skipping switched-off pages.
+At the end, on failure too, it puts back the open view, the selected
+Machine, the open transient, the rail and the slot. The shell has no
+do-not-disturb of its own and the script leaves the notification daemon
+alone, so every capture is checked by eye before it is published. Hyprland
+blocks capture while the session is locked; `grim` is given 20 seconds.
+
+**Demo renders.** `tools/docs/capture-shell --demo DIR` needs no session:
+`tools/docs/render_demo.py` runs the offscreen production-QML harness of
+`tests/host_quickshell_runtime_contract.py` with the fixture state file
+`tests/fixtures/documentation-demo.json` (five Machines, one per domain, two
+running, a GPU owner and a disposable one) and fixture answers for every
+bridge, and reaches each surface through the real `navigate` routes. It
+writes `demo-<route>`, `demo-machine-<name>` and `demo-bar-<focus>` (host,
+each domain, Unknown) at 1920x1080 and, with the same layout at twice the
+pixel density, at 3840x2160, over the Isolation Ring wallpaper. The lock
+surface is `hyprlock` or `swaylock`, not shell QML, so it has no demo
+render. DIR must be new or empty, a real directory and outside the
+repository.
+
 ## Design system
 
 `Tokens.qml` owns geometry, type and motion. `Theme.qml` owns colour. No file

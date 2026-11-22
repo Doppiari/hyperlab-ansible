@@ -120,6 +120,14 @@ the existing host key sheet (see [shell contract](hyperlab-shell.md)). The
 installed Nitro bridge's original cause and physical rechecks of all four
 observations remain open; this adds no hardware acceptance.
 
+The surfaces that session could not reach are now reachable by script,
+software-verified: a navigation-only `navigate` IPC route for every section
+of the shell, `tools/docs/capture-shell` for live captures, and offscreen
+demo renders from a fixture state file with no session and no running
+Machine ([ADR 0072](adr/0072-navigation-ipc-for-captures.md), proposed;
+[shell contract](hyperlab-shell.md#documentation-captures)). The live run on
+the Nitro is open; the lock screen is still photographed by hand.
+
 Native ladder properties and Python claim validators are now checked
 against the configured CLI ladder as well. They still contain literals;
 their runtime-source consolidation is deferred in

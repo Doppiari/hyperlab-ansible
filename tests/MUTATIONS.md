@@ -6625,3 +6625,40 @@ The same showcase contract exercises poll replies and the compact layout.
 | Hide the compact external allocation line. | Explicit or automatic list mode loses visible memory, vCPU or network. |
 | Replace the network observation on identical replies. | The unchanged poll emits a replacement notification. |
 | Clear and repopulate the network delegates on a changed reply. | Dev loses keyboard focus between an arrow and Enter. |
+
+## Documentation captures: navigation IPC, live walk and demo renders
+
+The check is `python tests/documentation_capture_contract.py`. QML
+filenames below are under
+`roles/host_desktop_common/files/quickshell/hyperlab/`. Before each break,
+save the named file to a separate copy; make only the named change, run the
+check, copy the saved bytes back, compare them and rerun the check.
+
+| Mutation | File and break | Observed red diagnostic | Restored |
+| --- | --- | --- | --- |
+| `route-missing` | `ShellIpc.qml`: delete the `controls-audio` line from `navigationRoutes`. | no IPC route for controls-audio | Exit 0, OK. |
+| `section-without-route` | `ShellSurfaces.qml`: add `"gpu"` to the `controls` subpages. | no IPC route for controls-gpu | Exit 0, OK. |
+| `machine-action` | `ShellIpc.qml`: `machine()` also calls `ipc.shellSurfaces.requestClipboardSend(wanted, "")`. | navigate.machine: navigation route uses shellSurfaces.requestClipboardSend | Exit 0, OK. |
+| `action-object` | `ShellIpc.qml`: declare `required property var machineActions`. | ShellIpc.qml holds more than state, coordinator and theme | Exit 0, OK. |
+| `raise` | `ShellIpc.qml`: `enterRoute` passes `true` as the third argument of `openWorkspacePage`. | enterRoute: openWorkspacePage may ask the compositor for a raise | Exit 0, OK. |
+| `confirm-reached` | `ShellSurfaces.qml`: `openCreateForm` also calls `surfaces.submitConfirmation()`. | a navigation route reaches ['submitConfirmation'] | Exit 0, OK. |
+| `form-stays` | `ShellIpc.qml`: `enterRoute` no longer calls `closeCreateForm` for Machines. | navigation routes: "machines left the Create form over the inventory" | Exit 0, OK. |
+| `in-flight-hidden` | `WorkspaceSurface.qml`: drop the `machineActions.creating` guard from `onCreateFormRequested`. | navigation routes: "a creation in flight lost its form" | Exit 0, OK. |
+| `inside-repo` | `tools/docs/capture-shell`: refuse only the repository root itself, not paths under it. | a refused directory was created inside the repository | Exit 0, OK. |
+| `slot-not-restored` | `tools/docs/capture-shell`: `restore` replaces the `workspace-select` of the saved slot with `true`. | the slots were not switched to 9 and back to 2: ['9'] | Exit 0, OK. |
+| `demo-drops-unknown` | `tools/docs/render_demo.py`: the scene walks `fixture.focus.slice(0, -1)`. | capture-shell --demo failed: demo renders missing: demo-bar-unknown-1920x1080.png, demo-bar-unknown-3840x2160.png | Exit 0, OK. |
+| `fixture-three-running` | `tests/fixtures/documentation-demo.json`: `service-db` is running. | the demo fixture is refused: exactly two Machines must run | Exit 0, OK. |
+
+All twelve breaks exited 1 with the diagnostic listed, and every restored
+copy was byte-identical and exited 0. `inside-repo` first went red on a
+later refusal: `render_demo.py` also refuses an output under the
+repository, but the mutated script had already created the empty
+directory, and that directory then turned the next two runs red for the
+wrong reason. The contract now removes such a directory and reports it at
+once, and those two runs were repeated. A refused demo fixture is reported
+as a contract message, not a traceback.
+
+The fake session behind the live walk answers from the real route table.
+The real Quickshell IPC dispatcher, a real slot switch and real `grim`
+output are the operator's run on the Nitro. These observations are
+software verification only.
