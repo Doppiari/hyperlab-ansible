@@ -179,6 +179,7 @@ ShellControl {
         },
 
         ShellLabel {
+            objectName: "gpu-badge-claim-qualifier"
             anchors.verticalCenter: parent.verticalCenter
             visible: badge.ownershipLeads && badge.claimProblem
             tokens: badge.tokens

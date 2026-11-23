@@ -3033,6 +3033,20 @@ TRUST_PROVIDER_PATH = """
                   "an outside-policy holder rendered as: " + claimText.text);
             check(badge.visible && badge.stateText === "Unknown, reboot to reset",
                   "the rail hid an outside-policy holder: " + badge.stateText);
+
+            // The outside domain is usually the GPU's current owner: the rail
+            // then names it and still carries the reboot instruction.
+            sharedState.applyGpuPayload(JSON.stringify(
+                { known: true, owner: "rogue-tmp", bound: true }));
+            const qualifier = window.find(badge, "gpu-badge-claim-qualifier");
+            check(badge.visible && badge.stateText === "rogue-tmp",
+                  "the rail did not name the outside holder: " + badge.stateText);
+            check(qualifier !== null && qualifier.visible
+                  && qualifier.text.indexOf("Unknown, reboot to reset") >= 0,
+                  "the rail dropped the reboot instruction for a named holder: "
+                  + (qualifier === null ? "no qualifier" : qualifier.text));
+            sharedState.applyGpuPayload(JSON.stringify(
+                { known: true, owner: "", bound: true }));
             sharedState.applyTrustPayload(payloads.io);
             check(!sharedState.trustClaim.claimed
                   && claimText.text.indexOf("rung") < 0,

@@ -6158,6 +6158,74 @@ with tempfile.TemporaryDirectory() as temporary:
 PY
 ```
 
+### Review: the named holder on the rail and Looking Glass on a product identity
+
+Two cases from the review of the GPU-holder report. The rail badge is now
+also checked with the outside domain as the GPU's named owner: the owner
+leads and the reboot instruction rides in the qualifier label
+(`gpu-badge-claim-qualifier`). The XML contract renders the
+`workstation-dev-standard` Machine identity a second time through the same
+domain template with its VFIO branch and the reviewed Looking Glass block,
+transport from the host policy, and feeds it to the hook under a fixture-only
+`domains.d` mapping. That is a guard test, not a lease shape: ADR 0019's
+two-shape planner is unbuilt. It is refused while unmapped and accepted, at
+rung 2, once mapped.
+
+| Case | Invariant broken | Observed red check |
+|---|---|---|
+| S4 | The qualifier label is hidden when the GPU has a named owner | "the rail dropped the reboot instruction for a named holder" |
+| Q26 | The helper accepts Looking Glass only for the reference domain name | XML contract "product Machine Looking Glass XML refused"; the reference render (`tests/arch_dev_vfio_hardware_gate_contract.py`) and the default-boot case stayed green |
+
+Replay from the repository root:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+G = Path('roles/host_desktop_common/files/quickshell/hyperlab/GpuBadge.qml')
+X = Path('roles/gpu_handoff/files/xml-preflight.py')
+mutations = [
+    ('S4-qualifier-hidden-when-held', G,
+     [('            visible: badge.ownershipLeads && badge.claimProblem\n',
+       '            visible: badge.ownershipLeads && badge.claimProblem && !badge.held\n')],
+     ['python3', 'tests/host_quickshell_runtime_contract.py'],
+     'the rail dropped the reboot instruction for a named holder'),
+    ('Q26-looking-glass-for-reference-only', X,
+     [('    blocks = root.findall(f"./{{{QEMU}}}commandline")\n',
+       '    require(domain == "arch-dev-vfio", "unreviewed QEMU command-line: reference domain only")\n'
+       '    blocks = root.findall(f"./{{{QEMU}}}commandline")\n')],
+     ['python3', 'tests/gpu_handoff_xml_contract.py'], 'product Machine Looking Glass XML refused'),
+]
+with tempfile.TemporaryDirectory(prefix="r2-mutations-") as temporary:
+    for name, path, edits, command, reason in mutations:
+        backup = Path(temporary) / (name + "-" + path.name)
+        shutil.copy2(path, backup)
+        text = path.read_text()
+        for old, new in edits:
+            assert text.count(old) == 1, (name, old)
+            text = text.replace(old, new, 1)
+        try:
+            path.write_text(text)
+            red = subprocess.run(command, text=True, capture_output=True, check=False, timeout=900)
+            out = red.stdout + red.stderr
+            assert red.returncode != 0 and reason in out, (name, red.returncode, out[-600:])
+            if name.startswith('Q26'):
+                # The reference render and the default boot still pass.
+                other = subprocess.run(['python3', 'tests/arch_dev_vfio_hardware_gate_contract.py'],
+                                       text=True, capture_output=True, check=False, timeout=900)
+                assert other.returncode == 0, ('Q26 reference', other.stdout[-600:])
+                assert 'rendered workstation-dev-standard refused' not in out, 'Q26 default boot'
+        finally:
+            shutil.copy2(backup, path)
+        green = subprocess.run(command, text=True, capture_output=True, check=False, timeout=900)
+        assert green.returncode == 0, (name, 'restored check not green')
+        print(f"{name}: red; restored green", flush=True)
+PY
+```
+
 ## Palette output variant names
 
 The Quickshell writer deliberately includes the current variant in its top-level

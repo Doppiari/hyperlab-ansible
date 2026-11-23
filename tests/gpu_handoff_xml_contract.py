@@ -158,7 +158,7 @@ def reviewed_xml() -> str:
     return ET.tostring(root, encoding="unicode")
 
 
-def template_domain_xml(directory: Path) -> tuple[str, str]:
+def template_domain_xml(directory: Path, transport: dict[str, Any]) -> tuple[str, str, str]:
     """Render a workstation-dev-standard Machine through the product path.
 
     ADR 0019 selects this Template for the first GPU lease; its default run
@@ -195,7 +195,24 @@ def template_domain_xml(directory: Path) -> tuple[str, str]:
                       undefined=StrictUndefined, autoescape=False, keep_trailing_newline=True)
     xml = env.get_template("domain.xml.j2").render(guest_plan=plan, guest_resolved_memory_mb=4096,
                                                    guest_vfio={})
-    return plan["name"], xml
+    # Compatibility guard, not a lease shape: ADR 0019's two-shape planner is
+    # unbuilt. The same Machine identity is rendered by the same template with
+    # the VFIO branch and the reviewed Looking Glass block, its transport taken
+    # from the host policy, so the hook's acceptance of the reviewed argv can
+    # never depend on the reference domain's name.
+    looking = yaml.safe_load((ROOT / "group_vars/all/looking-glass.yml").read_text())
+    vfio = {
+        "cpu_pinning": {"enabled": False},
+        "devices": [{"xml_domain": "0x0000", "xml_bus": "0x01", "xml_slot": "0x00",
+                     "xml_function": function} for function in ("0x0", "0x1")],
+        "looking_glass_device": transport["device"],
+        "looking_glass_shm_bytes": transport["size_bytes"],
+    }
+    with_gpu = env.get_template("domain.xml.j2").render(
+        guest_plan={**plan, "device_profile": "vfio", "looking_glass": True},
+        guest_resolved_memory_mb=4096, guest_vfio=vfio,
+        hyperlab_looking_glass_spice_socket_dir=looking["hyperlab_looking_glass_spice_socket_dir"])
+    return plan["name"], xml, with_gpu
 
 
 def main() -> None:
@@ -349,7 +366,7 @@ def main() -> None:
         # unmapped standard domain, accepted without touching the ladder.
         rendered = fixture.root / "rendered"
         rendered.mkdir()
-        name, standard = template_domain_xml(rendered)
+        name, standard, with_gpu = template_domain_xml(rendered, json.loads(policy))
         parsed = ET.fromstring(standard)
         assert not [node for node in parsed.iter() if node.tag.startswith(f"{{{QEMU}}}")
                     or node.tag == "hostdev"], "workstation-dev-standard renders passthrough"
@@ -364,6 +381,19 @@ def main() -> None:
                 assert not fixture.state.exists(), "standard Template run created ladder state"
         fixture.refuses(standard.replace("<devices>", "<devices><hostdev type='pci'/>", 1),
                         "PCI passthrough without a reviewed GPU handoff policy", name)
+        # The product Machine identity with the reviewed Looking Glass block:
+        # refused while unmapped, accepted under a fixture-only reviewed
+        # mapping, which then records its rung.
+        blocks = ET.fromstring(with_gpu).findall(f"{{{QEMU}}}commandline")
+        assert len(blocks) == 1 and len(list(blocks[0])) == 4, "template lost the Looking Glass block"
+        fixture.refuses(with_gpu, "QEMU command-line without a reviewed GPU handoff policy", name)
+        managed = fixture.root / "domains.d" / f"{name}.conf"
+        managed.write_text(f"{name} dev\n")
+        fixture.reset_state(False)
+        result = fixture.run(with_gpu, name)
+        assert result.returncode == 0, f"product Machine Looking Glass XML refused: {result.stderr}"
+        assert (fixture.state / "trust").read_bytes() == b"2\n"
+        managed.unlink()
         fixture.reset_state(False)
         assert fixture.run("", phase="release").returncode == 0
         assert not fixture.state.exists()
