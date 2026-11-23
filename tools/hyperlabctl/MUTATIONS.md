@@ -341,7 +341,7 @@ M = [
      [('        elif devices:\n', '        elif devices or extension:\n')],
      'extension_environment_state'),
     ('unguarded-from-checkout', D,
-     [('                    guarded = domain["name"] in installed["mapping"]\n',
+     [('                    guarded = membership != "absent"\n',
        '                    guarded = gpu is not None\n')],
      'managed_only_not_unguarded'),
     ('identity-unchecked', I,

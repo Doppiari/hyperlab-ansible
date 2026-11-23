@@ -464,6 +464,21 @@ class DomainProvider(Provider):
                 resolved = [name if kind == "network" else (owners or {}).get(name) for kind, name in sources]
                 attachment["attached_networks"] = resolved if None not in resolved else None
 
+            # Effective membership is what the hook reads: the installed
+            # static file and domains.d, never the checkout. Read only for a
+            # domain that is not a product Machine and owns a hostdev.
+            installed_membership = None
+            if not product_managed and domain["vfio"]:
+                installed = installed_gpu_policy(ctx)
+                if installed["state"] != "ok":
+                    installed_membership = "unknown"
+                elif domain["name"] in installed["managed"]:
+                    installed_membership = "managed"
+                elif domain["name"] in installed["static"]:
+                    installed_membership = "static"
+                else:
+                    installed_membership = "absent"
+
             listed.append({
                 "name": domain["name"],
                 "state": domain["state"],
@@ -487,6 +502,8 @@ class DomainProvider(Provider):
                 # from the root-owned domains.d surface, not from metadata.
                 "gpu_trust_profile": observed_handoff,
                 "gpu_policy_state": gpu_policy_state,
+                # static | managed | absent | unknown; None when not needed.
+                "installed_gpu_membership": installed_membership,
                 "trust_profile": trust,
                 "trust_source": source,
                 "blocked": blocked,
@@ -540,12 +557,12 @@ class DomainProvider(Provider):
                     })
 
             elif domain["vfio"]:
-                # Effective membership is what the hook reads: the installed
-                # static file and domains.d. Only when that cannot be read
-                # does the checkout's gpu_domain_profiles stand in.
-                installed = installed_gpu_policy(ctx)
-                if installed["state"] == "ok":
-                    guarded = domain["name"] in installed["mapping"]
+                # Collect recorded the installed membership; only when it
+                # could not be read does the checkout's gpu_domain_profiles
+                # stand in.
+                membership = domain.get("installed_gpu_membership")
+                if membership in ("static", "managed", "absent"):
+                    guarded = membership != "absent"
                 else:
                     guarded = gpu is not None
                 if not guarded:
@@ -556,7 +573,7 @@ class DomainProvider(Provider):
                                    "GPU policy (the static file and domains.d): the trust "
                                    "hook cannot guard it" % domain["name"],
                     })
-                elif domain["name"] in installed["managed"]:
+                elif membership == "managed":
                     found.append({
                         "id": "domains.gpu_policy_without_product_metadata",
                         "severity": "warn",
