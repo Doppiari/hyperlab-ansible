@@ -224,7 +224,12 @@ def verify_domain_telemetry() -> None:
         def observe_as_test_user(
             observed_directory,
             trust_levels,
+            *,
+            expected_uid=None,
         ):
+            # The provider names the owner it expects; this fixture's
+            # policy belongs to the test user, so that owner is forced.
+            del expected_uid
             return original(
                 observed_directory,
                 trust_levels,

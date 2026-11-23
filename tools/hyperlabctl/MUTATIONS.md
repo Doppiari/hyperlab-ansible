@@ -241,26 +241,29 @@ names in the domain listing.
 ## GPU held outside the handoff policy
 
 The trust section reads every live domain XML and sets `ladder_state`:
-`recorded`, `outside-policy` (a domain in neither GPU policy surface holds a
-passthrough device the hook never saw) or `unverified` (something it needed
-could not be read). The check is `python3 tools/hyperlabctl/tests/run.py`;
-the assertions are in `tests/test_gpu_holders.py`. Each break was made on
-the file, the suite run, the saved copy restored and the suite run green
-again.
+`recorded`, `outside-policy` (a domain in neither installed GPU policy surface
+holds a PCI hostdev or a hostdev interface the hook never saw) or
+`unverified` (something it needed could not be read, or an unmapped domain
+carries a QEMU extension whose devices are unknown). The policy is the one
+the hook reads, `/etc/gpu-handoff/domains` and `domains.d`; the test world
+installs its own copy and never reads this host's `/etc`. The check is
+`python3 tools/hyperlabctl/tests/run.py`; the assertions are in
+`tests/test_gpu_holders.py`. Each break was made on the file, the suite run,
+the saved copy restored and the suite run green again.
 
 | Mutation | File | Break | Result | Assertion that caught it |
 | --- | --- | --- | --- | --- |
 | `unreadable-is-no-holder` | `providers/domains.py` | An unreadable live XML is skipped, as if it held nothing | red | `unreadable_state` expected `unverified`, got `recorded` |
-| `unreadable-entry-false` | `inventory.py` | The unreadable inventory entry says `passthrough: False` | red | `unreadable_state` |
-| `managed-surface-ignored` | `providers/domains.py` | A holder named only in `domains.d` counts as outside policy | red | `managed_holder_state` |
-| `surface-failure-trusted` | `providers/domains.py` | A missing, unsafe, unavailable or colliding `domains.d` counts as readable | red | `surface_missing_state` and the three other surfaces |
+| `unreadable-entry-false` | `inventory.py` | The unreadable inventory entry says it holds no device and no extension | red | `unreadable_state` |
+| `managed-surface-ignored` | `providers/domains.py` | A mapped holder is not cleared by the installed policy | red | `managed_holder_state` |
+| `surface-failure-trusted` | `providers/domains.py` | An unusable installed policy is not a reason for unknown | red | `static_missing_state` and every unusable surface |
 | `paused-skipped` | `providers/domains.py` | Only a running domain counts as a holder | red | `paused_outside` |
 | `unknown-state-skipped` | `providers/domains.py` | A holder whose state cannot be read counts as stopped | red | `unknown_state_holder` |
-| `claim-ignores-outside` | `render.py` | `trust_claim` ignores `ladder_state` | red | `outside_claim` and the projection checks |
+| `claim-ignores-outside` | `render.py` | `trust_claim` ignores an outside holder | red | `outside_claim` and the projection checks |
 | `missing-ladder-state-believed` | `render.py` | A section without `ladder_state` keeps its rung | red | `ladder_missing_unknown` |
 | `inactive-xml-read` | `inventory.py` | `dumpxml --inactive`, the persistent definition | red | `shape_pci_outside` and every unregistered read |
-| `commandline-not-passthrough` | `domainxml.py` | A QEMU command-line extension is not passthrough | red | `shape_commandline_outside` |
-| `interface-not-passthrough` | `domainxml.py` | A hostdev interface is not passthrough | red | `shape_interface_outside` |
+| `commandline-not-seen` | `domainxml.py` | A QEMU extension is not observed at all | red | `extension_environment_state` |
+| `interface-not-a-device` | `domainxml.py` | A hostdev interface is not a held device | red | `shape_interface_outside` |
 | `holder-unnamed` | `providers/trust.py` | The doctor problem omits the domain's name | red | `outside_problem_names_domain` |
 | `outside-can-ascend` | `providers/trust.py` | An outside holder leaves `can_ascend` as read from the file | red, after a test was added | `unclaimed_outside_cannot_ascend` |
 
@@ -268,28 +271,98 @@ again.
 fixture had a claimed rung, where `can_ascend` is already false. An unclaimed
 boot with an outside holder now pins it.
 
+### Review: the installed policy, identity, extensions and the rung
+
+The first version read the static policy from the checkout, skipped
+`domains.d` for a static match, lost the holder when the rung was unreadable,
+trusted the live XML's identity and called any QEMU extension a held device
+([problem record](../../problems/gpu-held-outside-the-handoff-policy.md)).
+
+| Mutation | File | Break | Result | Assertion that caught it |
+| --- | --- | --- | --- | --- |
+| `checkout-policy-clears-holder` | `providers/domains.py` | A name in the checkout's `gpu_domain_profiles` clears a holder | red | `checkout_only_outside` |
+| `cross-surface-collision-accepted` | `providers/domains.py` | A domain named by both surfaces is accepted | red | `collision_static_holder_state` |
+| `managed-failure-ignored` | `providers/domains.py` | An unusable `domains.d` does not stop a static match | red | `managed_missing_static_holder` |
+| `static-symlink-followed` | `providers/domains.py` | The static file is read through a symlink | red | `static_symlink_state` |
+| `static-duplicate-accepted` | `providers/domains.py` | A duplicate static line is accepted | red | `static_duplicate_state` |
+| `static-writable-accepted` | `providers/domains.py` | A group- or world-writable static file is accepted | red | `static_writable_state` |
+| `extension-is-a-holder` | `providers/domains.py` | An unmapped extension counts as a confirmed holder | red | `extension_environment_state` |
+| `unguarded-from-checkout` | `providers/domains.py` | `domains.unguarded_vfio` ignores the installed policy | red | `managed_only_not_unguarded` |
+| `identity-unchecked` | `inventory.py` | A live XML for another identity is used | red | `identity_other_name_unknown` and the other identity cases |
+| `rung-failure-hides-holder` | `providers/trust.py` | An unreadable rung drops the section, holder and all | red | `rung_permission_section_kept` |
+| `rung-error-dropped` | `providers/trust.py` | The rung read failure is not reported beside the holder | red | `rung_permission_read_failure_kept` |
+| `claim-needs-a-rung-first` | `render.py` | `trust_claim` needs a readable rung before it sees an outside holder | red | `rung_permission_claim` |
+
 Replay from `tools/hyperlabctl` on an otherwise idle tree:
 
 ```bash
 python3 - <<'PY'
 from pathlib import Path
-import shutil, subprocess, tempfile
+import shutil
+import subprocess
+import tempfile
+
 D = Path('hyperlabctl/providers/domains.py'); R = Path('hyperlabctl/render.py')
 I = Path('hyperlabctl/inventory.py'); X = Path('hyperlabctl/domainxml.py'); T = Path('hyperlabctl/providers/trust.py')
 M = [
- ('unreadable-is-no-holder', D, [('        if passthrough is None:\n            result["unverified"].append(name)\n            continue\n', '')], 'unreadable_state'),
- ('unreadable-entry-false', I, [('"passthrough": None,', '"passthrough": False,')], 'unreadable_state'),
- ('managed-surface-ignored', D, [('        elif name not in managed:', '        else:')], 'managed_holder_state'),
- ('surface-failure-trusted', D, [('            managed_ok = surface == "ok"', '            managed_ok = True')], 'surface_missing_state'),
- ('paused-skipped', D, [('        if not passthrough or domain.get("state") == "shut off":', '        if not passthrough or domain.get("state") != "running":')], 'paused_outside'),
- ('unknown-state-skipped', D, [('        if domain.get("state") == "unknown":\n            result["unverified"].append(name)\n            continue\n', '')], 'unknown_state_holder'),
- ('claim-ignores-outside', R, [('    if trust.get("ladder_state") == "outside-policy":\n        return {**unknown, "ladder": "outside-policy"}\n    if trust.get("ladder_state") != "recorded":\n        return {**unknown, "ladder": "unverified"}\n', '')], 'outside_claim'),
+ ('unreadable-is-no-holder', D, [('        if devices is None or extension is None:\n            unknown(name, "its live XML could not be read")\n            continue\n', '')], 'unreadable_state'),
+ ('unreadable-entry-false', I, [('"pci_devices": None, "qemu_extension": None,', '"pci_devices": False, "qemu_extension": False,')], 'unreadable_state'),
+ ('managed-surface-ignored', D, [('        elif name in policy["mapping"]:\n            continue\n', '')], 'managed_holder_state'),
+ ('surface-failure-trusted', D, [('        if policy["state"] != "ok":\n', '        if False:\n')], 'static_missing_state'),
+ ('paused-skipped', D, [('        if domain.get("state") == "shut off":\n', '        if domain.get("state") != "running":\n')], 'paused_outside'),
+ ('unknown-state-skipped', D, [('        if domain.get("state") == "unknown":\n            unknown(name, "its state could not be read")\n            continue\n', '')], 'unknown_state_holder'),
+ ('claim-ignores-outside', R, [('    if isinstance(trust, dict) and trust.get("ladder_state") == "outside-policy":\n        return {**unknown, "ladder": "outside-policy"}\n', '')], 'outside_claim'),
  ('missing-ladder-state-believed', R, [('    if trust.get("ladder_state") != "recorded":\n        return {**unknown, "ladder": "unverified"}\n', '')], 'ladder_missing_unknown'),
  ('inactive-xml-read', I, [('result = ctx.virsh("dumpxml", name)', 'result = ctx.virsh("dumpxml", "--inactive", name)')], 'shape_pci_outside'),
- ('commandline-not-passthrough', X, [('        or node.tag.startswith("{%s}" % QEMU)\n', '')], 'shape_commandline_outside'),
- ('interface-not-passthrough', X, [('        or node.tag == "interface" and node.get("type") == "hostdev"\n', '')], 'shape_interface_outside'),
- ('holder-unnamed', T, [('unknown, reboot to reset" % name,', 'unknown, reboot to reset",')], 'outside_problem_names_domain'),
+ ('commandline-not-seen', X, [('    return any(node.tag.startswith("{%s}" % QEMU) for node in root.iter())\n', '    return False\n')], 'extension_environment_state'),
+ ('interface-not-a-device', X, [('        or node.tag == "interface" and node.get("type") == "hostdev"\n', '')], 'shape_interface_outside'),
+ ('holder-unnamed', T, [('"reboot to reset" % name,', '"reboot to reset",')], 'outside_problem_names_domain'),
  ('outside-can-ascend', T, [('        if holders["state"] != "recorded":\n            section["can_ascend"] = False\n', '')], 'unclaimed_outside_cannot_ascend'),
+    ('checkout-policy-clears-holder', D,
+     [('        elif name in policy["mapping"]:\n',
+       '        elif name in policy["mapping"] or name in (ctx.config.var("gpu_domain_profiles", {}) or {}):\n')],
+     'checkout_only_outside'),
+    ('cross-surface-collision-accepted', D,
+     [('    elif set(static) & set(managed):\n        state = "policy collision"\n', '')],
+     'collision_static_holder_state'),
+    ('managed-failure-ignored', D,
+     [('    elif managed_state != "ok":\n        state = "managed policy %s" % managed_state\n', '')],
+     'managed_missing_static_holder'),
+    ('static-symlink-followed', D,
+     [('os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK', 'os.O_RDONLY | os.O_NONBLOCK')],
+     'static_symlink_state'),
+    ('static-duplicate-accepted', D,
+     [('        if parts[0] in result:\n            return {}, "collision"\n', '')],
+     'static_duplicate_state'),
+    ('static-writable-accepted', D,
+     [('                or info.st_mode & 0o022\n', '')],
+     'static_writable_state'),
+    ('extension-is-a-holder', D,
+     [('        elif devices:\n', '        elif devices or extension:\n')],
+     'extension_environment_state'),
+    ('unguarded-from-checkout', D,
+     [('                    guarded = domain["name"] in installed["mapping"]\n',
+       '                    guarded = gpu is not None\n')],
+     'managed_only_not_unguarded'),
+    ('identity-unchecked', I,
+     [('    require_identity(result.stdout, name)\n', '')],
+     'identity_other_name_unknown'),
+    ('rung-failure-hides-holder', T,
+     [('            if holders["state"] != "outside-policy":\n                raise\n', '            raise\n')],
+     'rung_permission_section_kept'),
+    ('rung-error-dropped', T,
+     [('            found.append(dict(section["rung_error"]))\n', '            pass\n')],
+     'rung_permission_read_failure_kept'),
+    ('claim-needs-a-rung-first', R,
+     [('    if isinstance(trust, dict) and trust.get("ladder_state") == "outside-policy":\n'
+       '        return {**unknown, "ladder": "outside-policy"}\n'
+       '    if not isinstance(trust, dict) or not isinstance(trust.get("claimed"), bool):\n'
+       '        return {**unknown, "ladder": "unverified"}\n',
+       '    if not isinstance(trust, dict) or not isinstance(trust.get("claimed"), bool):\n'
+       '        return {**unknown, "ladder": "unverified"}\n'
+       '    if trust.get("ladder_state") == "outside-policy":\n'
+       '        return {**unknown, "ladder": "outside-policy"}\n')],
+     'rung_permission_claim'),
 ]
 cmd = ['python3', 'tests/run.py']
 with tempfile.TemporaryDirectory() as tmp:

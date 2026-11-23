@@ -5,6 +5,8 @@ this tells you it is off and short 1.9 GB, which is the difference between a
 panel and a list.
 """
 
+import errno
+import os
 import re
 import stat
 from pathlib import Path
@@ -207,59 +209,154 @@ def observe_managed_gpu_policies(
     return result, "ok"
 
 
+STATIC_POLICY_MAX_BYTES = 65536
+HOOK_PROFILE_RE = re.compile(r"^[a-z]+$")
+
+
+def observe_static_gpu_policy(path, *, expected_uid=ROOT_POLICY_UID):
+    """Read the installed static policy the qemu hook reads, as it reads it.
+
+    `/etc/gpu-handoff/domains`, not the checkout's gpu_domain_profiles: the
+    two differ between a checkout update and a host apply. One line is
+    `<domain> <profile>`; blank lines and `#` lines are skipped; anything
+    else, a duplicate name, or an unsafe file is refused like the hook does.
+    """
+    target = Path(path)
+    try:
+        descriptor = os.open(target, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return {}, "missing"
+    except OSError as exc:
+        return {}, "unsafe" if exc.errno == errno.ELOOP else "unavailable"
+    try:
+        with os.fdopen(descriptor, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_uid != expected_uid
+                or info.st_mode & 0o022
+                or info.st_size > STATIC_POLICY_MAX_BYTES
+            ):
+                return {}, "unsafe"
+            raw = handle.read(STATIC_POLICY_MAX_BYTES + 1)
+    except OSError:
+        return {}, "unavailable"
+    if len(raw) > STATIC_POLICY_MAX_BYTES:
+        return {}, "unsafe"
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return {}, "unsafe"
+    result = {}
+    for line in content.splitlines():
+        parts = line.split()
+        if not parts or parts[0].startswith("#"):
+            continue
+        if (
+            len(parts) != 2
+            or GPU_POLICY_NAME_RE.fullmatch(parts[0]) is None
+            or HOOK_PROFILE_RE.fullmatch(parts[1]) is None
+        ):
+            return {}, "unsafe"
+        if parts[0] in result:
+            return {}, "collision"
+        result[parts[0]] = parts[1]
+    return result, "ok"
+
+
+def installed_gpu_policy(ctx):
+    """Both policy surfaces the qemu hook reads, validated together.
+
+    `state` is "ok" only when the static file and `domains.d` are both safe
+    and readable and no domain is named by both (the hook refuses every
+    prepare then). `mapping` is their union, empty unless the state is ok.
+    """
+    cache = getattr(ctx, "cache", None)
+    if cache is not None and "gpu.installed_policy" in cache:
+        return cache["gpu.installed_policy"]
+    owner = getattr(ctx, "policy_owner_uid", ROOT_POLICY_UID)
+    static, static_state = observe_static_gpu_policy(
+        ctx.config.gpu_handoff_domains_file, expected_uid=owner)
+    managed, managed_state = observe_managed_gpu_policies(
+        ctx.config.gpu_handoff_managed_dir,
+        ctx.config.var("gpu_trust_levels", {}) or {},
+        expected_uid=owner,
+    )
+    if static_state != "ok":
+        state = "static policy %s" % static_state
+    elif managed_state != "ok":
+        state = "managed policy %s" % managed_state
+    elif set(static) & set(managed):
+        state = "policy collision"
+    else:
+        state = "ok"
+    policy = {
+        "state": state,
+        "static": static if state == "ok" else {},
+        "managed": managed if state == "ok" else {},
+        "mapping": {**static, **managed} if state == "ok" else {},
+    }
+    if cache is not None:
+        cache["gpu.installed_policy"] = policy
+    return policy
+
+
 def observe_pci_holders(ctx):
-    """Which live domains hold a passthrough device outside both GPU policies.
+    """Which live domains hold a passthrough device outside the GPU policy.
 
     The qemu hook decides only at prepare. A device attached to a running
     domain never reaches it, so the rung it recorded may be cleaner than the
     GPU's real history. This reads every domain's live XML (`virsh dumpxml`
     without `--inactive`, so attached devices are included) and compares
-    each holder with the two surfaces the hook reads: the static
-    gpu_domain_profiles and the root-owned domains.d policy.
+    each holder with the installed policy the hook reads: the static file
+    and the root-owned domains.d, never the checkout.
 
     `state` is "recorded" only when every domain was read and no holder is
-    outside policy. "outside-policy" names holders the hook would refuse;
-    only a host reboot resets the GPU then. "unverified" means a domain, the
-    domain list or a needed policy surface could not be read: unknown, never
-    clean.
+    outside policy. "outside-policy" names domains holding a PCI hostdev or
+    a hostdev interface the hook would refuse; only a host reboot resets the
+    GPU then. "unverified" means a domain, the domain list or the installed
+    policy could not be read, or an unmapped domain carries a QEMU
+    command-line extension whose device effects are unknown: unknown, never
+    clean. `reasons` says why each unverified domain is unknown.
     """
-    result = {"state": "recorded", "outside_policy": [], "unverified": []}
+    result = {"state": "recorded", "outside_policy": [], "unverified": [], "reasons": {}}
+
+    def unknown(name, reason):
+        result["unverified"].append(name)
+        result["reasons"][name] = reason
+
     try:
         listed = all_domains(ctx)
     except HyperlabError:
         result["state"] = "unverified"
         return result
 
-    profiles = ctx.config.var("gpu_domain_profiles", {}) or {}
-    managed = None
+    policy = None
     for domain in listed:
         name = domain["name"]
-        passthrough = domain.get("passthrough")
-        if passthrough is None:
-            result["unverified"].append(name)
+        devices = domain.get("pci_devices")
+        extension = domain.get("qemu_extension")
+        if devices is None or extension is None:
+            unknown(name, "its live XML could not be read")
             continue
-        if not passthrough or domain.get("state") == "shut off":
+        if not devices and not extension:
+            continue
+        if domain.get("state") == "shut off":
             continue
         if domain.get("state") == "unknown":
-            result["unverified"].append(name)
+            unknown(name, "its state could not be read")
             continue
-        if name in profiles:
+        if policy is None:
+            policy = installed_gpu_policy(ctx)
+        if policy["state"] != "ok":
+            unknown(name, "the installed GPU policy is unusable (%s)" % policy["state"])
+        elif name in policy["mapping"]:
             continue
-        if managed is None:
-            policies, surface = observe_managed_gpu_policies(
-                ctx.config.gpu_handoff_managed_dir,
-                ctx.config.var("gpu_trust_levels", {}) or {},
-            )
-            # The hook refuses every prepare while both surfaces name one
-            # domain: a collision maps nothing.
-            if surface == "ok" and set(policies) & set(profiles):
-                surface = "collision"
-            managed = policies if surface == "ok" else {}
-            managed_ok = surface == "ok"
-        if not managed_ok:
-            result["unverified"].append(name)
-        elif name not in managed:
+        elif devices:
             result["outside_policy"].append(name)
+        else:
+            unknown(name, "it carries a QEMU command-line extension outside the GPU "
+                          "policy, whose devices cannot be read")
 
     if result["outside_policy"]:
         result["state"] = "outside-policy"
@@ -287,6 +384,7 @@ class DomainProvider(Provider):
             observe_managed_gpu_policies(
                 ctx.config.gpu_handoff_managed_dir,
                 trust_levels,
+                expected_uid=getattr(ctx, "policy_owner_uid", ROOT_POLICY_UID),
             )
         )
 
@@ -441,14 +539,31 @@ class DomainProvider(Provider):
                         ),
                     })
 
-            elif domain["vfio"] and gpu is None:
-                found.append({
-                    "id": "domains.unguarded_vfio",
-                    "severity": "error",
-                    "message": "%s owns a hostdev but is absent from "
-                               "gpu_domain_profiles: the trust hook cannot guard it"
-                               % domain["name"],
-                })
+            elif domain["vfio"]:
+                # Effective membership is what the hook reads: the installed
+                # static file and domains.d. Only when that cannot be read
+                # does the checkout's gpu_domain_profiles stand in.
+                installed = installed_gpu_policy(ctx)
+                if installed["state"] == "ok":
+                    guarded = domain["name"] in installed["mapping"]
+                else:
+                    guarded = gpu is not None
+                if not guarded:
+                    found.append({
+                        "id": "domains.unguarded_vfio",
+                        "severity": "error",
+                        "message": "%s owns a hostdev but is absent from the installed "
+                                   "GPU policy (the static file and domains.d): the trust "
+                                   "hook cannot guard it" % domain["name"],
+                    })
+                elif domain["name"] in installed["managed"]:
+                    found.append({
+                        "id": "domains.gpu_policy_without_product_metadata",
+                        "severity": "warn",
+                        "message": "%s is named by a root-owned managed GPU policy in "
+                                   "domains.d but carries no product Machine metadata"
+                                   % domain["name"],
+                    })
             if not domain.get("managed"):
                 continue
             if domain.get("trust_source") is None and network is not None:

@@ -15,18 +15,35 @@ HL_NAMESPACES = (HL, HL_LEGACY)
 QEMU = "http://libvirt.org/schemas/domain/qemu/1.0"
 
 
-def _passthrough(root):
-    """Whatever the prepare preflight refuses for a domain outside GPU policy.
-
-    A PCI hostdev, a hostdev interface or any QEMU command-line extension,
-    found anywhere in the document, by structure and namespace URI.
-    """
+def _pci_devices(root):
+    """A PCI hostdev or a hostdev interface anywhere in the document: a
+    device the domain demonstrably holds while it runs."""
     return any(
         node.tag == "hostdev" and node.get("type") == "pci"
         or node.tag == "interface" and node.get("type") == "hostdev"
-        or node.tag.startswith("{%s}" % QEMU)
         for node in root.iter()
     )
+
+
+def _qemu_extension(root):
+    """Any element in the QEMU namespace, by URI. The prepare preflight
+    refuses it outside policy; what it adds to a running domain is unknown."""
+    return any(node.tag.startswith("{%s}" % QEMU) for node in root.iter())
+
+
+def require_identity(xml_text, name):
+    """Refuse a document that is not this one domain's definition.
+
+    A `domain` root with exactly one direct `<name>` equal to the domain
+    asked for; anything else could clear one domain with another's devices.
+    """
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise Unavailable("domain XML did not parse: %s" % exc) from exc
+    names = root.findall("./name")
+    if root.tag != "domain" or len(names) != 1 or names[0].text != name:
+        raise Unavailable("dumpxml for %s did not describe that one domain" % name)
 
 
 def _pci_address(node):
@@ -105,7 +122,8 @@ def parse_domain(xml_text):
         "interface_sources": sources,
         "hostdevs": hostdevs,
         "vfio": bool(hostdevs),
-        "passthrough": _passthrough(root),
+        "pci_devices": _pci_devices(root),
+        "qemu_extension": _qemu_extension(root),
         "managed": metadata is not None,
         "product_managed": (
             None

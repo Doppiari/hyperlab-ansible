@@ -339,10 +339,11 @@ def trust_claim(document):
     """
     unknown = {"known": False, "claimed": False, "identity": None, "level": None}
     trust = document.get("trust")
+    # A confirmed outside holder wins even when the rung itself is unreadable.
+    if isinstance(trust, dict) and trust.get("ladder_state") == "outside-policy":
+        return {**unknown, "ladder": "outside-policy"}
     if not isinstance(trust, dict) or not isinstance(trust.get("claimed"), bool):
         return {**unknown, "ladder": "unverified"}
-    if trust.get("ladder_state") == "outside-policy":
-        return {**unknown, "ladder": "outside-policy"}
     if trust.get("ladder_state") != "recorded":
         return {**unknown, "ladder": "unverified"}
     if not trust["claimed"]:

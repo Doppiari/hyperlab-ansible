@@ -1,6 +1,7 @@
 """A whole fake host in a temp directory: repo, sysfs, proc, run state, virsh."""
 
 import atexit
+import os
 import tempfile
 import shutil
 from pathlib import Path
@@ -109,7 +110,8 @@ def managed_metadata(
 
 
 def build(domains=None, trust=None, memtotal_kb=7948000, drivers=None,
-          networks_active=None, profile_report=True, images=None):
+          networks_active=None, profile_report=True, images=None,
+          installed_static=None, installed_managed=None):
     root = Path(tempfile.mkdtemp(prefix="hyperlab-test-"))
     atexit.register(shutil.rmtree, root, ignore_errors=True)
     repo = root / "repo"
@@ -151,6 +153,24 @@ def build(domains=None, trust=None, memtotal_kb=7948000, drivers=None,
             target.mkdir(parents=True, exist_ok=True)
             (entry / "driver").symlink_to(target)
 
+    # The installed GPU policy the qemu hook reads, never this host's /etc.
+    # By default it matches the repository's gpu_domain_profiles, as after an
+    # apply. The fixture's owner stands in for root.
+    policy_root = root / "gpu-handoff"
+    policy_root.mkdir()
+    static_file = policy_root / "domains"
+    static = {"win11clean-valley": "clean"} if installed_static is None else installed_static
+    static_file.write_text("# exact-libvirt-domain handoff-profile\n"
+                           + "".join("%s %s\n" % pair for pair in static.items()))
+    static_file.chmod(0o644)
+    managed_dir = policy_root / "domains.d"
+    managed_dir.mkdir()
+    managed_dir.chmod(0o755)
+    for name, profile in (installed_managed or {}).items():
+        entry = managed_dir / ("%s.conf" % name)
+        entry.write_text("%s %s\n" % (name, profile))
+        entry.chmod(0o644)
+
     domains = domains if domains is not None else []
     runner = RecordedRunner()
     virsh = ["/usr/bin/virsh", "-c", "qemu:///system", "-q"]
@@ -177,5 +197,9 @@ def build(domains=None, trust=None, memtotal_kb=7948000, drivers=None,
         "gpu_handoff_state": str(trust_file),
         "proc_meminfo": str(meminfo),
         "sysfs_pci": str(sysfs),
+        "gpu_handoff_domains_file": str(static_file),
+        "gpu_handoff_managed_dir": str(managed_dir),
     })
-    return Context(config, runner)
+    ctx = Context(config, runner)
+    ctx.policy_owner_uid = os.getuid()
+    return ctx
