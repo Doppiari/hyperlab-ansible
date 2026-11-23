@@ -62,6 +62,10 @@ QtObject {
     }
 
     property bool workspaceOpen: false
+
+    // Whether the Create form is up inside Machines, shown or behind
+    // another destination, as the view that owns the form reports it.
+    property bool createFormOpen: false
     property string workspaceView: "machines"
     property string subpage: "inventory"
 

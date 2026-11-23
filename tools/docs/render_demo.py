@@ -31,6 +31,8 @@ import re
 import shutil
 import sys
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests"))
 sys.path.insert(0, str(ROOT / "tools/hyperlabctl"))
@@ -38,6 +40,7 @@ sys.path.insert(0, str(ROOT / "tools/hyperlabctl"))
 import host_quickshell_runtime_contract as runtime  # noqa: E402
 
 FIXTURE = ROOT / "tests/fixtures/documentation-demo.json"
+NETWORKS = ROOT / "group_vars/all/networks.yml"
 WALLPAPERS = ROOT / "roles/host_desktop_common/files/wallpapers"
 # Output name -> device pixel ratio over the 1920x1080 layout.
 SIZES = {"1920x1080": 1, "3840x2160": 2}
@@ -90,6 +93,8 @@ def load_fixture(path: Path) -> dict:
     refuse(sum(row["lifecycle"] == "disposable" for row in machines) == 1,
            "exactly one Machine must be disposable")
     refuse(document["gpu_owner"] in running, "the GPU owner must be a running Machine")
+    owner_domain = next(row["domain"] for row in machines if row["name"] == document["gpu_owner"])
+    refuse(owner_domain in gpu_ladder(), "the GPU owner's domain has no GPU handoff level")
     refuse(document["selected"] in names, "the selected Machine is not in the fixture")
     focus = document["focus"]
     refuse(isinstance(focus, list) and [entry.get("id") for entry in focus
@@ -103,6 +108,29 @@ def load_fixture(path: Path) -> dict:
         else:
             refuse(set(entry) == {"id"}, f"focus {entry['id']} names no Machine")
     return document
+
+
+def gpu_ladder() -> dict[str, int]:
+    """The configured GPU handoff levels (`gpu_trust_levels`)."""
+    levels = yaml.safe_load(NETWORKS.read_text(encoding="utf-8")).get("gpu_trust_levels")
+    if not isinstance(levels, dict) or not all(
+            isinstance(name, str) and isinstance(level, int) and not isinstance(level, bool)
+            for name, level in levels.items()):
+        raise FixtureError("networks.yml has no readable gpu_trust_levels")
+    return levels
+
+
+def boot_claim(fixture: dict) -> dict:
+    """The boot claim the owner leaves: its domain at that domain's level.
+
+    A handoff to a lower-ranked domain lowers the recorded level
+    (docs/gpu-handoff-policy.md), so a demo with a Dev owner cannot show a
+    Clean claim.
+    """
+    domain = next(row["domain"] for row in fixture["machines"] if row["name"] == fixture["gpu_owner"])
+    level = gpu_ladder()[domain]
+    return {"text": f"{domain} {level}", "tooltip": f"GPU claimed for {domain}", "class": "warn",
+            "known": True, "claimed": True, "identity": domain, "level": level}
 
 
 def _no_duplicates(items: list[tuple[str, object]]) -> dict:
@@ -183,7 +211,7 @@ IPC = """ShellState { id: sharedState
 
 
 def harness(width: int, height: int, inventory: list[dict], body: str,
-            gpu: dict | None = None) -> tuple[str, list[str]]:
+            gpu: dict | None = None, trust: dict | None = None) -> tuple[str, list[str]]:
     """The runtime harness with the real ShellIpc beside the real state."""
     root = (runtime.QML / "shell.qml").read_text(encoding="utf-8")
     bindings = []
@@ -192,7 +220,7 @@ def harness(width: int, height: int, inventory: list[dict], body: str,
         if match is None:
             raise SystemExit(f"shell.qml lost its {name} binding")
         bindings.append(f"        {name}: {match[1].strip()}")
-    source, messages = runtime.scenario_source(width, height, inventory, body, gpu=gpu)
+    source, messages = runtime.scenario_source(width, height, inventory, body, gpu=gpu, trust=trust)
     anchor = "ShellState { id: sharedState }"
     if source.count(anchor) != 1:
         raise SystemExit("the runtime harness lost its ShellState declaration")
@@ -205,6 +233,7 @@ SCENE = r"""
             const inventory = @@ROWS@@;
             const networks = @@NETWORKS@@;
             const focusAnswers = @@FOCUS@@;
+            const ladder = @@LADDER@@;
             const out = @@OUT@@;
             const suffix = @@SUFFIX@@;
             const navigate = ipcTarget("navigate");
@@ -223,6 +252,16 @@ SCENE = r"""
             sharedMachineActions.panicAnswer = {phase: "panic", engaged: false, engaged_at: null,
                                                 domains: [], failures: [], notes: []};
             sharedMachineActions.requestPanicStatus();
+            // The owner and the boot claim are shown together: the claim is
+            // the owner's domain at its configured level, never another.
+            const ownerDomain = inventory.filter(row => row.name === fixture.gpu_owner)[0].provenance;
+            check(sharedState.gpuOwnership.known && sharedState.gpuOwnership.owner === fixture.gpu_owner,
+                  "the demo GPU owner was not accepted");
+            check(sharedState.trustClaimState === "ok" && sharedState.trustClaim.claimed
+                  && sharedState.trustClaim.identity === ownerDomain
+                  && sharedState.trustClaim.level === ladder[ownerDomain],
+                  "the demo boot claim is not the GPU owner's domain at its configured level");
+            if (window.firstFailure >= 0) { Qt.exit(@@BASE@@ + window.firstFailure); return; }
             function answerBridges() {
                 if (sharedState.networksInFlight)
                     sharedState.finishNetworks(sharedState.networksFlightGeneration,
@@ -265,7 +304,7 @@ SCENE = r"""
             steps.push({name: "machine-" + fixture.selected, prepare: () => {
                 inventoryWith("");
                 focus(fixture.focus[0]);
-                check(navigate.machine(fixture.selected) === fixture.selected,
+                check(navigate.machine(fixture.selected) === "selected " + fixture.selected,
                       "the fixture Machine could not be selected");
             }});
             for (const route of navigate.routes().split("\n"))
@@ -320,6 +359,7 @@ def scene(fixture: dict, out: Path, size: str, wallpaper: Path) -> tuple[str, li
             .replace("@@ROWS@@", json.dumps(inventory))
             .replace("@@NETWORKS@@", json.dumps(seal.network_rows()))
             .replace("@@FOCUS@@", json.dumps(answers))
+            .replace("@@LADDER@@", json.dumps(gpu_ladder()))
             .replace("@@OUT@@", json.dumps(str(out)))
             .replace("@@SUFFIX@@", json.dumps(size))
             .replace("@@PLAN@@", json.dumps(create.real_plan()))
@@ -330,7 +370,8 @@ def scene(fixture: dict, out: Path, size: str, wallpaper: Path) -> tuple[str, li
     owner = fixture["gpu_owner"]
     source, messages = harness(*LAYOUT, inventory, body,
                                gpu={"text": owner, "class": "", "known": True,
-                                    "owner": owner, "bound": True})
+                                    "owner": owner, "bound": True},
+                               trust=boot_claim(fixture))
     ground = "Rectangle { anchors.fill: parent; color: sharedTheme.base }"
     if source.count(ground) != 1:
         raise SystemExit("the runtime harness lost its ground plate")

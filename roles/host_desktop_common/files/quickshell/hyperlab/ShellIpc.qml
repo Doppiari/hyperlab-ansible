@@ -15,6 +15,7 @@
 //   qs -c hyperlab ipc call session locking
 //   qs -c hyperlab ipc call navigate open controls-audio
 //   qs -c hyperlab ipc call navigate machine dev-desk
+//   qs -c hyperlab ipc call navigate openOn panel HDMI-A-1
 //
 // Compositor keybindings use these so the host shortcuts and the pointer
 // reach exactly the same surfaces, on Hyprland and on Sway alike.
@@ -83,10 +84,15 @@ Scope {
             ipc.shellSurfaces.openCreateForm();
         } else {
             ipc.shellSurfaces.openWorkspacePage(entry.workspace, entry.page, false);
-
-            if (entry.workspace === "machines")
-                ipc.shellSurfaces.closeCreateForm();
         }
+    }
+
+    // Machines and a selected Machine are shown only once the Create form
+    // is down. A creation in flight keeps its form: the caller answers
+    // "busy" and nothing else changes.
+    function formDown() {
+        ipc.shellSurfaces.closeCreateForm();
+        return !ipc.shellSurfaces.createFormOpen;
     }
 
     function routeReached(entry) {
@@ -104,7 +110,9 @@ Scope {
 
         return ipc.shellSurfaces.workspaceOpen
             && ipc.shellSurfaces.workspaceView === entry.workspace
-            && ipc.shellSurfaces.subpage === entry.page;
+            && ipc.shellSurfaces.subpage === entry.page
+            && (entry.workspace !== "machines"
+                || ipc.shellSurfaces.createFormOpen === (entry.form !== undefined));
     }
 
     Timer {
@@ -223,8 +231,9 @@ Scope {
         }
 
         // Opens one section. Answers the route id when the coordinator shows
-        // it, "unavailable" for a page that is switched off and "refused"
-        // for anything else; a refusal changes nothing.
+        // it, "unavailable" for a page that is switched off, "busy" while a
+        // creation keeps the Create form over Machines and "refused" for
+        // anything else; "busy" and a refusal change nothing.
         function open(route: string): string {
             const name = String(route);
 
@@ -236,38 +245,71 @@ Scope {
             if (!ipc.routeAvailable(entry))
                 return "unavailable";
 
+            if (entry.workspace === "machines" && entry.form === undefined
+                && !ipc.formDown())
+                return "busy";
+
             ipc.enterRoute(entry);
             return ipc.routeReached(entry) ? name : "refused";
         }
 
+        // Opens the launcher or the system panel on a named live output, so
+        // a caller can put a transient back where it was.
+        function openOn(route: string, output: string): string {
+            const name = String(route);
+            const screen = String(output);
+
+            if (!Object.prototype.hasOwnProperty.call(ipc.navigationRoutes, name))
+                return "refused";
+
+            const entry = ipc.navigationRoutes[name];
+
+            if ((entry.launcher === undefined && entry.panel === undefined)
+                || ipc.shellSurfaces.liveOutputs.indexOf(screen) < 0)
+                return "refused";
+
+            if (entry.panel !== undefined)
+                ipc.shellSurfaces.openSystemPanel(screen);
+            else
+                ipc.shellSurfaces.openLauncher(screen, entry.launcher);
+
+            const origin = entry.panel !== undefined
+                ? ipc.shellSurfaces.panelOrigin : ipc.shellSurfaces.launcherOrigin;
+
+            return ipc.routeReached(entry) && origin === screen ? name : "refused";
+        }
+
         // Selects a Machine of the current inventory by its exact name and
-        // shows it in Machines. Selecting is not acting: every operation
-        // still goes through the Machine pane and its confirmation.
+        // shows it in Machines. Answers "selected NAME", which no refusal
+        // can look like. Selecting is not acting: every operation still
+        // goes through the Machine pane and its confirmation.
         function machine(name: string): string {
             const wanted = String(name);
 
             if (ipc.shellState.machineById(wanted) === null)
                 return "refused";
 
-            ipc.shellSurfaces.closeCreateForm();
+            if (!ipc.formDown())
+                return "busy";
 
             if (!ipc.shellSurfaces.selectMachine(
                     wanted, ipc.shellState.machinesGeneration, false))
                 return "refused";
 
-            return wanted;
+            return "selected " + wanted;
         }
 
         // Where the shell is, so a caller can put it back: the open
-        // workspace route (empty when closed), the open transient route,
-        // the selected Machine and whether the rail is shown.
+        // workspace route (empty when closed, "create" for the Create form),
+        // whether the Create form is up at all, even behind another
+        // destination, the open transient route and its output, the
+        // selected Machine and whether the rail is shown.
         function current(): string {
             const names = Object.keys(ipc.navigationRoutes);
             const workspace = names.filter(name => {
                 const entry = ipc.navigationRoutes[name];
 
-                return entry.workspace !== undefined && entry.form === undefined
-                    && ipc.routeReached(entry);
+                return entry.workspace !== undefined && ipc.routeReached(entry);
             });
             const transient = names.filter(name => {
                 const entry = ipc.navigationRoutes[name];
@@ -276,9 +318,15 @@ Scope {
                     && ipc.routeReached(entry);
             });
 
+            const output = transient.length !== 1 ? ""
+                : (ipc.navigationRoutes[transient[0]].panel !== undefined
+                   ? ipc.shellSurfaces.panelOrigin : ipc.shellSurfaces.launcherOrigin);
+
             return JSON.stringify({
                 "workspace": workspace.length === 1 ? workspace[0] : "",
+                "form": ipc.shellSurfaces.createFormOpen ? "create" : "",
                 "transient": transient.length === 1 ? transient[0] : "",
+                "output": output,
                 "machine": ipc.shellSurfaces.workspaceOpen
                     ? ipc.shellSurfaces.selectedMachineId : "",
                 "rail": ipc.shellSurfaces.topRailVisible ? "visible" : "hidden"

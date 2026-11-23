@@ -7,9 +7,12 @@
 # On a live session the script walks the shell's `navigate` IPC routes and
 # takes one grim capture of the focused output per surface into DIR:
 # shell-<route>.png, and shell-machine-<NAME>.png with --machine. It works on
-# an empty compositor slot, shows the rail while capturing and puts the
-# view, the selected Machine, the open transient, the rail and the slot back
-# at the end, on failure too. A route whose page is switched off is skipped.
+# an empty compositor slot, checks before every capture that the slot and
+# the output are still the ones it chose, shows the rail while capturing
+# and puts the view, the selected Machine, the open transient on its own
+# output, the rail and the slot back at the end, on failure too. A route
+# whose page is switched off is skipped. It refuses to start while the
+# Create form is up, whose draft the walk would discard.
 #
 # Navigation only: every shell call is a `navigate` or `bar` route, so
 # nothing is started, stopped, created or changed. The shell has no
@@ -20,7 +23,8 @@
 # tests/fixtures/documentation-demo.json, offscreen and without a session
 # (tools/docs/render_demo.py), as demo-*.png at 1920x1080 and 3840x2160.
 #
-# DIR must be new or empty, a real directory and outside the repository.
+# DIR must be new or empty, a real directory (no symlink anywhere in its
+# last component) and outside the repository.
 
 set -u
 
@@ -34,6 +38,7 @@ readonly transients=" launcher clipboard keys panel "
 saved=0
 saved_workspace=""
 saved_transient=""
+saved_output=""
 saved_machine=""
 saved_rail=""
 saved_slot=""
@@ -50,16 +55,25 @@ fail() {
     return 1
 }
 
+inside_repo() {
+    local path=$1
+
+    [[ ${path} == "${repo}" || ${path} == "${repo}"/* ]]
+}
+
 # Prints the resolved output directory after making sure it is new or empty,
 # not a symlink and not inside the repository. Nothing is created before the
-# location is accepted.
+# location is accepted, and the created or found directory is resolved again.
 prepare_output() {
-    local requested=$1 parent name resolved
-    local -a entries
+    local requested=$1 parent name resolved first final
 
     [[ -n ${requested} ]] || { fail "the output directory is empty"; return 1; }
-    requested=${requested%/}
-    [[ -n ${requested} ]] || { fail "refusing to write captures into /"; return 1; }
+
+    while [[ ${requested} == */ && ${requested} != / ]]; do
+        requested=${requested%/}
+    done
+
+    [[ ${requested} != / ]] || { fail "refusing to write captures into /"; return 1; }
     [[ ! -L ${requested} ]] || { fail "${requested} is a symlink"; return 1; }
 
     name="$(basename -- "${requested}")" || return 1
@@ -69,21 +83,29 @@ prepare_output() {
         { fail "the parent of ${requested} does not exist"; return 1; }
     resolved="${parent%/}/${name}"
 
-    if [[ ${resolved} == "${repo}" || ${resolved} == "${repo}"/* ]]; then
+    if inside_repo "${resolved}"; then
         fail "refusing to write captures inside the repository"
         return 1
     fi
 
     if [[ -e ${resolved} ]]; then
         [[ -d ${resolved} ]] || { fail "${requested} is not a directory"; return 1; }
-        mapfile -t entries < <(find "${resolved}" -mindepth 1 -maxdepth 1 -printf '.\n') ||
+        first="$(find "${resolved}" -mindepth 1 -maxdepth 1 -print -quit)" ||
             { fail "${requested} cannot be listed"; return 1; }
-        (( ${#entries[@]} == 0 )) || { fail "${requested} is not empty"; return 1; }
+        [[ -z ${first} ]] || { fail "${requested} is not empty"; return 1; }
     else
         mkdir -- "${resolved}" || { fail "${requested} cannot be created"; return 1; }
     fi
 
-    printf '%s\n' "${resolved}"
+    final="$(cd -- "${resolved}" && pwd -P)" ||
+        { fail "${requested} cannot be resolved"; return 1; }
+
+    if [[ ${final} != "${resolved}" ]] || inside_repo "${final}"; then
+        fail "${requested} resolves somewhere else"
+        return 1
+    fi
+
+    printf '%s\n' "${final}"
 }
 
 require_command() {
@@ -106,7 +128,8 @@ navigate() {
     shell_call navigate "$@"
 }
 
-# Prints "WORKSPACE\nTRANSIENT\nMACHINE\nRAIL" from `navigate current`.
+# Prints WORKSPACE, FORM, TRANSIENT, OUTPUT, MACHINE and RAIL, one per line
+# ("-" for none), from `navigate current`.
 read_current() {
     local document
 
@@ -114,21 +137,26 @@ read_current() {
     python3 -I -c '
 import json, re, sys
 state = json.loads(sys.argv[1])
-if not isinstance(state, dict) or set(state) != {"workspace", "transient", "machine", "rail"}:
+keys = ("workspace", "form", "transient", "output", "machine", "rail")
+if not isinstance(state, dict) or set(state) != set(keys):
+    sys.exit(1)
+if not all(isinstance(state[key], str) for key in keys):
     sys.exit(1)
 for key in ("workspace", "transient"):
     if not re.fullmatch(r"(?:[a-z][a-z-]{1,30})?", state[key]):
         sys.exit(1)
-if not re.fullmatch(r"(?:[A-Za-z0-9][A-Za-z0-9_.-]{0,62})?", state["machine"]):
+if (state["form"] not in ("", "create")
+        or not re.fullmatch(r"(?:[A-Za-z0-9._-]{1,64})?", state["output"])
+        or not re.fullmatch(r"(?:[A-Za-z0-9][A-Za-z0-9_.-]{0,62})?", state["machine"])
+        or state["rail"] not in ("visible", "hidden")
+        or bool(state["transient"]) != bool(state["output"])):
     sys.exit(1)
-if state["rail"] not in ("visible", "hidden"):
-    sys.exit(1)
-print("\n".join(state[key] or "-" for key in ("workspace", "transient", "machine", "rail")))
+print("\n".join(state[key] or "-" for key in keys))
 ' "${document}" || { fail "the shell reported an unreadable state"; return 1; }
 }
 
-# Prints "ACTIVE\nEMPTY\nOUTPUT": the active slot, the highest empty slot and
-# the focused output, from the compositor adapter.
+# Prints ACTIVE, OUTPUT and EMPTY ("-" for none): the active slot, the
+# focused output and the highest empty slot, from the compositor adapter.
 read_slots() {
     local document
 
@@ -144,16 +172,29 @@ if (not isinstance(active, int) or isinstance(active, bool) or not 1 <= active <
         or not isinstance(output, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", output)):
     sys.exit(1)
 empty = [slot for slot in range(9, 0, -1) if slot not in occupied and slot != active]
-if not empty:
-    sys.exit(2)
-print(active, empty[0], output, sep="\n")
-' "${document}" || { fail "no readable active slot, focused output or empty slot"; return 1; }
+print(active, output, empty[0] if empty else "-", sep="\n")
+' "${document}" || { fail "the compositor reported no readable active slot or output"; return 1; }
+}
+
+# Succeeds only while the compositor is on SLOT and focuses OUTPUT.
+on_slot() {
+    local slot=$1 output=$2
+    local -a slots
+
+    mapfile -t slots < <(read_slots)
+    (( ${#slots[@]} == 3 )) || { fail "the compositor reported an unreadable state"; return 1; }
+
+    if [[ ${slots[0]} != "${slot}" || ${slots[1]} != "${output}" ]]; then
+        fail "the compositor is on slot ${slots[0]} of ${slots[1]}, not slot ${slot} of ${output}"
+        return 1
+    fi
 }
 
 # Puts back what the walk changed. Every step is tried; any failure is
 # reported and makes the whole run fail.
 restore() {
-    local status=0
+    local status=0 active
+    local -a slots
 
     (( saved )) || return 0
     saved=0
@@ -161,6 +202,10 @@ restore() {
     navigate open desktop >/dev/null || status=1
     "${adapter}" workspace-select "${saved_slot}" >/dev/null ||
         { fail "could not return to slot ${saved_slot}"; status=1; }
+    mapfile -t slots < <(read_slots)
+    active=${slots[0]:-}
+    [[ ${active} == "${saved_slot}" ]] ||
+        { fail "the compositor did not return to slot ${saved_slot}"; status=1; }
 
     if [[ ${saved_workspace} != - ]]; then
         [[ "$(navigate open "${saved_workspace}")" == "${saved_workspace}" ]] ||
@@ -168,13 +213,13 @@ restore() {
     fi
 
     if [[ ${saved_machine} != - ]]; then
-        [[ "$(navigate machine "${saved_machine}")" == "${saved_machine}" ]] ||
+        [[ "$(navigate machine "${saved_machine}")" == "selected ${saved_machine}" ]] ||
             { fail "could not reselect ${saved_machine}"; status=1; }
     fi
 
     if [[ ${saved_transient} != - ]]; then
-        [[ "$(navigate open "${saved_transient}")" == "${saved_transient}" ]] ||
-            { fail "could not reopen ${saved_transient}"; status=1; }
+        [[ "$(navigate openOn "${saved_transient}" "${saved_output}")" == "${saved_transient}" ]] ||
+            { fail "could not reopen ${saved_transient} on ${saved_output}"; status=1; }
     fi
 
     if [[ ${saved_rail} == hidden ]]; then
@@ -189,8 +234,9 @@ restore() {
 }
 
 capture() {
-    local output=$1 file=$2
+    local slot=$1 output=$2 file=$3
 
+    on_slot "${slot}" "${output}" || return 1
     # grim waits forever on a locked Hyprland session.
     timeout 20 grim -o "${output}" "${file}" ||
         { fail "grim could not capture ${file##*/}"; return 1; }
@@ -200,14 +246,14 @@ capture() {
 
 live() {
     local directory=$1 settle=$2 machine=$3
-    local route answer active empty output reply
+    local route reply active empty output
     local -a routes current slots
 
     for route in qs grim timeout python3 "${adapter}"; do
         require_command "${route}" || return 1
     done
 
-    mapfile -t routes < <(navigate routes) || return 1
+    mapfile -t routes < <(navigate routes)
     (( ${#routes[@]} > 0 )) || { fail "the shell lists no navigation routes"; return 1; }
 
     for route in "${routes[@]}"; do
@@ -215,19 +261,27 @@ live() {
             { fail "the shell listed an invalid route"; return 1; }
     done
 
-    mapfile -t current < <(read_current) || return 1
-    (( ${#current[@]} == 4 )) || { fail "the shell reported an unreadable state"; return 1; }
-    mapfile -t slots < <(read_slots) || return 1
+    mapfile -t current < <(read_current)
+    (( ${#current[@]} == 6 )) || { fail "the shell reported an unreadable state"; return 1; }
+
+    if [[ ${current[1]} == create ]]; then
+        fail "the Create form is open and the walk would discard it: finish or close it first"
+        return 1
+    fi
+
+    mapfile -t slots < <(read_slots)
     (( ${#slots[@]} == 3 )) || { fail "the compositor reported an unreadable state"; return 1; }
 
     active=${slots[0]}
-    empty=${slots[1]}
-    output=${slots[2]}
+    output=${slots[1]}
+    empty=${slots[2]}
+    [[ ${empty} != - ]] || { fail "no compositor slot from 1 to 9 is empty"; return 1; }
 
     saved_workspace=${current[0]}
-    saved_transient=${current[1]}
-    saved_machine=${current[2]}
-    saved_rail=${current[3]}
+    saved_transient=${current[2]}
+    saved_output=${current[3]}
+    saved_machine=${current[4]}
+    saved_rail=${current[5]}
     saved_slot=${active}
     saved=1
     trap restore EXIT
@@ -238,6 +292,7 @@ live() {
     shell_call bar show >/dev/null || return 1
     "${adapter}" workspace-select "${empty}" >/dev/null ||
         { fail "could not switch to the empty slot ${empty}"; return 1; }
+    on_slot "${empty}" "${output}" || return 1
     sleep "${settle}" || return 1
 
     for route in "${routes[@]}"; do
@@ -251,10 +306,14 @@ live() {
         case ${reply} in
             "${route}")
                 sleep "${settle}" || return 1
-                capture "${output}" "${directory}/shell-${route}.png" || return 1
+                capture "${empty}" "${output}" "${directory}/shell-${route}.png" || return 1
                 ;;
             unavailable)
                 printf 'skipped %s: the page is switched off on this host\n' "${route}"
+                ;;
+            busy)
+                fail "a creation in flight keeps the Create form over ${route}"
+                return 1
                 ;;
             *)
                 fail "the shell refused the route ${route}"
@@ -264,11 +323,11 @@ live() {
     done
 
     if [[ -n ${machine} ]]; then
-        answer="$(navigate machine "${machine}")" || return 1
-        [[ ${answer} == "${machine}" ]] ||
-            { fail "the shell has no Machine named ${machine}"; return 1; }
+        reply="$(navigate machine "${machine}")" || return 1
+        [[ ${reply} == "selected ${machine}" ]] ||
+            { fail "the shell did not select a Machine named ${machine} (${reply})"; return 1; }
         sleep "${settle}" || return 1
-        capture "${output}" "${directory}/shell-machine-${machine}.png" || return 1
+        capture "${empty}" "${output}" "${directory}/shell-machine-${machine}.png" || return 1
     fi
 
     restore || return 1

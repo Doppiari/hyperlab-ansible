@@ -63,7 +63,8 @@ SURFACE_CALLS = {
 }
 SURFACE_READS = {
     "workspaceOpen", "workspaceView", "subpage", "launcherOpen", "launcherMode",
-    "systemPanelOpen", "selectedMachineId", "topRailVisible",
+    "systemPanelOpen", "selectedMachineId", "topRailVisible", "createFormOpen",
+    "liveOutputs", "launcherOrigin", "panelOrigin",
 }
 STATE_CALLS = {"machineById"}
 STATE_READS = {"machinesGeneration"}
@@ -77,6 +78,14 @@ ACTIONS = {"requestClipboardSend", "clipboardSendRequested", "requestConfirmatio
 # Called with a third argument: a navigation route never asks for a raise.
 NO_RAISE = {"openWorkspacePage": 2, "selectMachine": 2}
 NAVIGATION_TARGETS = ("navigate", "workspace")
+# What a route answers besides its own id; no route id may look like one.
+REPLY_WORDS = {"refused", "unavailable", "busy", "selected"}
+# The action transports, by every name a receiver can reach them through.
+TRANSPORTS = r"(?:shellActions|machineActions|sharedActions|sharedMachineActions)"
+# Transport calls a receiver of navigation may make: capability reads for a
+# new selection, and the reviewed window raise (checked with its argument).
+RECEIVER_READS = {"probe", "clearCapabilities"}
+RAISE = re.compile(r'\.invoke\(\s*"workspace-window-focus"\s*\)')
 
 
 def require(condition: bool, message: str) -> None:
@@ -259,6 +268,82 @@ def reachable(entry: set[str]) -> set[str]:
     return seen
 
 
+def all_functions(source: str) -> dict[str, list[str]]:
+    """Every `function name(...) { body }` of a file, at any depth."""
+    found: dict[str, list[str]] = {}
+    for match in re.finditer(r"\bfunction (\w+)\s*\([^)]*\)[^{\n]*\{", source):
+        end = balanced(source, match.end() - 1)
+        found.setdefault(match[1], []).append(source[match.end():end - 1])
+    return found
+
+
+def receivers(source: str, signal: str) -> list[str]:
+    """Bodies of every `onSignal` handler in a file, any form."""
+    handler = "on" + signal[0].upper() + signal[1:]
+    bodies: list[str] = []
+    for match in re.finditer(r"(?m)^([ \t]*)(?:function\s+)?" + handler + r"\b\s*(\(|:)", source):
+        if match[2] == "(":
+            brace = source.index("{", match.end())
+            bodies.append(source[brace + 1:balanced(source, brace) - 1])
+            continue
+        rest = source[match.end():]
+        block = re.match(r"\s*(?:\(?[\w\s,]*\)?\s*=>\s*)?\{", rest)
+        if block:
+            brace = match.end() + block.end() - 1
+            bodies.append(source[brace + 1:balanced(source, brace) - 1])
+            continue
+        lines = rest.split("\n")
+        statement = [lines[0]]
+        for line in lines[1:]:
+            if line.strip() and len(line) - len(line.lstrip()) <= len(match[1]):
+                break
+            statement.append(line)
+        bodies.append("\n".join(statement))
+    return bodies
+
+
+def receiver_contract(reached: set[str]) -> int:
+    """Production receivers of what navigation emits dispatch no action.
+
+    A route reaches coordinator signals and changes coordinator properties.
+    Every handler of those signals and of those properties' change signals,
+    in any shell file (the root's coordinator block included), and every
+    function of the same file it calls, may read capabilities or ask for
+    the reviewed window raise, and nothing else on a transport.
+    """
+    source = without_comments((QML / "ShellSurfaces.qml").read_text(encoding="utf-8"))
+    declared = functions(source, "    ")
+    emitted = {name for name in reached if name not in declared}
+    for name in reached & set(declared):
+        for prop in re.findall(r"\bsurfaces\.(\w+)\s*=(?!=)", blank_strings(declared[name][1])):
+            emitted.add(prop + "Changed")
+    count = 0
+    for path in sorted(QML.glob("*.qml")):
+        text = without_comments(path.read_text(encoding="utf-8"))
+        local = all_functions(text)
+        for signal in sorted(emitted):
+            pending = receivers(text, signal)
+            seen: set[str] = set()
+            while pending:
+                body = pending.pop()
+                count += 1
+                plain = blank_strings(body)
+                where = f"{path.name}: a receiver of {signal}"
+                for method in re.findall(r"\b" + TRANSPORTS + r"\s*\.\s*(\w+)\s*\(", plain):
+                    require(method in RECEIVER_READS or (method == "invoke" and signal == "workspaceRaiseRequested"),
+                            f"{where} calls the action transport's {method}")
+                invokes = len(re.findall(r"\.invoke\s*\(", plain))
+                require(invokes == len(RAISE.findall(body)),
+                        f"{where} invokes something other than the window raise")
+                for action in ACTIONS:
+                    require(not re.search(r"\b" + action + r"\s*\(", plain), f"{where} reaches {action}")
+                for name in re.findall(r"\b(\w+)\s*\(", plain):
+                    if name in local and name not in seen:
+                        seen.add(name)
+                        pending.extend(local[name])
+    return count
+
+
 def static_contract() -> dict[str, dict[str, str]]:
     source = without_comments((QML / "ShellIpc.qml").read_text(encoding="utf-8"))
     require(not re.search(r"\b(?:Process|Quickshell\.exec\w*|execDetached)\b", source),
@@ -273,13 +358,14 @@ def static_contract() -> dict[str, dict[str, str]]:
         require(table[route] == section, f"route {route} opens {table[route]}, not {section}")
     for route in table:
         require(route in model, f"route {route} names no section of the navigation model")
+        require(route not in REPLY_WORDS, f"route {route} looks like a reply")
 
     scope = functions(source, "    ")
     targets = handlers(source)
     for target in NAVIGATION_TARGETS:
         require(target in targets, f"ShellIpc.qml has no {target} target")
-    require({"routes", "open", "machine", "current"} <= set(targets["navigate"]),
-            "the navigate target lost routes, open, machine or current")
+    require({"routes", "open", "openOn", "machine", "current"} <= set(targets["navigate"]),
+            "the navigate target lost routes, open, openOn, machine or current")
     coordinator: set[str] = set()
     pending = [(f"{target}.{name}", body) for target in NAVIGATION_TARGETS
                for name, (_, body) in targets[target].items()]
@@ -294,6 +380,7 @@ def static_contract() -> dict[str, dict[str, str]]:
     reached = reachable(coordinator)
     require(not reached & ACTIONS,
             f"a navigation route reaches {sorted(reached & ACTIONS)}")
+    print(f"  receivers: {receiver_contract(reached)} production handlers dispatch no action")
     return table
 
 
@@ -358,25 +445,50 @@ RUNTIME = r"""
                           && sharedSurfaces.workspaceView === entry.workspace
                           && sharedSurfaces.subpage === entry.page
                           && (entry.workspace !== "machines" || stage.creating === (entry.form === "create"))
-                          && state.workspace === (entry.form === "create" ? "machines" : name),
+                          && state.workspace === name,
                           "a workspace route did not show its page, or left the Create form");
             }
-            check(navigate.open("create") === "create" && stage.creating, "create did not open the form");
-            check(navigate.open("machines") === "machines" && !stage.creating,
+            check(navigate.open("create") === "create" && stage.creating
+                  && JSON.parse(navigate.current()).workspace === "create",
+                  "create did not open the form, or current() does not report it");
+            navigate.open("controls-audio");
+            const behind = JSON.parse(navigate.current());
+            check(behind.workspace === "controls-audio" && behind.form === "create",
+                  "current() hides a Create form behind another destination");
+            check(navigate.open("machines") === "machines" && !stage.creating
+                  && JSON.parse(navigate.current()).form === "",
                   "machines left the Create form over the inventory");
             check(navigate.open("create") === "create", "create did not reopen");
-            check(navigate.machine("fixture-002") === "fixture-002"
+            check(navigate.machine("fixture-002") === "selected fixture-002"
                   && sharedSurfaces.selectedMachineId === "fixture-002" && !stage.creating
                   && JSON.parse(navigate.current()).machine === "fixture-002",
                   "machine() did not select and show the named Machine");
-            // A creation in flight keeps its form.
+            // A creation in flight keeps its form, and neither Machines nor a
+            // selection claims to be shown under it.
             navigate.open("create");
             sharedMachineActions.creating = true;
-            navigate.open("machines");
-            check(stage.creating, "a creation in flight lost its form");
+            before = snapshot();
+            check(navigate.open("machines") === "busy" && navigate.machine("fixture-003") === "busy",
+                  "Machines or a selection was acknowledged under an in-flight Create form");
+            check(stage.creating && snapshot() === before && sharedSurfaces.selectedMachineId === "fixture-002",
+                  "a busy answer changed the shell or lost the in-flight form");
             sharedMachineActions.creating = false;
-            navigate.open("machines");
-            check(!stage.creating, "the form stayed after the creation settled");
+            check(navigate.open("machines") === "machines" && !stage.creating,
+                  "the form stayed after the creation settled");
+
+            // A transient goes back on the output it came from.
+            sharedState.applyFocusPayload(JSON.stringify({pid: 900, app_id: "foot", window_id: "0x1"}));
+            check(navigate.openOn("panel", "HDMI-A-1") === "panel" && systemPanelExternal.visible
+                  && !systemPanel.visible && JSON.parse(navigate.current()).output === "HDMI-A-1",
+                  "openOn did not put the panel on the named output, or current() lost it");
+            check(navigate.openOn("keys", "HDMI-A-1") === "keys" && launcherExternal.visible
+                  && !launcher.visible && JSON.parse(navigate.current()).output === "HDMI-A-1",
+                  "openOn did not put the key sheet on the named output");
+            before = snapshot();
+            for (const [route, output] of [["panel", "DP-9"], ["panel", ""], ["sfere", "eDP-1"],
+                                           ["desktop", "eDP-1"], ["nonsense", "eDP-1"]])
+                check(navigate.openOn(route, output) === "refused", "openOn accepted a bad route or output");
+            check(snapshot() === before, "a refused openOn changed the shell");
 
             // A confirmation armed before navigating is withdrawn, never run.
             navigate.open("controls-session");
@@ -418,8 +530,9 @@ def runtime_contract(table: dict[str, dict[str, str]]) -> None:
 # ------------------------------------------------------------------- script
 
 # A fake session: the shell answers from the real route table, the
-# compositor has slots 1, 2 and 5 occupied and 2 active, grim writes a PNG.
-# Every call is logged; the shell refuses anything but navigation.
+# compositor has slots 1, 2 and 5 occupied and 2 active on eDP-1 beside
+# HDMI-A-1, grim writes a PNG. Every call is logged; the shell refuses
+# anything but navigation. FAKE_* variables inject the faults under test.
 FAKE_QS = r"""#!/usr/bin/env python3
 import json, os, sys
 state_path, log = os.environ["FAKE_STATE"], os.environ["FAKE_LOG"]
@@ -431,30 +544,38 @@ if args[:4] != ["-c", "hyperlab", "ipc", "call"] or len(args) < 6:
     sys.exit(1)
 target, function, rest = args[4], args[5], args[6:]
 routes = json.load(open(os.environ["FAKE_ROUTES"]))
+busy = os.environ.get("FAKE_BUSY", "").split()
+keys = ("workspace", "form", "transient", "output", "machine", "rail")
 answer = None
 if target == "navigate" and function == "routes" and not rest:
     answer = "\n".join(routes)
 elif target == "navigate" and function == "current" and not rest:
-    answer = json.dumps({key: state[key] for key in ("workspace", "transient", "machine", "rail")})
-elif target == "navigate" and function == "open" and len(rest) == 1:
+    answer = json.dumps({key: state[key] for key in keys})
+elif target == "navigate" and function in ("open", "openOn") and len(rest) == (1 if function == "open" else 2):
     route = rest[0]
-    if route not in routes:
+    entry = routes.get(route)
+    transient = entry is not None and ("launcher" in entry or "panel" in entry)
+    if entry is None or (function == "openOn" and (not transient or rest[1] not in state["outputs"])):
         answer = "refused"
     elif route in state["unavailable"]:
         answer = "unavailable"
+    elif route in busy:
+        answer = "busy"
     else:
-        entry = routes[route]
         if "desktop" in entry:
-            state.update(workspace="", transient="", machine="")
-        elif "launcher" in entry or "panel" in entry:
-            state["transient"] = route
+            state.update(workspace="", transient="", output="", machine="")
+        elif transient:
+            state.update(transient=route, output=rest[1] if function == "openOn" else state["focused"])
         else:
-            state.update(workspace="machines" if "form" in entry else route, transient="", machine="")
+            state.update(workspace=route, form="create" if "form" in entry else "",
+                         transient="", output="", machine="")
         answer = route
 elif target == "navigate" and function == "machine" and len(rest) == 1:
-    if rest[0] in state["machines"]:
-        state.update(workspace="machines", transient="", machine=rest[0])
-        answer = rest[0]
+    if "machine" in busy:
+        answer = "busy"
+    elif rest[0] in state["machines"]:
+        state.update(workspace="machines", form="", transient="", output="", machine=rest[0])
+        answer = "selected " + rest[0]
     else:
         answer = "refused"
 elif target == "bar" and function in ("show", "hide") and not rest:
@@ -473,14 +594,18 @@ state = json.load(open(state_path))
 with open(os.environ["FAKE_LOG"], "a") as handle:
     handle.write(json.dumps(["adapter"] + sys.argv[1:]) + "\n")
 if sys.argv[1:] == ["workspaces-json"]:
-    print(json.dumps({"active": state["slot"], "output": "eDP-1", "occupied": [1, 2, 5],
+    state["reads"] += 1
+    after = os.environ.get("FAKE_OUTPUT_AFTER")
+    output = "HDMI-A-1" if after and state["reads"] > int(after) else state["focused"]
+    print(json.dumps({"active": state["slot"], "output": output, "occupied": [1, 2, 5],
                       "urgent": []}))
 elif len(sys.argv) == 3 and sys.argv[1] == "workspace-select":
-    state["slot"] = int(sys.argv[2])
-    json.dump(state, open(state_path, "w"))
+    if not os.environ.get("FAKE_SWITCH_IGNORED") or int(sys.argv[2]) == START_SLOT:
+        state["slot"] = int(sys.argv[2])
 else:
     sys.exit(2)
-"""
+json.dump(state, open(state_path, "w"))
+""".replace("START_SLOT", "2")
 
 FAKE_GRIM = r"""#!/usr/bin/env python3
 import json, os, sys
@@ -493,11 +618,20 @@ if os.environ.get("FAKE_GRIM_FAILS") == sys.argv[-1].rsplit("/", 1)[-1]:
 open(sys.argv[-1], "wb").write(b"\x89PNG\r\n\x1a\nfake")
 """
 
-START = {"workspace": "controls-audio", "transient": "keys", "machine": "", "rail": "hidden",
-         "slot": 2, "machines": ["dev-desk"], "unavailable": ["controls-nitro"]}
+# A directory listing that fails, whoever runs the contract.
+FAKE_FIND = "#!/bin/sh\necho 'find: cannot read directory' >&2\nexit 1\n"
+
+# The panel is open on the external output while the laptop has focus.
+START = {"workspace": "controls-audio", "form": "", "transient": "panel", "output": "HDMI-A-1",
+         "machine": "", "rail": "hidden", "slot": 2, "focused": "eDP-1",
+         "outputs": ["eDP-1", "HDMI-A-1"], "machines": ["dev-desk"],
+         "unavailable": ["controls-nitro"], "reads": 0}
+RESTORED = ("workspace", "form", "transient", "output", "machine", "rail", "slot")
 
 
-def fake_session(scratch: Path, table: dict) -> dict[str, str]:
+def fake_session(scratch: Path, table: dict, start: dict | None = None,
+                 **faults: str) -> dict[str, str]:
+    scratch.mkdir(parents=True, exist_ok=True)
     bindir = scratch / "bin"
     bindir.mkdir()
     for name, body in (("qs", FAKE_QS), ("grim", FAKE_GRIM),
@@ -505,11 +639,16 @@ def fake_session(scratch: Path, table: dict) -> dict[str, str]:
         (bindir / name).write_text(body, encoding="utf-8")
         (bindir / name).chmod(0o755)
     (scratch / "routes.json").write_text(json.dumps(table), encoding="utf-8")
-    (scratch / "state.json").write_text(json.dumps(START), encoding="utf-8")
+    (scratch / "state.json").write_text(json.dumps(start or START), encoding="utf-8")
     (scratch / "log").write_text("", encoding="utf-8")
     return dict(os.environ, PATH=str(bindir) + os.pathsep + os.environ.get("PATH", ""),
                 FAKE_STATE=str(scratch / "state.json"), FAKE_LOG=str(scratch / "log"),
-                FAKE_ROUTES=str(scratch / "routes.json"))
+                FAKE_ROUTES=str(scratch / "routes.json"), **faults)
+
+
+def session_log(scratch: Path) -> tuple[list[list], dict]:
+    log = [json.loads(line) for line in (scratch / "log").read_text().splitlines()]
+    return log, json.loads((scratch / "state.json").read_text())
 
 
 def capture(arguments: list[str], environment: dict[str, str] | None = None) -> subprocess.CompletedProcess:
@@ -517,74 +656,155 @@ def capture(arguments: list[str], environment: dict[str, str] | None = None) -> 
                           timeout=120, env=environment or dict(os.environ), check=False)
 
 
-def script_contract(table: dict[str, dict[str, str]]) -> None:
-    require(SCRIPT.is_file() and os.access(SCRIPT, os.X_OK), "tools/docs/capture-shell is not executable")
+def refusal_contract(scratch: Path, table: dict) -> None:
+    """Bad output directories are refused before the first shell call and
+    keep every file; nothing is created inside the repository."""
     require(capture([]).returncode == 2, "no directory is not a usage error")
     for arguments in (["--demo", "--machine", "dev-desk", "x"], ["--settle", "fast", "x"],
                       ["--machine", "a b", "x"], ["--frobnicate", "x"], ["a", "b"]):
         require(capture(arguments).returncode == 2, f"{arguments} is not a usage error")
-    with tempfile.TemporaryDirectory(prefix="capture-shell-") as temporary:
-        scratch = Path(temporary)
-        (scratch / "full").mkdir()
-        (scratch / "full/old.png").write_bytes(b"")
-        (scratch / "file").write_text("", encoding="utf-8")
-        (scratch / "link").symlink_to(scratch / "full")
+    environment = fake_session(scratch / "refusals", table)
+    full = scratch / "full"
+    full.mkdir()
+    (full / "shell-sfere.png").write_bytes(b"earlier capture")
+    (scratch / "file").write_text("", encoding="utf-8")
+    (scratch / "link-full").symlink_to(full)
+    (scratch / "link-repo").symlink_to(ROOT)
+    owned = Path(tempfile.mkdtemp(prefix=".capture-shell-check-", dir=ROOT))
+    try:
         refusals = {
-            str(ROOT / "documentation-captures"): "inside the repository",
+            str(owned / "out"): "inside the repository",
+            str(owned / "out") + "//": "inside the repository",
             str(ROOT / "tests/../tools"): "inside the repository",
-            str(scratch / "full"): "is not empty",
+            str(scratch / "link-repo") + "//": "is a symlink",
+            str(scratch / "link-repo") + "/": "is a symlink",
+            f"/proc/{os.getpid()}/cwd/": "is a symlink",
+            str(scratch / "link-full") + "//": "is a symlink",
+            str(full): "is not empty",
+            str(full) + "///": "is not empty",
             str(scratch / "file"): "is not a directory",
-            str(scratch / "link"): "is a symlink",
             str(scratch / "missing/out"): "does not exist",
+            "/": "into /",
         }
         for directory, reason in refusals.items():
-            result = capture(["--demo", directory])
-            created = ROOT / "documentation-captures"
-            if created.is_dir() and not any(created.iterdir()):
-                created.rmdir()
-                raise SystemExit("Documentation capture contract: a refused directory was "
-                                 "created inside the repository")
-            require(result.returncode == 1 and reason in result.stderr,
-                    f"{directory} was not refused ({reason}): {result.stderr.strip()}")
+            for arguments in (["--demo", directory], ["--settle", "0", directory]):
+                result = capture(arguments, environment)
+                require(result.returncode == 1 and reason in result.stderr,
+                        f"{directory} was not refused ({reason}): {result.stderr.strip()}")
+                require(not (owned / "out").exists(), "a refused directory was created inside the repository")
+        require(sorted(path.name for path in owned.iterdir()) == [], "a refusal wrote inside the repository")
+    finally:
+        shutil.rmtree(owned)
+    require([path.name for path in full.iterdir()] == ["shell-sfere.png"]
+            and (full / "shell-sfere.png").read_bytes() == b"earlier capture",
+            "a refusal touched an earlier capture")
+    unlistable = scratch / "unlistable"
+    unlistable.mkdir()
+    findbin = scratch / "findbin"
+    findbin.mkdir()
+    (findbin / "find").write_text(FAKE_FIND, encoding="utf-8")
+    (findbin / "find").chmod(0o755)
+    failing = dict(environment, PATH=str(findbin) + os.pathsep + environment["PATH"])
+    result = capture(["--settle", "0", str(unlistable)], failing)
+    require(result.returncode == 1 and "cannot be listed" in result.stderr,
+            "a directory that cannot be listed was taken for an empty one")
+    log, state = session_log(scratch / "refusals")
+    require(log == [] and state == START, "a refused directory reached the shell or the compositor")
 
-        environment = fake_session(scratch, table)
-        out = scratch / "live"
-        result = capture(["--settle", "0", "--machine", "dev-desk", str(out)], environment)
+
+def walk(scratch: Path, table: dict, arguments: list[str], start: dict | None = None,
+         **faults: str) -> tuple[subprocess.CompletedProcess, list[list], dict, Path]:
+    environment = fake_session(scratch, table, start, **faults)
+    out = scratch / "out"
+    result = capture(["--settle", "0", *arguments, str(out)], environment)
+    log, state = session_log(scratch)
+    return result, log, state, out
+
+
+def restored(state: dict, start: dict | None = None) -> bool:
+    return all(state[key] == (start or START)[key] for key in RESTORED)
+
+
+def script_contract(table: dict[str, dict[str, str]]) -> None:
+    require(SCRIPT.is_file() and os.access(SCRIPT, os.X_OK), "tools/docs/capture-shell is not executable")
+    with tempfile.TemporaryDirectory(prefix="capture-shell-") as temporary:
+        scratch = Path(temporary)
+        refusal_contract(scratch, table)
+
+        result, log, state, out = walk(scratch / "live", table, ["--machine", "dev-desk"])
         require(result.returncode == 0, f"the live walk failed: {result.stderr.strip()}")
         available = [route for route in table if route not in START["unavailable"]]
         expected = sorted([f"shell-{route}.png" for route in available] + ["shell-machine-dev-desk.png"])
         require(sorted(path.name for path in out.iterdir()) == expected,
                 "the live walk did not write one capture per available route")
-        log = [json.loads(line) for line in (scratch / "log").read_text().splitlines()]
-        state = json.loads((scratch / "state.json").read_text())
         require(all(entry[0] != "qs" or (entry[5], entry[6]) in {
                     ("navigate", "routes"), ("navigate", "current"), ("navigate", "open"),
-                    ("navigate", "machine"), ("bar", "show"), ("bar", "hide")} for entry in log),
+                    ("navigate", "openOn"), ("navigate", "machine"), ("bar", "show"),
+                    ("bar", "hide")} for entry in log),
                 "the live walk made a shell call that is not navigation")
         grabs = [entry for entry in log if entry[0] == "grim"]
         require(len(grabs) == len(expected)
                 and all(entry[1] == 9 and entry[4:6] == ["-o", "eDP-1"] for entry in grabs),
                 "a capture was not taken on the empty slot 9 of the focused output")
-        require(all((entry[2] == route or entry[3] == route or (route == "desktop" and entry[2:4] == ["", ""])
-                     or (route == "create" and entry[2] == "machines"))
+        require(all((entry[2] == route or entry[3] == route or (route == "desktop" and entry[2:4] == ["", ""]))
                     for entry in grabs for route in [entry[-1].rsplit("/shell-", 1)[1][:-4]]
                     if not route.startswith("machine-")),
                 "a capture was taken on another surface than its route")
         selects = [entry[2] for entry in log if entry[0] == "adapter" and entry[1] == "workspace-select"]
         require(selects == ["9", "2"], f"the slots were not switched to 9 and back to 2: {selects}")
-        require({key: state[key] for key in START} == START, f"the shell was not put back: {state}")
+        require(restored(state), f"the shell was not put back: {state}")
+        require(["navigate", "openOn", "panel", "HDMI-A-1"] in [entry[5:] for entry in log],
+                "the panel was not put back on its own output")
         require(log[-1][5:] == ["bar", "hide"], "the hidden rail was not hidden again last")
 
-        # A failing capture still puts everything back.
-        (scratch / "again").mkdir()
-        environment = fake_session(scratch / "again", table)
-        environment["FAKE_GRIM_FAILS"] = "shell-diagnostics-overview.png"
-        result = capture(["--settle", "0", str(scratch / "failed")], environment)
-        state = json.loads((scratch / "again/state.json").read_text())
+        # A failing capture still puts everything back, the panel on its output.
+        result, log, state, out = walk(scratch / "failed", table, [],
+                                       FAKE_GRIM_FAILS="shell-diagnostics-overview.png")
         require(result.returncode != 0 and "grim could not capture" in result.stderr,
                 "a failed capture did not fail the run")
-        require({key: state[key] for key in START} == START, "a failed run did not restore the shell")
-        require(not (scratch / "failed/shell-workbench.png").exists(), "the walk continued after a failure")
+        require(restored(state), f"a failed run did not restore the shell: {state}")
+        require(not (out / "shell-workbench.png").exists(), "the walk continued after a failure")
+
+        # A Create form that is up, even behind another destination, is
+        # refused before anything changes: its draft would be lost.
+        for workspace in ("create", "controls-audio"):
+            start = dict(START, workspace=workspace, form="create", transient="", output="")
+            result, log, state, out = walk(scratch / f"draft-{workspace}", table, [], start)
+            require(result.returncode == 1 and "Create form is open" in result.stderr,
+                    "a walk started over an open Create form")
+            require([entry[5:7] for entry in log if entry[0] == "qs"]
+                    == [["navigate", "routes"], ["navigate", "current"]]
+                    and all(entry[0] == "qs" for entry in log) and restored(state, start)
+                    and not any(out.iterdir()),
+                    "the Create form preflight changed the shell or the compositor")
+
+        # A slot switch that does not land, or an output that changes
+        # midway, stops the walk before the next grab and restores.
+        result, log, state, out = walk(scratch / "switch", table, [], FAKE_SWITCH_IGNORED="1")
+        require(result.returncode == 1 and "not slot 9" in result.stderr
+                and not [entry for entry in log if entry[0] == "grim"] and restored(state),
+                "a capture was taken although the compositor stayed on the old slot")
+        result, log, state, out = walk(scratch / "output", table, [], FAKE_OUTPUT_AFTER="6")
+        grabs = [entry for entry in log if entry[0] == "grim"]
+        require(result.returncode == 1 and "HDMI-A-1" in result.stderr
+                and 0 < len(grabs) < len(available)
+                and all(entry[5] == "eDP-1" for entry in grabs) and restored(state),
+                "a capture was taken after the focused output changed")
+
+        # Machines under an in-flight Create form is busy, never captured.
+        result, log, state, out = walk(scratch / "busy", table, [], FAKE_BUSY="machines")
+        require(result.returncode == 1 and "creation in flight" in result.stderr
+                and not (out / "shell-machines.png").exists() and restored(state),
+                "Machines was captured under an in-flight Create form")
+
+        # A Machine named like a refusal is captured only when it exists.
+        result, log, state, out = walk(scratch / "named-absent", table, ["--machine", "refused"])
+        require(result.returncode == 1 and not (out / "shell-machine-refused.png").exists()
+                and restored(state), "an absent Machine named refused was captured")
+        start = dict(START, machines=["dev-desk", "refused"])
+        result, log, state, out = walk(scratch / "named-present", table, ["--machine", "refused"], start)
+        require(result.returncode == 0 and (out / "shell-machine-refused.png").exists()
+                and restored(state, start), "a present Machine named refused was not captured")
 
 
 def demo_contract(table: dict[str, dict[str, str]]) -> None:
@@ -629,6 +849,9 @@ def fixture_contract() -> None:
         "focus order": lambda d: d["focus"].reverse(),
         "focus elsewhere": lambda d: d["focus"][1].update(machine="dev-desk"),
         "extra key": lambda d: d.update(notes=""),
+        "owner outside the ladder": lambda d: (d["machines"][0].update(state="shut off"),
+                                               d["machines"][2].update(state="running"),
+                                               d.update(gpu_owner="service-db")),
     }
     with tempfile.TemporaryDirectory(prefix="demo-fixture-") as temporary:
         path = Path(temporary) / "fixture.json"

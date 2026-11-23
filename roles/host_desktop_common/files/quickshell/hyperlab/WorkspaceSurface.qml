@@ -430,6 +430,11 @@ FloatingWindow {
                     shellState: workspace.shellState
                     machineActions: workspace.machineActions
                     shellSurfaces: workspace.shellSurfaces
+
+                    // The coordinator reports where the product is, the
+                    // Create form included.
+                    onCreatingChanged:
+                        workspace.shellSurfaces.createFormOpen = machineStage.creating
                 }
 
                 ControlCenterView {
