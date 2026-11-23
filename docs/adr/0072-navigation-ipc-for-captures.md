@@ -17,23 +17,30 @@ Add one IPC target, `navigate`, to `ShellIpc.qml`. A fixed table gives one
 route id to each section of the navigation model: every destination and
 page of `ShellSurfaces` (the opt-in Networks and Nitro pages too), the
 Create form, every launcher mode, the system panel and the idle desktop.
-`open` takes only an id from that table. `machine` selects a Machine of the
-current inventory by its exact name. `routes` lists the ids. `current`
-reports the open route, transient, selection and rail, so a caller can
-restore them.
+`open` takes only an id from that table. `openOn` opens a launcher mode or
+the panel on a named live output. `machine` selects a Machine of the
+current inventory by its exact name and answers `selected NAME`, which no
+refusal can resemble. `routes` lists the ids. `current` reports the open
+route, whether the Create form is up, the transient and its output, the
+selection and the rail, so a caller can restore them.
 
 The target is navigation only. It calls the coordinator's open, close and
 select functions and reads its state. It holds no action object and asks the
 compositor for no raise or slot. Nothing it reaches arms a confirmation,
-sends the clipboard or reports an action. The Create form is shown or hidden
-through the coordinator. Hiding it is refused while a creation is in
-flight.
+sends the clipboard or reports an action, and no production receiver of
+the signals and property changes it causes dispatches one. The Create form
+is shown or hidden through the coordinator, and the Machines view reports
+it back. Hiding it is refused while a creation is in flight; Machines and a
+selection then answer `busy` instead of claiming to be shown.
 
 `tools/docs/capture-shell` walks these routes on a live session and takes
-one `grim` capture per surface on an empty compositor slot. It puts back the
-view, the selection, the rail and the slot. With `--demo`, the surfaces are
-rendered from a fixture state file through the existing offscreen QML
-harness. This needs no session and no bridges, and no Machine runs.
+one `grim` capture per surface on an empty compositor slot. Before each
+capture it confirms the slot and the output. It refuses to start over an
+open Create form, whose draft the walk would discard. It puts back the
+view, the selection, the transient on its own output, the rail and the
+slot. With `--demo`, the surfaces are rendered from a fixture state file
+through the existing offscreen QML harness. This needs no session and no
+bridges, and no Machine runs.
 
 ## Consequences
 

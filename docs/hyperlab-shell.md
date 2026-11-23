@@ -1126,28 +1126,42 @@ section of the navigation model by a fixed route id:
 qs -c hyperlab ipc call navigate routes            # every route id
 qs -c hyperlab ipc call navigate open controls-audio
 qs -c hyperlab ipc call navigate machine dev-desk  # select a Machine by name
+qs -c hyperlab ipc call navigate openOn panel HDMI-A-1
 qs -c hyperlab ipc call navigate current           # where the shell is, as JSON
 ```
 
 `open` answers the route id once the coordinator shows it, `unavailable`
-for a switched-off page and `refused` for anything else; `machine` answers
-the name only for a Machine of the current inventory. A refusal changes
-nothing. GPU ownership has no page of its own: it is
+for a switched-off page, `busy` for Machines while a creation in flight
+keeps the Create form up, and `refused` for anything else. `machine`
+answers `selected NAME` only for a Machine of the current inventory, so a
+Machine named like a refusal cannot pass for one, and `busy` under an
+in-flight form. `openOn` opens the launcher modes or the panel on a named
+live output. `busy` and a refusal change nothing. `current` reports the
+open workspace route (`create` for the form), whether the Create form is
+up at all, even behind another destination, the open transient and its
+output, the selected Machine and the rail; the Machines view reports the
+form to the coordinator as `createFormOpen`. GPU ownership has no page of
+its own: it is
 `diagnostics-isolation` and the Sfere view. The target is navigation only.
 It calls the coordinator's open, close and select functions and nothing
 else, never asks the compositor for a raise or a slot, and withdraws an
 armed confirmation the same way a click on a destination does. `create`
 shows the form and creates nothing; `machines` hides the form again unless
 a creation is in flight. `documentation_capture_contract.py` checks the
-coverage of the navigation model, the calls each route can reach and every
-route at runtime.
+coverage of the navigation model, the calls each route can reach, every
+production receiver of the signals and property changes they cause (in
+any shell file, the root included) and every route at runtime.
 
 **Live captures.** `tools/docs/capture-shell DIR` lists the routes, switches
 to the highest empty compositor slot, shows the rail and takes one `grim`
 capture of the focused output per route (`shell-<route>.png`; with
 `--machine NAME` also the selected Machine), skipping switched-off pages.
-At the end, on failure too, it puts back the open view, the selected
-Machine, the open transient, the rail and the slot. The shell has no
+Before every capture it reads the compositor again and stops if the slot
+or the focused output is no longer the one it chose. It refuses to start
+while the Create form is up, because the walk would discard its draft,
+and stops on a `busy` answer. At the end, on failure too, it puts back the
+open view, the selected Machine, the open transient on its own output,
+the rail and the slot. The shell has no
 do-not-disturb of its own and the script leaves the notification daemon
 alone, so every capture is checked by eye before it is published. Hyprland
 blocks capture while the session is locked; `grim` is given 20 seconds.
@@ -1162,8 +1176,12 @@ writes `demo-<route>`, `demo-machine-<name>` and `demo-bar-<focus>` (host,
 each domain, Unknown) at 1920x1080 and, with the same layout at twice the
 pixel density, at 3840x2160, over the Isolation Ring wallpaper. The lock
 surface is `hyprlock` or `swaylock`, not shell QML, so it has no demo
-render. DIR must be new or empty, a real directory and outside the
-repository.
+render. The boot claim shown beside the GPU owner is the owner's domain at
+its configured level in `gpu_trust_levels`, as a handoff records it
+([`gpu-handoff-policy.md`](gpu-handoff-policy.md)), and the scene checks the
+two together. DIR must be new or empty, a real directory with no symlink
+in its last component (trailing slashes included) and outside the
+repository; a directory that cannot be listed is refused.
 
 ## Design system
 

@@ -6642,21 +6642,42 @@ check, copy the saved bytes back, compare them and rerun the check.
 | `action-object` | `ShellIpc.qml`: declare `required property var machineActions`. | ShellIpc.qml holds more than state, coordinator and theme | Exit 0, OK. |
 | `raise` | `ShellIpc.qml`: `enterRoute` passes `true` as the third argument of `openWorkspacePage`. | enterRoute: openWorkspacePage may ask the compositor for a raise | Exit 0, OK. |
 | `confirm-reached` | `ShellSurfaces.qml`: `openCreateForm` also calls `surfaces.submitConfirmation()`. | a navigation route reaches ['submitConfirmation'] | Exit 0, OK. |
-| `form-stays` | `ShellIpc.qml`: `enterRoute` no longer calls `closeCreateForm` for Machines. | navigation routes: "machines left the Create form over the inventory" | Exit 0, OK. |
-| `in-flight-hidden` | `WorkspaceSurface.qml`: drop the `machineActions.creating` guard from `onCreateFormRequested`. | navigation routes: "a creation in flight lost its form" | Exit 0, OK. |
-| `inside-repo` | `tools/docs/capture-shell`: refuse only the repository root itself, not paths under it. | a refused directory was created inside the repository | Exit 0, OK. |
-| `slot-not-restored` | `tools/docs/capture-shell`: `restore` replaces the `workspace-select` of the saved slot with `true`. | the slots were not switched to 9 and back to 2: ['9'] | Exit 0, OK. |
+| `receiver-dispatch-view` | `WorkspaceSurface.qml`: `onCreateFormRequested` also calls `workspace.machineActions.invoke("start", "fixture")`. | WorkspaceSurface.qml: a receiver of createFormRequested calls the action transport's invoke | Exit 0, OK. |
+| `receiver-dispatch-root` | `shell.qml`: the coordinator block gains `onCreateFormRequested: open => sharedMachineActions.invoke("start", "fixture")`. | shell.qml: a receiver of createFormRequested calls the action transport's invoke | Exit 0, OK. |
+| `form-stays` | `ShellIpc.qml`: `formDown` returns `true` without closing the form. | navigation routes: "machines left the Create form over the inventory" | Exit 0, OK. |
+| `busy-unchecked` | `ShellIpc.qml`: `open` no longer brings the form down, or answers `busy`, before Machines. | navigation routes: "machines left the Create form over the inventory" | Exit 0, OK. |
+| `in-flight-hidden` | `WorkspaceSurface.qml`: drop the `machineActions.creating` guard from `onCreateFormRequested`. | navigation routes: "Machines or a selection was acknowledged under an in-flight Create form" | Exit 0, OK. |
+| `machine-bare-name` | `ShellIpc.qml`: `machine()` answers the bare name. | navigation routes: "machine() did not select and show the named Machine" | Exit 0, OK. |
+| `current-drops-output` | `ShellIpc.qml`: `current()` reports an empty transient output. | navigation routes: "openOn did not put the panel on the named output, or current() lost it" | Exit 0, OK. |
+| `inside-repo` | `tools/docs/capture-shell`: `inside_repo` matches the repository root only. | a refused directory was created inside the repository | Exit 0, OK. |
+| `trailing-slash` | `tools/docs/capture-shell`: strip one trailing slash instead of all of them. | `link-repo//` was not refused (is a symlink): ... resolves somewhere else | Exit 0, OK. |
+| `listing-status` | `tools/docs/capture-shell`: `find ... -print -quit \|\| true` inside the substitution. | a directory that cannot be listed was taken for an empty one | Exit 0, OK. |
+| `draft-ignored` | `tools/docs/capture-shell`: the Create form preflight compares the form with `never`. | a walk started over an open Create form | Exit 0, OK. |
+| `slot-not-rechecked` | `tools/docs/capture-shell`: `capture` no longer calls `on_slot`. | a capture was taken after the focused output changed | Exit 0, OK. |
+| `switch-not-checked` | `tools/docs/capture-shell`: no `on_slot` right after the switch to the empty slot. | stays green, see below | Exit 0, OK. |
+| `slot-not-restored` | `tools/docs/capture-shell`: `restore` replaces the `workspace-select` of the saved slot with `true`. | the live walk failed: capture-shell: the compositor did not return to slot 2 | Exit 0, OK. |
+| `transient-any-output` | `tools/docs/capture-shell`: `restore` reopens the transient with `open` instead of `openOn` its output. | the shell was not put back: ... 'transient': 'panel', 'output': 'eDP-1' ... | Exit 0, OK. |
+| `script-accepts-bare` | `tools/docs/capture-shell`: the Machine reply may also be the bare name. | an absent Machine named refused was captured | Exit 0, OK. |
 | `demo-drops-unknown` | `tools/docs/render_demo.py`: the scene walks `fixture.focus.slice(0, -1)`. | capture-shell --demo failed: demo renders missing: demo-bar-unknown-1920x1080.png, demo-bar-unknown-3840x2160.png | Exit 0, OK. |
+| `claim-clean` | `tools/docs/render_demo.py`: `boot_claim` always claims `clean`. | capture-shell --demo failed: ... demo 1920x1080: "the demo boot claim is not the GPU owner's domain at its configured level" | Exit 0, OK. |
 | `fixture-three-running` | `tests/fixtures/documentation-demo.json`: `service-db` is running. | the demo fixture is refused: exactly two Machines must run | Exit 0, OK. |
 
-All twelve breaks exited 1 with the diagnostic listed, and every restored
-copy was byte-identical and exited 0. `inside-repo` first went red on a
-later refusal: `render_demo.py` also refuses an output under the
-repository, but the mutated script had already created the empty
-directory, and that directory then turned the next two runs red for the
-wrong reason. The contract now removes such a directory and reports it at
-once, and those two runs were repeated. A refused demo fixture is reported
-as a contract message, not a traceback.
+Twenty-four breaks exited 1 with the diagnostic listed, and every restored
+copy was byte-identical and exited 0. `switch-not-checked` stayed green on
+purpose: the check right after the switch and the check before every
+capture overlap, and with the first removed the second stops the walk on
+the same fault, with the same "not slot 9" diagnostic and no `grim` call.
+`trailing-slash` is red through the resolved-path check that follows the
+symlink test, which names the redirection instead of the symlink.
+`busy-unchecked` removes the only step that brings the form down before
+Machines, so the form-closure check fires first; the in-flight `busy`
+answer itself is pinned by `in-flight-hidden`.
+
+The first run of `inside-repo` left an empty directory under the
+repository, which turned the next two runs red for the wrong reason. The
+refusal checks now name a child of a test-owned scratch directory that the
+contract creates and removes itself, so a directory that already exists in
+the worktree is never touched.
 
 The fake session behind the live walk answers from the real route table.
 The real Quickshell IPC dispatcher, a real slot switch and real `grim`
