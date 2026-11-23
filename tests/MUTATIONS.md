@@ -6836,3 +6836,35 @@ The same showcase contract exercises poll replies and the compact layout.
 | Hide the compact external allocation line. | Explicit or automatic list mode loses visible memory, vCPU or network. |
 | Replace the network observation on identical replies. | The unchanged poll emits a replacement notification. |
 | Clear and repopulate the network delegates on a changed reply. | Dev loses keyboard focus between an arrow and Enter. |
+
+## The Hyprland watch heartbeat counts from the last snapshot
+
+`tests/host_compositor_adapter_behaviour_contract.py` drives the real
+`workspace-watch` and `focused-window-watch` through a fake Hyprland event
+socket and a fake `hyprctl`: one ignored `windowtitle` event per second for
+11 seconds with a 3-second heartbeat, a quiet stream, a listed event between
+two ignored ones, the end of the stream, a missing socket, and a staged copy
+whose clock the contract moves back an hour. See
+[the problem note](../problems/hyprland-watch-heartbeat-postponed-by-ignored-events.md).
+
+Every break edits
+`roles/host_desktop_common/files/privatestack-compositor-adapter.sh`. Replay
+one at a time from a saved copy, run
+`python tests/host_compositor_adapter_behaviour_contract.py`, restore the copy
+byte-for-byte and run it again.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| pre-change | The adapter before this change: both loops read with a fresh heartbeat timeout after every event. | `workspace-watch: a busy stream of unrelated events postponed the heartbeat (1 snapshots in 11s, expected at least 4)`, and the same for `focused-window-watch` | Exit 0, contract OK. |
+| `ws-heartbeat-rearmed-by-ignored-event` | The workspace loop's `case` gains `*) heartbeat_arm ;;`. | `workspace-watch: a busy stream of unrelated events postponed the heartbeat (1 snapshots in 11s, expected at least 4)` | Exit 0, contract OK. |
+| `focus-heartbeat-rearmed-by-ignored-event` | The focus loop's `case` gains `*) heartbeat_arm ;;`. | `focused-window-watch: a busy stream of unrelated events postponed the heartbeat (1 snapshots in 11s, expected at least 4)` | Exit 0, contract OK. |
+| `ws-snapshot-on-ignored-event` | The workspace loop's `case` gains `*) workspace_publish_hyprland ;;`. | `workspace-watch: unrelated events published snapshots of their own (12 snapshots in 11s)` | Exit 0, contract OK. |
+| `focus-snapshot-on-ignored-event` | The focus loop's `case` gains `*) focused_publish_hyprland ;;`. | `focused-window-watch: unrelated events published snapshots of their own (12 snapshots in 11s)` | Exit 0, contract OK. |
+| `ws-heartbeat-not-rearmed` | `workspace_publish_hyprland` no longer calls `heartbeat_arm`, so the heartbeat is always due. | `workspace-watch: unrelated events published snapshots of their own (304 snapshots in 11s)` | Exit 0, contract OK. |
+| `clock-back-unbounded` | Delete the branch of `heartbeat_wait` that pulls a deadline more than one heartbeat away back to one heartbeat. | `a wall clock moved back stretched the heartbeat: snapshots at ['0.0']` | Exit 0, contract OK. |
+| `ws-listed-event-ignored` | Drop `workspace>>` from the workspace loop's listed events. | `workspace-watch: a listed event did not publish at once, or an unrelated one did: snapshots at ['0.1']` | Exit 0, contract OK. |
+
+The pre-change row was observed on the tree before the change with the
+busy-stream cases of the contract, before the clock case was added. Each break turned the contract red; restoring the saved adapter
+byte-for-byte made the same command pass. The Sway loops are not touched by
+any break and their quiet-stream heartbeat case stayed green throughout.
