@@ -14,6 +14,10 @@ proof.
 - [`bar-geometry-measured-in-fallback-fonts.md`](bar-geometry-measured-in-fallback-fonts.md):
   CI drew the rail in DejaVu and reported an overlap the host fonts do not
   have; the contract now refuses fallback fonts and CI installs the shell's.
+- [`hyprland-watch-heartbeat-postponed-by-ignored-events.md`](hyprland-watch-heartbeat-postponed-by-ignored-events.md):
+  title changes and other ignored Hyprland events restarted the watchers'
+  heartbeat, so a busy session read "Workspaces unavailable"; the heartbeat
+  now counts from the last published snapshot.
 
 - [`qml-wiring-missed-inherited-item-state.md`](qml-wiring-missed-inherited-item-state.md):
   structural wiring rejected the sphere's inherited Item.state, although

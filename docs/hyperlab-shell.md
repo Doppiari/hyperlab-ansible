@@ -196,7 +196,13 @@ exercise five occupied workspaces with long, unconfirmed Machine names.
 - **Workspace chips** show only what the compositor reported: active,
   occupied or urgent. An empty or unreadable snapshot says
   "Workspaces unavailable" — the rail never invents workspace 1. Activation
-  goes through the reviewed `workspace-select` operation.
+  goes through the reviewed `workspace-select` operation. A snapshot older
+  than 90 seconds is stale and reads the same, so the adapter's workspace
+  and focus watchers re-publish at least every 30 seconds, measured from
+  the last snapshot they published. On Hyprland the watchers ignore most
+  events (title changes, focus moving inside one workspace); an ignored
+  event publishes nothing and does not postpone that heartbeat, so a busy
+  stream never ages into stale.
 - **Context** is the compositor's own name for the focused host surface. It
   is host metadata about a host process. It is not a provenance claim and it
   is never the GPU trust tooltip wearing a different label.
@@ -1329,7 +1335,8 @@ window id, verified against the per-user viewer registry and the reviewed
 spec; the title, clipboard and guest-agent data never enter. Every focus
 snapshot resets the answer to Unknown until the resolver answers again,
 including re-validation of the same window on the adapter's 30-second
-heartbeat and Sway window events such as title changes. This can briefly
+heartbeat (counted from the last focus snapshot, never postponed by events
+the Hyprland watcher ignores) and Sway window events such as title changes. This can briefly
 show the hollow core and `Unknown` and change the focus item's width even
 when focus has not moved; its visibility depends on resolver latency.
 A Machine never stays on the window that replaced it. The inventory only
