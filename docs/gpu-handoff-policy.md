@@ -191,16 +191,24 @@ domain (`virsh attach-device`) never reaches the hook, because libvirt's qemu
 hook has no phase for a hot-plug.
 
 The last route is reported, not refused. `hyperlabctl doctor` reads every
-domain's live XML (`virsh dumpxml` without `--inactive`) and compares each
-domain that is not shut off and carries a PCI hostdev, a hostdev interface or
-a QEMU command-line extension with both policy surfaces. A holder in neither
-is an error naming it (`trust.gpu_outside_policy`), and the trust section's
-`ladder_state` becomes `outside-policy`: the shell and `hyperlabctl trust`
-then show the GPU state as **unknown, reboot to reset** instead of the
-recorded rung. A domain whose live XML, the domain list or a needed policy
-surface cannot be read makes it `unverified` (`trust.gpu_holders_unverified`):
-unknown, never clean. The report lasts only while the holder runs; nothing
-records it afterwards
+domain's live XML (`virsh dumpxml` without `--inactive`); a document that is
+not one `<domain>` with exactly one `<name>` matching the domain asked for is
+unreadable. Each domain that is not shut off and holds a PCI hostdev or a
+hostdev interface is compared with the policy the hook actually reads: the
+installed `/etc/gpu-handoff/domains` and `domains.d`, never the checkout's
+`gpu_domain_profiles`, which can differ until the next apply. A holder in
+neither is an error naming it (`trust.gpu_outside_policy`), and the trust
+section's `ladder_state` becomes `outside-policy`: the shell and
+`hyperlabctl trust` then show the GPU state as **unknown, reboot to reset**
+instead of the recorded rung, even when the rung itself cannot be read. The
+state is `unverified` (`trust.gpu_holders_unverified`, unknown, never clean)
+when a domain, the domain list or either installed surface cannot be read,
+when both surfaces name the same domain (the hook then refuses every
+prepare), or when an unmapped running domain carries a QEMU command-line
+extension: the preflight refuses it at prepare, but what it adds to a running
+domain cannot be read from the XML, so it is never called a confirmed holder.
+`domains.unguarded_vfio` uses the same installed membership. The report lasts
+only while the holder runs; nothing records it afterwards
 ([open record](../problems/gpu-held-outside-the-handoff-policy.md)).
 
 ## The ceiling rule

@@ -71,10 +71,10 @@ start remain unbuilt ([ADR 0018](adr/0018-disposable-discards-on-stop.md)).
   qemu hook has no phase for a hot-plug, so `virsh attach-device` can give a
   running domain outside the GPU policy a PCI device the ladder never sees,
   and the recorded rung stays cleaner than the GPU's real history. The hook
-  cannot refuse it. `hyperlabctl doctor` reads every live domain XML and
-  reports such a holder as an error naming it; the shell then shows the GPU
-  state as unknown, reboot to reset, and an unreadable live XML as unknown,
-  never as clean. The report lasts only while the holder runs: nothing
+  cannot refuse it. `hyperlabctl doctor` reads every live domain XML against
+  the installed GPU policy the hook reads and reports such a holder as an
+  error naming it; the shell then shows the GPU state as unknown, reboot to
+  reset, and anything it cannot read as unknown, never as clean. The report lasts only while the holder runs: nothing
   records it afterwards, and only a host reboot resets the GPU
   ([`../problems/gpu-held-outside-the-handoff-policy.md`](../problems/gpu-held-outside-the-handoff-policy.md)).
 

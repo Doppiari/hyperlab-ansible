@@ -32,18 +32,45 @@ if it still described the GPU.
 The hook is unchanged. `observe_pci_holders` in
 `tools/hyperlabctl/hyperlabctl/providers/domains.py` reads every domain's
 live XML (`virsh dumpxml` without `--inactive`, so attached devices are
-present) and finds each domain that is not shut off and carries what the
-preflight refuses outside policy: a PCI hostdev, a hostdev interface or a
-QEMU command-line extension. A holder in neither policy surface makes the
-trust section's `ladder_state` `outside-policy`; an unreadable domain, domain
-list or policy surface makes it `unverified`. Only `recorded` lets a
-renderer believe the rung:
+present; a document for another identity is unreadable) and finds each
+domain that is not shut off and holds a PCI hostdev or a hostdev interface.
+It compares them with the installed policy the hook reads, the static
+`/etc/gpu-handoff/domains` and `domains.d`, both validated as the hook
+validates them; the checkout's `gpu_domain_profiles` can differ until the
+next apply. A holder in neither makes the trust section's `ladder_state`
+`outside-policy`, whether or not the rung itself is readable. An unreadable
+domain, domain list or surface, a domain named by both surfaces, or an
+unmapped running domain with a QEMU command-line extension (whose devices the
+XML cannot show) makes it `unverified`. Only `recorded` lets a renderer
+believe the rung:
 
 - `hyperlabctl doctor` reports `trust.gpu_outside_policy` (an error naming
   the domain) or `trust.gpu_holders_unverified`, and exits 2;
 - `trust_claim` drops the rung; the shell's Boot claim row and rail badge
   read **Unknown, reboot to reset**, and `hyperlabctl trust` lists no
   reachable level.
+
+## Defects in the first version
+
+The first version of the report could still call a holder clean:
+
+- it took the static policy from the checkout's `gpu_domain_profiles`, so
+  between a checkout update and a host apply a name present only in the
+  checkout cleared a holder the hook would refuse;
+- a static match skipped `domains.d`, so a domain named by both surfaces (a
+  collision the hook refuses) read as recorded;
+- an unreadable or nonnumeric rung raised before the holders were observed,
+  so the named error and the reboot instruction disappeared while the
+  device was still held;
+- the live XML's identity was not checked, so a reply for another domain, or
+  a document that was not a domain, could clear one domain with another's
+  devices;
+- every QEMU-namespace element counted as a held device, so an environment
+  setting earned a reboot instruction;
+- `domains.unguarded_vfio` ignored `domains.d` for a non-product domain and
+  advised adding the static entry that would create the collision.
+
+Each is fixed as described above, with its own fixture and mutation.
 
 ## What is still open
 
@@ -58,8 +85,11 @@ A host-session actor can also detach the device before a reading.
 `python3 tools/hyperlabctl/tests/run.py`, module `test_gpu_holders.py`:
 mapped holders (static and managed), an unmapped holder (running and
 paused), a stopped unmapped definition, no holder, unreadable and malformed
-live XML, an unreadable domain list, unreadable policy surfaces, each
-passthrough shape, and the live read. `tests/host_quickshell_runtime_contract.py`
+live XML, a reply for another identity, an unreadable domain list, an
+installed policy that differs from the checkout in both directions, unusable
+or colliding installed surfaces, an unreadable or nonnumeric rung beside an
+outside holder, an extension without a device, a managed-only domain in
+doctor, each device shape, and the live read. `tests/host_quickshell_runtime_contract.py`
 feeds the real backend payload for an unmapped holder to the shell. The
 mutations are in `tools/hyperlabctl/MUTATIONS.md`, "GPU held outside the
 handoff policy".
