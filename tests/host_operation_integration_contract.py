@@ -112,6 +112,7 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 module.CLI, module.ANSIBLE, module.OPENSSL = {cli!r}, {ansible!r}, {openssl!r}
 module.POINTER = Path({pointer!r})
+module.STATE_HOME = Path({state!r})
 sys.exit(module.entry(sys.argv[1:]))
 """
 
@@ -193,6 +194,7 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 module.CLI, module.ANSIBLE, module.OPENSSL = CONFIG["cli"], CONFIG["ansible"], CONFIG["openssl"]
 module.POINTER = Path(CONFIG["pointer"])
+module.STATE_HOME = Path(CONFIG["state"])
 sys.exit(module.entry(sys.argv[1:]))
 """
 
@@ -230,6 +232,11 @@ class Lab:
             f"os.environ.update({{'HOME': {str(self.home)!r}, 'XDG_STATE_HOME': {str(self.state)!r},"
             " 'PYTHONDONTWRITEBYTECODE': '1'})\n"
             'sys.dont_write_bytecode = True\n'
+            # A workstation's last step proves the guest; there is none
+            # here, so the proof is recorded and holds.
+            "if 'verify-provisioning' in sys.argv[1:]:\n"
+            f"    open({str(base / 'verified.log')!r}, 'a').write(sys.argv[-1] + '\\n')\n"
+            "    sys.exit(0)\n"
             f"sys.path.insert(0, {str(ROOT / 'tools/hyperlabctl')!r})\n"
             'from hyperlabctl.cli import main\n'
             f"sys.exit(main(['--repo', {str(self.repo)!r}, *sys.argv[1:]]))\n")
@@ -246,12 +253,12 @@ class Lab:
         self.launcher.write_text(LAUNCHER.format(
             source=str(FILES / 'privatestack-machine-provision.py'), cli=str(self.cli),
             ansible=str(programs['ansible-playbook']), openssl=str(programs['openssl']),
-            pointer=str(self.pointer)))
+            pointer=str(self.pointer), state=str(self.state)))
         self.trace = base / 'trace.jsonl'
         self.traced = base / 'traced-provisioner.py'
         config = {'source': str(FILES / 'privatestack-machine-provision.py'), 'cli': str(self.cli),
                   'ansible': str(programs['ansible-playbook']), 'openssl': str(programs['openssl']),
-                  'pointer': str(self.pointer), 'trace': str(self.trace),
+                  'pointer': str(self.pointer), 'state': str(self.state), 'trace': str(self.trace),
                   'ready': str(base / 'ready'), 'at_spawn': str(base / 'at-spawn')}
         self.traced.write_text(f'CONFIG = {config!r}\n' + TRACED)
 
@@ -259,11 +266,18 @@ class Lab:
         path = self.base / name
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
+    def receipt(self, name):
+        path = self.state / 'hyperlab/provisioning' / f'{name}.json'
+        return json.loads(path.read_text()) if path.exists() else None
+
     def snapshot(self):
+        """The Machine registry and the generated specs; the provisioning
+        receipts and logs beside them are checked on their own."""
         tree = {}
+        receipts = self.state / 'hyperlab/provisioning'
         for root in (self.state, self.repo / 'vm-specs'):
             for path in sorted(root.rglob('*')):
-                if path.name == '.lock':
+                if path.name == '.lock' or path == receipts or receipts in path.parents:
                     continue
                 data = path.read_bytes() if path.is_file() and not path.is_symlink() else None
                 tree[str(path)] = (path.lstat().st_mode, data)
@@ -397,6 +411,10 @@ def server_case(lab, op, create):
     require(lab.snapshot() == before and lab.shown('srv-01')
             and (lab.repo / 'vm-specs/.generated/srv-01.yml').is_file(),
             'a failed provisioning changed or withdrew the Machine record or its spec')
+    receipt = lab.receipt('srv-01')
+    require(receipt and receipt['state'] == 'failed'
+            and [step['result'] for step in receipt['steps']] == ['ok', 'failed', 'pending'],
+            f'the failed provisioning left no receipt of its failed step: {receipt}')
     (lab.base / 'launched.jsonl').unlink()
     (lab.base / 'calls.jsonl').unlink()
 
@@ -461,6 +479,12 @@ def workstation_case(lab, op, create):
     private = lab.runtime / 'hyperlab/provision'
     require(private.is_dir() and not list(private.iterdir()), 'the hash file outlived the operation')
     require(lab.snapshot() == before, 'provisioning changed the Machine record or its spec')
+    receipt = lab.receipt('dev-01')
+    require(receipt and receipt['state'] == 'finished' and len(receipt['steps']) == 6
+            and (lab.base / 'verified.log').read_text().split() == ['dev-01'],
+            f'the workstation provisioning did not end verified and finished: {receipt}')
+    log = (lab.state / 'hyperlab/provisioning/dev-01.log').read_text()
+    require(SECRET not in log and 'dev-01 is provisioned.' in log, 'the provisioning log is wrong')
 
 
 PR_SET_CHILD_SUBREAPER = 36
@@ -567,6 +591,10 @@ def stop_operation(lab, op, create, machine, *, linger=0, stubborn=False, at_spa
     require(lab.snapshot() == before and lab.shown(machine)
             and (lab.repo / f'vm-specs/.generated/{machine}.yml').is_file(),
             'a stopped provisioning changed or withdrew the Machine record or its spec')
+    receipt = lab.receipt(machine)
+    require(receipt and receipt['state'] == 'interrupted'
+            and [step['result'] for step in receipt['steps']][:4] == ['ok', 'ok', 'interrupted', 'pending'],
+            f'a stopped provisioning was not recorded as interrupted: {receipt}')
     require(lab.log('launched.jsonl') == [[op.PROVISION, machine]],
             f'the runner launched {lab.log("launched.jsonl")}')
     for sig in ENDING:

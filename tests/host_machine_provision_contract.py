@@ -44,7 +44,15 @@ SOURCE = ROOT / "roles/host_desktop_common/files/privatestack-machine-provision.
 CLI = ROOT / "tools/hyperlabctl/bin/hyperlabctl"
 sys.path.insert(0, str(ROOT / "tools/hyperlabctl"))
 
-from hyperlabctl.machine_provision import PROFILE_PLAYBOOKS  # noqa: E402
+from hyperlabctl.commands import looking_glass  # noqa: E402
+from hyperlabctl.errors import ContractError, Unavailable  # noqa: E402
+from hyperlabctl.machine_provision import (  # noqa: E402
+    PROFILE_PLAYBOOKS,
+    WORKSTATION_STEP_IDS,
+    provisioning_status,
+    receipt_directory,
+    verify_provisioning,
+)
 
 SECRET = "correct horse battery"
 KEY_LINE = ("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f"
@@ -90,6 +98,9 @@ def steps(machine: str, workstation: bool, runtime: Path) -> dict:
     result.append({"id": "close-access", "label": "Close", "password": False,
                    "argv": ["ansible-playbook", "-i", "inventory.ini", "-i", inventory,
                             "playbooks/guest-close-access.yml"]})
+    if workstation:
+        result.append({"id": "verify", "label": "Verify", "password": False,
+                       "argv": ["hyperlabctl", "machine", "verify-provisioning", machine]})
     return {"schema": 1, "machine": machine, "spec": spec, "steps": result}
 
 
@@ -121,6 +132,7 @@ for part in args:
                      dir_uid=parent.st_uid, content=open(path).read())
 with open(os.path.join(base, "calls.jsonl"), "a") as stream:
     stream.write(json.dumps(entry) + "\n")
+print("fixture playbook output: " + " ".join(args), flush=True)
 def token(name):
     try:
         return open(os.path.join(base, name)).read()
@@ -133,7 +145,7 @@ if hold and hold in " ".join(args):
     def terminated(signum, frame):
         time.sleep(float(token("linger") or 0))
         with open(os.path.join(base, "terminated"), "w") as stream:
-            json.dump({"file_present": os.path.exists(entry["file"])}, stream)
+            json.dump({"file_present": os.path.exists(entry["file"]) if "file" in entry else None}, stream)
         os._exit(143)
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     signal.signal(signal.SIGTERM, terminated)
@@ -157,12 +169,18 @@ sys.stdout.write(result.stdout)
 sys.exit(result.returncode)
 '''
 
-# `machine show` answers record.json, `machine provision-steps` plan.json.
+# `machine show` answers record.json, `machine provision-steps` plan.json;
+# `machine verify-provisioning`, the last workstation step, prints a line
+# and exits with the number in verify_rc (0 when there is none).
 CLI_STUB = r'''
 import json, os, sys
 base = sys.argv[1]
 with open(os.path.join(base, "cli.jsonl"), "a") as stream:
     stream.write(json.dumps(sys.argv[2:]) + "\n")
+if "verify-provisioning" in sys.argv[2:]:
+    print("verified by the fixture")
+    path = os.path.join(base, "verify_rc")
+    sys.exit(int(open(path).read()) if os.path.exists(path) else 0)
 answer = os.path.join(base, "record.json" if "show" in sys.argv[2:] else "plan.json")
 if not os.path.exists(answer):
     sys.exit("no such Machine")
@@ -170,10 +188,15 @@ sys.stdout.write(open(answer).read())
 '''
 
 
-def record(machine: str, template: str, workspace: str) -> dict:
+DIGEST = "ab" * 32
+
+
+def record(machine: str, template: str, workspace: str, provisioning: dict | None = None) -> dict:
     """The part of a Machine record the provisioner reads."""
     return {"schema_version": 1, "id": machine, "template": {"id": template, "version": 1},
-            "presentation": {"workspace_profile": workspace}}
+            "presentation": {"workspace_profile": workspace},
+            "provisioning": provisioning or {"status": "unknown", "receipt": "missing",
+                                             "record_sha256": DIGEST}}
 
 
 SERVER = ("server-arch", "server")
@@ -191,6 +214,8 @@ class Fixture:
             (self.repo / "playbooks" / name).write_text("---\n- hosts: none\n  tasks: []\n")
         self.runtime = base / "runtime"
         self.runtime.mkdir(mode=0o700)
+        # Where the provisioner keeps receipts and logs: never the real home.
+        self.state = base / "state"
         self.pointer = base / "pointer"
         self.pointer.write_text(str(self.repo))
         self.bin = base / "bin"
@@ -228,6 +253,7 @@ class Fixture:
         module.ANSIBLE = str(self.ansible)
         module.OPENSSL = str(self.openssl)
         module.POINTER = self.pointer
+        module.STATE_HOME = self.state
 
     def log(self, name: str) -> list:
         path = self.base / name
@@ -240,6 +266,14 @@ class Fixture:
     @property
     def private(self) -> Path:
         return self.runtime / "hyperlab/provision"
+
+    @property
+    def receipts(self) -> Path:
+        return self.state / "hyperlab/provisioning"
+
+    def receipt(self, machine: str) -> dict | None:
+        path = self.receipts / f"{machine}.json"
+        return json.loads(path.read_text()) if path.exists() else None
 
     def leftovers(self) -> list[Path]:
         """What is left in the private provisioning directory, if it exists."""
@@ -411,6 +445,7 @@ def check_plan_refusals(module) -> None:
             rc, calls, prompts, _ = run(module, fixture, ["dev-t"], passwords=[SECRET] * 2)
             require(isinstance(rc, str) and rc.startswith("refused") and not calls and not prompts,
                     f"tampered steps ({label}) ran or asked: {rc} {argvs(calls)} {prompts}")
+            require(not fixture.state.exists(), f"tampered steps ({label}) left a receipt or a log")
 
 
 def check_record_refusals(module) -> None:
@@ -432,6 +467,10 @@ def check_record_refusals(module) -> None:
         "a record that is not JSON": (plan_for("dev-t", True), "id: dev-t\n"),
         "a record without its Template": (plan_for("dev-t", True),
                                           {"id": "dev-t", "presentation": {"workspace_profile": "dev"}}),
+        "a record without its digest": (plan_for("dev-t", True),
+                                        {**record("dev-t", *WORKSTATION), "provisioning": {"status": "unknown"}}),
+        "a record with a malformed digest": (plan_for("dev-t", True), {
+            **record("dev-t", *WORKSTATION), "provisioning": {"record_sha256": "AB" * 32}}),
     }
     for label, (build, value) in cases.items():
         with tempfile.TemporaryDirectory() as temp:
@@ -509,7 +548,9 @@ def check_file_refusals(module) -> None:
 def check_arguments(module) -> None:
     for args in (["--spec", "vm-specs/.generated/dev-t.yml", "dev-t"], [], ["dev-t", "dev-t"],
                  ["dev-t", "--verbose"], ["../x"], ["Dev-T"], ["vm-specs/.generated/dev-t.yml"],
-                 ["dev-u"]):
+                 ["dev-u"], ["dev-t", "--from"], ["dev-t", "--from", "0"], ["dev-t", "--from", "x"],
+                 ["dev-t", "--from", "03"], ["dev-t", "--from", "3", "x"], ["--from", "3", "dev-t"],
+                 ["dev-t", "--from=3"]):
         with tempfile.TemporaryDirectory() as temp:
             fixture = Fixture(Path(temp))
             fixture.plan(steps("dev-t", True, fixture.runtime))
@@ -550,11 +591,15 @@ def check_real_cli(module) -> None:
         env = {"HOME": str(home), "XDG_STATE_HOME": str(state), "PYTHONDONTWRITEBYTECODE": "1"}
         # Where the provisioner expects hyperlabctl: the real CLI, with this
         # fixture's home and state, in its own process.
+        # The guest proof needs a guest: here it is recorded, and holds.
         fixture.cli.write_text(
             f"#!{sys.executable}\n"
             "import os, sys\n"
             f"os.environ.update({env!r})\n"
             "sys.dont_write_bytecode = True\n"
+            "if 'verify-provisioning' in sys.argv:\n"
+            f"    open({str(base / 'verified.log')!r}, 'a').write(sys.argv[-1] + '\\n')\n"
+            "    sys.exit(0)\n"
             f"sys.path.insert(0, {str(ROOT / 'tools/hyperlabctl')!r})\n"
             "from hyperlabctl.cli import main\n"
             "sys.exit(main(sys.argv[1:]))\n")
@@ -620,6 +665,52 @@ def check_real_cli(module) -> None:
                 f"an unreviewed workstation was provisioned: {rc} {argvs(calls)}")
         require(tree(state, fixture.repo / "vm-specs") == before, "an unreviewed workstation changed state")
 
+        # What the real CLI reads of the receipts the real provisioner wrote.
+        def shown(machine: str) -> dict:
+            result = subprocess.run([sys.executable, str(CLI), "--repo", str(fixture.repo), "machine", "show",
+                                     machine], text=True, capture_output=True, check=False,
+                                    env={**os.environ, **env})
+            require(result.returncode == 0, f"machine show {machine}: {result.stderr}")
+            return json.loads(result.stdout)["provisioning"]
+
+        repo = fixture.repo.resolve()
+        for machine in ("srv-01", "dev-01", "srv-03"):
+            require(shown(machine)["status"] == "finished" and shown(machine)["text"] == "Provisioned",
+                    f"machine show does not read {machine}'s finished receipt: {shown(machine)}")
+        require((base / "verified.log").read_text().split() == ["dev-01"],
+                "the workstation's last step did not verify it")
+        factory("machine", "create", "server-arch", "srv-04", "--resource-profile", "custom",
+                "--memory-mb", "2048", "--vcpus", "2", "--disk-gib", "16", "--project")
+        rc, _, _, _ = run(module, fixture, ["srv-04"], fail_step="vm-guest-inventory")
+        (base / "fail").unlink()
+        failed = shown("srv-04")
+        require(rc == 3 and failed["status"] == "incomplete"
+                and failed["text"] == "Provisioning incomplete: step 2 of 3 "
+                                      "(Publish the inventory and pin the SSH host key)"
+                and failed["resume"] == f"cd {repo} && privatestack-machine-provision srv-04 --from 2",
+                f"machine show reads a failed provisioning as {failed}")
+        factory("machine", "create", "server-arch", "srv-05", "--resource-profile", "custom",
+                "--memory-mb", "2048", "--vcpus", "2", "--disk-gib", "16", "--project")
+        unknown = shown("srv-05")
+        require(unknown["status"] == "unknown" and unknown["text"] == "Provisioning unknown"
+                and unknown["resume"] == f"cd {repo} && privatestack-machine-provision srv-05",
+                f"machine show reads a Machine without a receipt as {unknown}")
+
+        # The rows the Machines view gets carry the same reading, also when
+        # libvirt cannot be read.
+        from types import SimpleNamespace
+
+        from hyperlabctl.commands import machine as machine_command
+        context = SimpleNamespace(config=SimpleNamespace(repo_root=fixture.repo))
+        with patch.object(machine_command.doc, "build", lambda ctx, only: {"domains": None}):
+            rows = {row["name"]: row for row in
+                    machine_command.build_product_inventory(context, state_home=state)["machines"]}
+        require(rows["srv-01"]["provisioning"]["status"] == "finished"
+                and rows["srv-04"]["provisioning"] == failed and rows["srv-05"]["provisioning"] == unknown
+                and rows["dev-02"]["provisioning"]["status"] == "unknown",
+                f"the inventory rows do not carry the provisioning: "
+                f"{ {name: row['provisioning']['text'] for name, row in rows.items()} }")
+
 
 # --- the real program on a real PTY ----------------------------------------
 
@@ -631,6 +722,7 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 module.CLI, module.ANSIBLE, module.OPENSSL = {cli!r}, {ansible!r}, {openssl!r}
 module.POINTER = Path({pointer!r})
+module.STATE_HOME = Path({state!r})
 sys.exit(module.entry(sys.argv[1:]))
 """
 
@@ -642,7 +734,7 @@ class Terminal:
         launcher = fixture.base / "launcher.py"
         launcher.write_text(LAUNCHER.format(source=str(SOURCE), cli=str(fixture.cli),
                                             ansible=str(fixture.ansible), openssl=str(fixture.openssl),
-                                            pointer=str(fixture.pointer)))
+                                            pointer=str(fixture.pointer), state=str(fixture.state)))
         env = {"PATH": "/usr/local/bin:/usr/bin", "HOME": str(fixture.base),
                "XDG_RUNTIME_DIR": str(fixture.runtime), "LANG": "C.UTF-8", "TERM": "xterm-256color"}
         self.transcript = b""
@@ -838,6 +930,56 @@ def check_terminal_signals(module) -> None:
             require(stopped.exists() and json.loads(stopped.read_text()) == {"file_present": True},
                     f"after {name} the running playbook was not stopped before its hash file went")
             secret_free(fixture, terminal.transcript)
+            receipt = fixture.receipt("dev-s")
+            require(receipt["state"] == "interrupted" and name in receipt["reason"]
+                    and results(receipt) == [("ok", 0)] * 2 + [("interrupted", None)] + [("pending", None)] * 3,
+                    f"{name} was not recorded as an interrupted step 3: {receipt}")
+            shown = reading(fixture, "dev-s")
+            require(shown["status"] == "incomplete" and shown["receipt"] == "interrupted"
+                    and shown["text"].startswith("Provisioning incomplete: step 3 of 6")
+                    and shown["resume"] == "privatestack-machine-provision dev-s --from 3",
+                    f"after {name} the Machine reads {shown}")
+            require(b"--from 3" in terminal.transcript, f"after {name} the terminal does not say how to resume")
+
+
+def check_terminal_last_step(module) -> None:
+    """The last step cut short: by SIGTERM the receipt says interrupted, by
+    SIGKILL it still says running, which no lock holds; neither is finished."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        with tempfile.TemporaryDirectory() as temp:
+            fixture = Fixture(Path(temp), steps("srv-k", False, Path(temp) / "runtime"))
+            (fixture.base / "hold").write_text("guest-close-access.yml")
+            terminal = Terminal(fixture, "srv-k")
+            child = None
+            try:
+                ready = fixture.base / "ready"
+                end = time.monotonic() + 20
+                while not ready.exists():
+                    require(time.monotonic() < end and terminal.alive(),
+                            f"the last step never started: {terminal.transcript[-400:]!r}")
+                    terminal.pump(0.1)
+                child = json.loads(ready.read_text())["pid"]
+                os.kill(terminal.pid, sig)
+                status_code = terminal.wait()
+            finally:
+                if terminal.alive():
+                    os.kill(terminal.pid, signal.SIGKILL)
+                    terminal.wait()
+                if child is not None:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(child, signal.SIGKILL)
+            name = signal.Signals(sig).name
+            receipt = fixture.receipt("srv-k")
+            expected = "interrupted" if sig == signal.SIGTERM else "running"
+            require(not (os.WIFEXITED(status_code) and os.WEXITSTATUS(status_code) == 0)
+                    and receipt["state"] == expected
+                    and results(receipt) == [("ok", 0), ("ok", 0), (expected, None)],
+                    f"{name} in the last step left {receipt}")
+            shown = reading(fixture, "srv-k", False)
+            require(shown["status"] == "incomplete" and shown["receipt"] == "interrupted"
+                    and shown["text"].startswith("Provisioning incomplete: step 3 of 3")
+                    and shown["resume"] == "privatestack-machine-provision srv-k --from 3",
+                    f"{name} in the last step reads {shown}")
 
 
 def check_terminal_repeated_signals(module) -> None:
@@ -881,6 +1023,486 @@ def check_terminal_repeated_signals(module) -> None:
         secret_free(fixture, terminal.transcript)
 
 
+# --- the receipt -------------------------------------------------------------
+
+def reading(fixture: Fixture, machine: str, workstation: bool = True, digest: str = DIGEST,
+           repo: Path | None = None) -> dict:
+    """What hyperlabctl reads of this Machine's receipt."""
+    return provisioning_status(record(machine, *(WORKSTATION if workstation else SERVER)),
+                               record_sha256=digest, state_home=fixture.state, repo_root=repo)
+
+
+def results(receipt: dict) -> list[tuple]:
+    return [(step["result"], step["exit"]) for step in receipt["steps"]]
+
+
+def mode(path: Path) -> int:
+    return stat.S_IMODE(path.lstat().st_mode)
+
+
+def check_receipts(module) -> None:
+    """Only a run whose every step ended with 0 writes "finished"; every
+    other end of a run reads incomplete, with the command that resumes it."""
+    with tempfile.TemporaryDirectory() as temp:
+        fixture = Fixture(Path(temp), steps("srv-a", False, Path(temp) / "runtime"))
+        rc, calls, _, output = run(module, fixture, ["srv-a"])
+        receipt = fixture.receipt("srv-a")
+        require(rc == 0 and receipt is not None and receipt["state"] == "finished"
+                and results(receipt) == [("ok", 0)] * 3 and receipt["record_sha256"] == DIGEST
+                and receipt["from_step"] == 1 and receipt["ended_at"] is not None,
+                f"a server run that ended with 0 everywhere is not finished: {rc} {receipt}")
+        log = fixture.receipts / "srv-a.log"
+        require(mode(fixture.receipts) == 0o700 and mode(fixture.receipts / "srv-a.json") == 0o600
+                and mode(log) == 0o600, "the receipt, its directory or the log is not private")
+        text = log.read_text()
+        require(all(f"fixture playbook output: {call['argv'][0]}" in text for call in calls[:2])
+                and "playbooks/guest-close-access.yml" in text and "=== Step 3/3" in text
+                and "srv-a is provisioned." in text,
+                f"the log does not keep the steps' output: {text[-400:]!r}")
+        require("fixture playbook output" in output, "the steps' output no longer reaches the terminal")
+        shown = reading(fixture, "srv-a", False)
+        require(shown["status"] == "finished" and shown["text"] == "Provisioned" and shown["resume"] is None
+                and shown["log"] == str(log), f"a finished receipt reads {shown}")
+
+    with tempfile.TemporaryDirectory() as temp:
+        fixture = Fixture(Path(temp), steps("dev-a", True, Path(temp) / "runtime"))
+        rc, calls, _, _ = run(module, fixture, ["dev-a"], passwords=[SECRET, SECRET])
+        receipt = fixture.receipt("dev-a")
+        require(rc == 0 and receipt["state"] == "finished" and results(receipt) == [("ok", 0)] * 6
+                and [step["id"] for step in receipt["steps"]] == list(WORKSTATION_STEP_IDS),
+                f"a workstation run that ended with 0 everywhere is not finished: {rc} {receipt}")
+        require(fixture.log("cli.jsonl")[-1][-3:] == ["machine", "verify-provisioning", "dev-a"],
+                f"the last step is not the verification: {fixture.log('cli.jsonl')}")
+        logged = (fixture.receipts / "dev-a.log").read_text()
+        require(SECRET not in logged and "verified by the fixture" in logged,
+                "the log lost the verification's output or holds the password")
+        # A second run keeps the first one's log beside its own.
+        (fixture.base / "calls.jsonl").unlink()
+        rc, _, _, _ = run(module, fixture, ["dev-a"], passwords=[SECRET, SECRET])
+        require(rc == 0 and (fixture.receipts / "dev-a.log.1").read_text() == logged,
+                "a new run did not keep the previous log")
+
+    # Each place a run can fail, the last step included.
+    for label, machine, workstation, token, value, number in (
+            ("the domain", "srv-f", False, "fail", "vm-create", 1),
+            ("the first profile pass", "dev-f", True, "fail", "guest-arch-dev-vfio.yml -e", 3),
+            ("close-access", "dev-g", True, "fail", "guest-close-access", 5),
+            ("the verification", "dev-h", True, "verify_rc", "1", 6)):
+        with tempfile.TemporaryDirectory() as temp:
+            fixture = Fixture(Path(temp), steps(machine, workstation, Path(temp) / "runtime"))
+            (fixture.base / token).write_text(value)
+            rc, _, _, output = run(module, fixture, [machine], passwords=[SECRET, SECRET])
+            receipt = fixture.receipt(machine)
+            total = 6 if workstation else 3
+            exit_code = 1 if token == "verify_rc" else 3
+            require(rc == exit_code and receipt["state"] == "failed"
+                    and results(receipt) == [("ok", 0)] * (number - 1) + [("failed", exit_code)]
+                    + [("pending", None)] * (total - number),
+                    f"a failure of {label} was not recorded as a failed step {number}: {rc} {receipt}")
+            shown = reading(fixture, machine, workstation)
+            label_text = receipt["steps"][number - 1]["label"]
+            resume = f"privatestack-machine-provision {machine}" + (f" --from {number}" if number > 1 else "")
+            require(shown["status"] == "incomplete" and shown["receipt"] == "failed"
+                    and shown["text"] == f"Provisioning incomplete: step {number} of {total} ({label_text})"
+                    and shown["resume"] == resume and shown["step"] == number,
+                    f"a failure of {label} reads {shown}")
+            require(reading(fixture, machine, workstation, repo=fixture.repo)["resume"]
+                    == f"cd {fixture.repo} && {resume}", "the resume command does not start in the checkout")
+            require(resume in output, f"the terminal does not say how to resume: {output[-300:]!r}")
+
+    # A refusal in the middle of the run is a failed step too.
+    with tempfile.TemporaryDirectory() as temp:
+        fixture = Fixture(Path(temp), steps("dev-c", True, Path(temp) / "runtime"))
+        rc, _, _, _ = run(module, fixture, ["dev-c"], passwords=["one-password", "two-password"] * 3)
+        receipt = fixture.receipt("dev-c")
+        require(isinstance(rc, str) and "no password" in rc and receipt["state"] == "failed"
+                and results(receipt)[2] == ("failed", None) and "no password" in receipt["reason"],
+                f"a refused password was not recorded as a failed step: {receipt}")
+        require(reading(fixture, "dev-c")["text"].startswith("Provisioning incomplete: step 3 of 6"),
+                "a refused password does not read incomplete")
+
+
+def check_resume(module) -> None:
+    """`--from N` continues only what hyperlabctl read as failed or
+    interrupted for the same steps, never past a step that did not end with 0."""
+    with tempfile.TemporaryDirectory() as temp:
+        fixture = Fixture(Path(temp), steps("dev-r", True, Path(temp) / "runtime"))
+        (fixture.base / "fail").write_text("guest-close-access")
+        rc, _, _, _ = run(module, fixture, ["dev-r"], passwords=[SECRET, SECRET])
+        require(rc == 3, f"fixture: close-access did not fail: {rc}")
+        (fixture.base / "fail").unlink()
+        (fixture.base / "calls.jsonl").unlink()
+        fixture.record(record("dev-r", *WORKSTATION, reading(fixture, "dev-r")))
+        failed = (fixture.receipts / "dev-r.json").read_bytes()
+        for args in (["dev-r", "--from", "6"], ["dev-r", "--from", "7"]):
+            rc, calls, prompts, _ = run(module, fixture, args)
+            require(isinstance(rc, str) and not calls and not prompts
+                    and (fixture.receipts / "dev-r.json").read_bytes() == failed,
+                    f"{args} skipped the failed step: {rc} {argvs(calls)}")
+        rc, calls, prompts, _ = run(module, fixture, ["dev-r", "--from", "5"])
+        receipt = fixture.receipt("dev-r")
+        require(rc == 0 and [call["argv"][-1] for call in calls] == ["playbooks/guest-close-access.yml"]
+                and not prompts and receipt["state"] == "finished" and receipt["from_step"] == 5
+                and results(receipt) == [("ok", 0)] * 6,
+                f"resuming at the failed step did not finish the run: {rc} {argvs(calls)} {receipt}")
+        fixture.record(record("dev-r", *WORKSTATION, reading(fixture, "dev-r")))
+        finished = (fixture.receipts / "dev-r.json").read_bytes()
+        (fixture.base / "calls.jsonl").unlink()
+        rc, calls, _, _ = run(module, fixture, ["dev-r", "--from", "5"])
+        require(isinstance(rc, str) and "only a failed or interrupted" in rc and not calls
+                and (fixture.receipts / "dev-r.json").read_bytes() == finished,
+                f"a finished provisioning was resumed: {rc}")
+
+    with tempfile.TemporaryDirectory() as temp:
+        fixture = Fixture(Path(temp), steps("dev-q", True, Path(temp) / "runtime"))
+        (fixture.base / "fail").write_text("guest-arch-dev-vfio.yml")
+        rc, _, _, _ = run(module, fixture, ["dev-q"], passwords=[SECRET, SECRET])
+        receipt = fixture.receipt("dev-q")
+        require(rc == 3 and results(receipt)[2] == ("failed", 3), f"fixture: profile-first did not fail: {receipt}")
+        (fixture.base / "fail").unlink()
+        (fixture.base / "calls.jsonl").unlink()
+        fixture.record(record("dev-q", *WORKSTATION, reading(fixture, "dev-q")))
+        rc, calls, prompts, _ = run(module, fixture, ["dev-q", "--from", "3"], passwords=[SECRET, SECRET])
+        require(rc == 0 and len(calls) == 3 and len(prompts) == 2 and fixture.receipt("dev-q")["state"] == "finished"
+                and not list(fixture.private.iterdir()),
+                f"resuming at the first profile pass did not ask again and finish: {rc} {argvs(calls)}")
+
+    cases = {
+        "no receipt": {"status": "unknown", "receipt": "missing", "record_sha256": DIGEST},
+        "another plan's steps": {"status": "incomplete", "receipt": "failed", "record_sha256": DIGEST,
+                                 "step": 3, "step_ids": ["create-domain", "inventory", "close-access"]},
+        "a running provisioning": {"status": "incomplete", "receipt": "running", "record_sha256": DIGEST,
+                                   "step": 3, "step_ids": list(WORKSTATION_STEP_IDS)},
+        "no first unfinished step": {"status": "incomplete", "receipt": "failed", "record_sha256": DIGEST,
+                                     "step": None, "step_ids": list(WORKSTATION_STEP_IDS)},
+    }
+    for label, provisioning in cases.items():
+        with tempfile.TemporaryDirectory() as temp:
+            fixture = Fixture(Path(temp), steps("dev-p", True, Path(temp) / "runtime"))
+            fixture.record(record("dev-p", *WORKSTATION, provisioning))
+            rc, calls, prompts, _ = run(module, fixture, ["dev-p", "--from", "3"], passwords=[SECRET] * 2)
+            require(isinstance(rc, str) and not calls and not prompts and not fixture.state.exists(),
+                    f"--from resumed {label}: {rc} {argvs(calls)}")
+
+
+def check_lock(module) -> None:
+    """One run per Machine; a reader tells a live run from a dead one."""
+    import fcntl
+    with tempfile.TemporaryDirectory() as temp:
+        fixture = Fixture(Path(temp), steps("dev-l", True, Path(temp) / "runtime"))
+        rc, _, _, _ = run(module, fixture, ["dev-l"], passwords=[SECRET, SECRET])
+        require(rc == 0, f"fixture: the first run failed: {rc}")
+        (fixture.base / "calls.jsonl").unlink()
+        path = fixture.receipts / "dev-l.json"
+        document = json.loads(path.read_text())
+        document.update(state="running", ended_at=None)
+        document["steps"][2:] = [dict(step, result="pending", exit=None) for step in document["steps"][2:]]
+        document["steps"][2].update(result="running")
+        path.write_text(json.dumps(document))
+        before = path.read_bytes()
+        fd = os.open(fixture.receipts / "dev-l.lock", os.O_RDWR)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            rc, calls, prompts, _ = run(module, fixture, ["dev-l"], passwords=[SECRET, SECRET])
+            require(isinstance(rc, str) and "another provisioning" in rc and not calls and not prompts
+                    and path.read_bytes() == before, f"a second run started while one held the lock: {rc}")
+            shown = reading(fixture, "dev-l")
+            require(shown["status"] == "incomplete" and shown["receipt"] == "running" and shown["running"]
+                    and shown["resume"] is None and shown["text"].endswith("running now"),
+                    f"a live run reads {shown}")
+        finally:
+            os.close(fd)
+        shown = reading(fixture, "dev-l")
+        require(shown["status"] == "incomplete" and shown["receipt"] == "interrupted" and not shown["running"]
+                and shown["resume"] == "privatestack-machine-provision dev-l --from 3",
+                f"a run that died without recording its end reads {shown}")
+
+
+def check_reader(module) -> None:
+    """Whatever cannot be read as this record's finished receipt is never
+    "Provisioned"; the provisioner and hyperlabctl agree where it lives."""
+    with tempfile.TemporaryDirectory() as temp:
+        fixture = Fixture(Path(temp), steps("dev-v", True, Path(temp) / "runtime"))
+        shown = reading(fixture, "dev-v")
+        require(shown["status"] == "unknown" and shown["receipt"] == "missing"
+                and shown["text"] == "Provisioning unknown"
+                and shown["resume"] == "privatestack-machine-provision dev-v",
+                f"a Machine without a receipt reads {shown}")
+        rc, _, _, _ = run(module, fixture, ["dev-v"], passwords=[SECRET, SECRET])
+        require(rc == 0 and reading(fixture, "dev-v")["status"] == "finished", "fixture: no finished receipt")
+        path = fixture.receipts / "dev-v.json"
+        good = path.read_bytes()
+        document = json.loads(good)
+
+        def edited(change):
+            def write():
+                value = json.loads(good)
+                change(value)
+                path.write_text(json.dumps(value))
+            return write
+
+        def raw(text):
+            return lambda: path.write_text(text)
+
+        def linked():
+            target = fixture.base / "elsewhere.json"
+            target.write_bytes(good)
+            path.unlink()
+            path.symlink_to(target)
+
+        def steps_of(index, **fields):
+            return lambda value: value["steps"][index].update(fields)
+
+        cases = {
+            "another record's digest": ("stale", edited(lambda v: v.update(record_sha256="cd" * 32))),
+            "another plan's steps": ("stale", edited(lambda v: v.update(steps=v["steps"][:3]))),
+            "another Machine": ("unreadable", edited(lambda v: v.update(machine="dev-w"))),
+            "a finished run with a failed step": ("unreadable", edited(steps_of(5, result="failed", exit=1))),
+            "an ok step with exit 1": ("unreadable", edited(steps_of(4, exit=1))),
+            "a boolean exit status": ("unreadable", edited(steps_of(4, exit=False))),
+            "a pending step in a finished run": ("unreadable", edited(steps_of(5, result="pending", exit=None))),
+            "an ok step after the failed one": ("unreadable", edited(
+                lambda v: (v.update(state="failed"), v["steps"][2].update(result="failed", exit=2)))),
+            "an unknown state": ("unreadable", edited(lambda v: v.update(state="done"))),
+            "an extra field": ("unreadable", edited(lambda v: v.update(ready=True))),
+            "a resume past an unfinished step": ("unreadable", edited(
+                lambda v: (v.update(state="failed", from_step=6),
+                           v["steps"][2].update(result="failed", exit=2),
+                           [step.update(result="pending", exit=None) for step in v["steps"][3:]]))),
+            "a repeated key": ("unreadable", raw(good.decode().replace('"state"', '"state": "failed", "state"', 1))),
+            "no JSON": ("unreadable", raw("state: finished\n")),
+            "a link": ("unreadable", linked),
+            "a readable mode": ("unreadable", lambda: (path.write_bytes(good), path.chmod(0o644))),
+            "an open directory": ("unreadable", lambda: (path.write_bytes(good), fixture.receipts.chmod(0o755))),
+        }
+        for label, (receipt, change) in cases.items():
+            path.unlink(missing_ok=True)
+            path.write_bytes(good)
+            path.chmod(0o600)
+            fixture.receipts.chmod(0o700)
+            change()
+            shown = reading(fixture, "dev-v")
+            require(shown["status"] == "unknown" and shown["receipt"] == receipt
+                    and shown["text"] == "Provisioning unknown" and shown["resume"] is not None,
+                    f"a receipt with {label} reads {shown}")
+        fixture.receipts.chmod(0o700)
+        path.unlink()
+        path.write_bytes(good)
+        path.chmod(0o600)
+        require(document["state"] == "finished" and reading(fixture, "dev-v")["status"] == "finished",
+                "fixture: the restored receipt does not read finished")
+
+        # Where the provisioner writes is where hyperlabctl reads.
+        module.STATE_HOME = None
+        for environment, removed in (({"XDG_STATE_HOME": str(fixture.base / "xdg")}, ()),
+                                     ({"HOME": str(fixture.base / "home")}, ("XDG_STATE_HOME",))):
+            with patch.dict(os.environ, environment):
+                for name in removed:
+                    os.environ.pop(name, None)
+                require(module.state_dir() == receipt_directory(None),
+                        f"the provisioner and hyperlabctl disagree on the receipts: {environment}")
+
+
+# --- the last step -----------------------------------------------------------
+
+STUCK = """sender=running
+now=1764000100
+log_age=4
+started=1764000000
+line=HyperLab: sender started 2025-11-24T16:00:00+00:00
+"""
+CAPTURED = STUCK + "line=00:00:06.120 [I]   app.c:891 | captureStart | ==== [ Capture Start ] ====\n"
+NO_CLIENT = STUCK + "line=00:00:03.002 [I]   app.c:933 | captureStop | ==== [ Capture Stop ] ====\n"
+
+
+def lg_record(device: str = "vfio", mode_name: str = "linux-experimental", template: str = "workstation-dev",
+              workspace: str = "dev") -> dict:
+    return {"id": "dev-v", "template": {"id": template, "version": 1}, "device_capability": device,
+            "presentation": {"workspace_profile": workspace, "looking_glass_mode": mode_name}}
+
+
+def health_from(text: str) -> dict:
+    """What `looking-glass health` reports for a guest whose probe printed `text`."""
+    probe = looking_glass.parse_probe(text)
+    return {"machine": "dev-v", "agent": "yes", "sender": probe["sender"], "stream": probe["stream"],
+            "health": looking_glass.verdict(True, probe["sender"], probe["stream"])}
+
+
+def verified(record_value: dict, sudo=(1, "sudo: a password is required\n"), probes=(CAPTURED,),
+             restart_failures: int = 0) -> tuple[dict, dict]:
+    calls = {"sudo": 0, "restart": 0, "health": 0, "said": []}
+    clock = [0.0]
+    answers = list(probes)
+
+    def sudo_probe():
+        calls["sudo"] += 1
+        if isinstance(sudo, Exception):
+            raise sudo
+        return sudo
+
+    def restart():
+        calls["restart"] += 1
+        if calls["restart"] <= restart_failures:
+            raise Unavailable("dev-v has no graphical session to capture")
+
+    def health():
+        calls["health"] += 1
+        return health_from(answers.pop(0) if len(answers) > 1 else answers[0])
+
+    def sleep(seconds):
+        clock[0] += seconds
+
+    report = verify_provisioning(record_value, sudo_probe=sudo_probe, restart_capture=restart, health=health,
+                                 say=calls["said"].append, sleep=sleep, clock=lambda: clock[0],
+                                 deadline=30, poll=3)
+    return report, calls
+
+
+def check_verify() -> None:
+    """The final step: sudo must ask for the password, and a VFIO Linux
+    Looking Glass sender must get past source selection to Capture Start."""
+    report, calls = verified(lg_record())
+    require(report["ok"] and report["sudo"] == "refused" and report["looking_glass"] == "captured"
+            and calls["restart"] == 1, f"a sender that reached Capture Start failed the step: {report}")
+    report, calls = verified(lg_record(), probes=(STUCK,))
+    require(not report["ok"] and report["looking_glass"] == "unproven" and "Capture Start" in report["reason"]
+            and calls["health"] > 1, f"a sender stopped at source selection passed: {report}")
+    report, _ = verified(lg_record(), probes=(NO_CLIENT,))
+    require(not report["ok"], f"a sender with no client and no capture passed: {report}")
+    report, calls = verified(lg_record(), probes=(STUCK, STUCK, CAPTURED))
+    require(report["ok"] and calls["health"] == 3, f"a capture that started later was not seen: {report}")
+    report, calls = verified(lg_record(), restart_failures=2)
+    require(report["ok"] and calls["restart"] == 3 and any("open looking-glass" in line for line in calls["said"]),
+            f"a Machine waiting for its first login was not waited for: {report} {calls}")
+    for sudo, label in (((0, ""), "passwordless"), ((255, "ssh: connect to host: refused\n"), "unverified"),
+                        ((1, "sudo: unknown user\n"), "unverified"),
+                        (Unavailable("SSH inventory is unavailable"), "unverified")):
+        report, calls = verified(lg_record(), sudo=sudo)
+        require(not report["ok"] and report["sudo"] == label and calls["restart"] == 0 and calls["health"] == 0,
+                f"sudo answering {sudo!r} passed the step or went on to Looking Glass: {report}")
+    for value in (lg_record(device="standard"), lg_record(mode_name="disabled"),
+                  lg_record(device="standard", template="workstation-dev-standard")):
+        report, calls = verified(value, probes=(STUCK,))
+        require(report["ok"] and report["looking_glass"] == "not-required" and calls["restart"] == 0,
+                f"a Machine without VFIO Linux Looking Glass was held to it: {value} {report}")
+    try:
+        verified(lg_record(template="server-arch", workspace="server"))
+    except ContractError:
+        pass
+    else:
+        raise AssertionError("a server, which keeps passwordless sudo, was verified")
+
+
+# --- the card ----------------------------------------------------------------
+
+CARD = """import QtQuick
+import QtQuick.Window
+
+Window {
+    id: window
+    width: 900
+    height: 700
+    visible: true
+    property int firstFailure: -1
+    function check(condition, code) {
+        if (!condition && window.firstFailure < 0)
+            window.firstFailure = code;
+    }
+    function visibleText(item, text) {
+        if (!item || item.visible === false)
+            return false;
+        if (item.text !== undefined && String(item.text) === text)
+            return true;
+        const children = item.children || [];
+        return children.some(child => visibleText(child, text));
+    }
+    Tokens { id: sharedTokens }
+    Icons { id: sharedIcons }
+    Theme {
+        id: sharedTheme
+        Component.onCompleted: {
+            sharedTheme.palette = @@PALETTE@@;
+            sharedTheme.paletteAvailable = true;
+        }
+    }
+    readonly property var rows: @@ROWS@@
+    Column {
+        Repeater {
+            id: tiles
+            model: window.rows
+            delegate: MachineTile {
+                required property var modelData
+                width: 320
+                tokens: sharedTokens
+                theme: sharedTheme
+                icons: sharedIcons
+                machine: modelData
+            }
+        }
+    }
+    Timer {
+        interval: 50
+        running: true
+        onTriggered: {
+            @@CHECKS@@
+            Qt.exit(window.firstFailure < 0 ? 0 : 40 + window.firstFailure);
+        }
+    }
+}
+"""
+
+
+def check_card() -> None:
+    """The Machines card says a provisioning is not finished, with the
+    command that resumes it; a product row without a reading is unknown."""
+    sys.path.insert(0, str(ROOT / "tests"))
+    import host_quickshell_runtime_contract as runtime
+
+    runner = shutil.which("qmlscene", path="/usr/lib/qt6/bin") or shutil.which("qmlscene6")
+    if not runner:
+        require(os.environ.get("HYPERLAB_REQUIRE_QML_RUNTIME") != "1", "Qt 6 qmlscene is required here")
+        print("  card: SKIPPED (Qt 6 qmlscene is not installed on this host)")
+        return
+    base = dict(runtime.MACHINE_TEMPLATE, product_managed=True)
+    resume = "cd /srv/hyperlab && privatestack-machine-provision sid --from 6"
+    incomplete = {"status": "incomplete", "text": "Provisioning incomplete: step 6 of 6 (Prove it)",
+                  "resume": resume}
+    rows = [
+        dict(base, name="done-01", provisioning={"status": "finished", "text": "Provisioned", "resume": None}),
+        dict(base, name="sid", provisioning=incomplete),
+        dict(base, name="old-01"),
+        dict(base, name="odd-01", provisioning={"status": "finished-ish", "text": "Ready", "resume": 3}),
+        dict(runtime.MACHINE_TEMPLATE, name="outside-01"),
+    ]
+    checks = """
+            const done = tiles.itemAt(0), sid = tiles.itemAt(1), old = tiles.itemAt(2);
+            const odd = tiles.itemAt(3), outside = tiles.itemAt(4);
+            check(done.provisioningText === "" && !window.visibleText(done, "Provisioned"),
+                  "a finished provisioning is shown on the card");
+            check(sid.provisioningText === "Provisioning incomplete: step 6 of 6 (Prove it)"
+                  && window.visibleText(sid, "Provisioning incomplete: step 6 of 6 (Prove it)"),
+                  "an incomplete provisioning is not visible on the card");
+            check(sid.resumeText === "@@RESUME@@" && window.visibleText(sid, "@@RESUME@@"),
+                  "the resume command is not visible on the card");
+            check(sid.accessibleName.indexOf("Provisioning incomplete") >= 0,
+                  "the card's accessible name hides the incomplete provisioning");
+            check(window.visibleText(old, "Provisioning unknown") && old.resumeText === "",
+                  "a product Machine without a reading is not unknown");
+            check(window.visibleText(odd, "Provisioning unknown") && !window.visibleText(odd, "Ready"),
+                  "a malformed reading is shown as given");
+            check(outside.provisioningText === "",
+                  "a domain that is not a product Machine shows provisioning");
+    """.replace("@@RESUME@@", resume)
+    numbered, messages = runtime.number_checks(checks)
+    directory = runtime.stage()
+    try:
+        source = (CARD.replace("@@PALETTE@@", runtime.PALETTE.read_text(encoding="utf-8"))
+                  .replace("@@ROWS@@", json.dumps(rows)).replace("@@CHECKS@@", numbered))
+        runtime.run(runner, directory, "provisioning card", source, messages)
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
 def main() -> int:
     module = load()
     check_profile_table(module)
@@ -895,6 +1517,13 @@ def main() -> int:
     check_terminal_spawn_failure(module)
     check_terminal_signals(module)
     check_terminal_repeated_signals(module)
+    check_terminal_last_step(module)
+    check_receipts(module)
+    check_resume(module)
+    check_lock(module)
+    check_reader(module)
+    check_verify()
+    check_card()
 
     source = SOURCE.read_text(encoding="utf-8")
     require("shell=True" not in source and "--become-password" not in source,

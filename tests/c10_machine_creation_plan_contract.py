@@ -181,8 +181,19 @@ def check_steps(repo: Path, home: Path, state: Path) -> None:
     write_projected_vm_spec(repo, read_machine("dev-test", state_home=state))
     work = provision_steps(repo, "dev-test", home=home, runtime_dir=runtime, state_home=state)
     ids = [step["id"] for step in work["steps"]]
-    require(ids == ["create-domain", "inventory", "profile-first", "profile-second", "close-access"],
+    require(ids == ["create-domain", "inventory", "profile-first", "profile-second", "close-access", "verify"],
             f"steps: {ids}")
+    require(work["steps"][5] == {"id": "verify", "password": False,
+                                 "label": "Prove sudo asks for the password and Looking Glass reaches capture",
+                                 "argv": ["hyperlabctl", "machine", "verify-provisioning", "dev-test"]},
+            f"the last step does not prove the provisioning: {work['steps'][5]}")
+    create_from_template(repo, state_home=state, template_id="workstation-dev", machine_id="dev-plain",
+                         owner="sid", created_at="2026-10-04T00:00:00Z")
+    write_projected_vm_spec(repo, read_machine("dev-plain", state_home=state))
+    plain = provision_steps(repo, "dev-plain", home=home, runtime_dir=runtime, state_home=state)["steps"]
+    require(plain[-1]["label"] == "Prove sudo asks for the password"
+            and plain[-1]["argv"] == ["hyperlabctl", "machine", "verify-provisioning", "dev-plain"],
+            f"a workstation without Looking Glass is held to it: {plain[-1]}")
     first, second = work["steps"][2], work["steps"][3]
     require(first["password"] is True and second["password"] is False, "password step misplaced")
     require(first["argv"][-2:] == ["-e", "@{access_file}"], f"hash file not a placeholder: {first}")
@@ -322,8 +333,12 @@ def check_projection(root: Path, repo: Path, home: Path, state: Path) -> None:
     require(snapshot(repo, state) == before, "an unreviewed workstation changed the registry or a spec")
 
 
+VERIFY = ["hyperlabctl", "machine", "verify-provisioning"]
+
+
 def doc_commands(section_titles: tuple[str, ...]) -> list[list[str]]:
-    """The ansible-playbook commands of the named sections, in document order."""
+    """The ansible-playbook and verify-provisioning commands of the named
+    sections, in document order."""
     text = DOC.read_text(encoding="utf-8")
     sections = re.split(r"^## ", text, flags=re.MULTILINE)
     commands = []
@@ -333,7 +348,7 @@ def doc_commands(section_titles: tuple[str, ...]) -> list[list[str]]:
         for block in re.findall(r"^```bash\n(.*?)^```", matches[0], flags=re.MULTILINE | re.DOTALL):
             for line in block.replace("\\\n", " ").splitlines():
                 argv = shlex.split(line)
-                if argv and argv[0] == "ansible-playbook":
+                if argv and (argv[0] == "ansible-playbook" or argv[:3] == VERIFY):
                     commands.append(argv)
     return commands
 
@@ -362,8 +377,14 @@ def shape(argv: list[str]) -> tuple[str, bool, list[str], list[object]]:
     return playbook, become, inventories, extra
 
 
+def step_shape(argv: list[str]) -> tuple:
+    return tuple(argv) if argv[:3] == VERIFY else shape(argv)
+
+
 def documented(argv: list[str], machine: str, runtime: str, key: str) -> tuple:
     """A documented command with the shell's spellings replaced by values."""
+    if argv[:3] == VERIFY:
+        return tuple(argv)
     playbook, become, inventories, extra = shape(argv)
     inventories = [value.replace("/run/user/$UID/", runtime + "/") for value in inventories]
     values: list[object] = []
@@ -407,7 +428,7 @@ def check_docs(repo: Path, home: Path, state: Path) -> None:
 
     server = steps("srv-01")
     docs = doc_commands(("A server Machine",))
-    require([shape(step["argv"]) for step in server]
+    require([step_shape(step["argv"]) for step in server]
             == [documented(argv, "srv-01", runtime, key) for argv in docs],
             f"server steps differ from docs/first-machine.md:\n{server}\n{docs}")
     require([step["id"] for step in server] == ["create-domain", "inventory", "close-access"],
@@ -415,15 +436,15 @@ def check_docs(repo: Path, home: Path, state: Path) -> None:
 
     work = steps("dev-01")
     docs = doc_commands(("2. The domain", "3. The rice"))
-    require([shape(step["argv"]) for step in work]
+    require([step_shape(step["argv"]) for step in work]
             == [documented(argv, "dev-01", runtime, key) for argv in docs],
             f"workstation steps differ from docs/first-machine.md:\n{work}\n{docs}")
     require([step["id"] for step in work]
-            == ["create-domain", "inventory", "profile-first", "profile-second", "close-access"],
+            == ["create-domain", "inventory", "profile-first", "profile-second", "close-access", "verify"],
             f"workstation step ids: {work}")
     # Independent of the document: the hash file goes to the first pass only.
-    require([step["password"] for step in work] == [False, False, True, False, False]
-            and [step["argv"].count("@{access_file}") for step in work] == [0, 0, 1, 0, 0],
+    require([step["password"] for step in work] == [False, False, True, False, False, False]
+            and [step["argv"].count("@{access_file}") for step in work] == [0, 0, 1, 0, 0, 0],
             f"the hash file is not the first profile pass's alone: {work}")
     require(work[3]["argv"] == ["ansible-playbook", "-i", "inventory.ini", "-i", f"{runtime}/dev-01.ini",
                                 PROFILE_PLAYBOOKS["workstation-dev"]],
@@ -431,6 +452,7 @@ def check_docs(repo: Path, home: Path, state: Path) -> None:
     require(work[4]["argv"] == ["ansible-playbook", "-i", "inventory.ini", "-i", f"{runtime}/dev-01.ini",
                                 "playbooks/guest-close-access.yml"],
             f"close-access step: {work[4]}")
+    require(work[5]["argv"] == [*VERIFY, "dev-01"], f"verify step: {work[5]}")
 
 
 def check_cli(repo: Path, home: Path, state: Path) -> None:

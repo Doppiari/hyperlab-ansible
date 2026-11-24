@@ -14,6 +14,10 @@ proof.
 - [`bar-geometry-measured-in-fallback-fonts.md`](bar-geometry-measured-in-fallback-fonts.md):
   CI drew the rail in DejaVu and reported an overlap the host fonts do not
   have; the contract now refuses fallback fonts and CI installs the shell's.
+- [`wizard-provisioning-interrupted.md`](wizard-provisioning-interrupted.md):
+  a provisioning cut off half way left nothing behind, so the Machine looked
+  ready; every run now keeps a receipt and a log, a Machine reads incomplete
+  or unknown until a run finishes, and the last step proves sudo and capture.
 - [`hyprland-watch-heartbeat-postponed-by-ignored-events.md`](hyprland-watch-heartbeat-postponed-by-ignored-events.md):
   title changes and other ignored Hyprland events restarted the watchers'
   heartbeat, so a busy session read "Workspaces unavailable"; the heartbeat

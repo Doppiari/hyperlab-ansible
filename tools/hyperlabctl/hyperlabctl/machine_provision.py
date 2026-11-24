@@ -5,19 +5,31 @@ Machine record, so the shell only shows limits the factory enforces. The
 provisioning steps are the documented commands of docs/first-machine.md,
 derived from one Machine record and its projected VM spec; the reviewed
 provisioner runs them, never anything a caller supplies. See ADR 0017.
+
+The provisioner leaves a receipt of every run below
+$XDG_STATE_HOME/hyperlab/provisioning/; `provisioning_status` reads it, and
+only a receipt that says every step of this record's plan ended with 0 reads
+as provisioned. A missing, unreadable or foreign receipt reads "unknown",
+anything else "incomplete", with the command that resumes the run.
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
+import fcntl
 import hashlib
 import json
+import os
 import re
+import shlex
+import stat
+import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .errors import ContractError, Unavailable
+from .errors import ContractError, HyperlabError, Unavailable
 from .machine_factory import (
     MACHINE_ID_RE,
     _image,
@@ -29,7 +41,7 @@ from .machine_factory import (
     read_generated_spec,
     template_catalog,
 )
-from .machine_registry import read_machine
+from .machine_registry import _state_home, read_machine
 
 # The one guest key of this host. Only the public half is ever read.
 GUEST_KEY = Path(".ssh/hyperlab_ed25519.pub")
@@ -50,6 +62,13 @@ PROFILE_PLAYBOOKS = {
 
 # Placeholder for the private hash file; the provisioner substitutes it.
 ACCESS_FILE = "{access_file}"
+
+# The steps of each kind of Machine, in order. A workstation ends by proving
+# what the steps before it should have left: passwordless sudo gone and, for
+# a VFIO Machine with Linux Looking Glass, a sender that reaches capture.
+SERVER_STEP_IDS = ("create-domain", "inventory", "close-access")
+WORKSTATION_STEP_IDS = ("create-domain", "inventory", "profile-first", "profile-second",
+                        "close-access", "verify")
 
 
 def guest_key(home: Path) -> dict[str, str]:
@@ -227,11 +246,330 @@ def provision_steps(repo_root: Path | str, machine_id: str, *, home: Path,
                       "password": True, "argv": [*profile, "-e", "@" + ACCESS_FILE]})
         steps.append({"id": "profile-second", "label": "Apply the profile again (expect no changes)",
                       "password": False, "argv": profile})
-    # Last, once the host key is pinned and the profile has run: restrict the
-    # guest agent, and end passwordless sudo when the account has a password.
+    # Once the host key is pinned and the profile has run: restrict the guest
+    # agent, and end passwordless sudo when the account has a password.
     steps.append({"id": "close-access",
                   "label": "Restrict the guest agent and end passwordless sudo",
                   "password": False,
                   "argv": ["ansible-playbook", "-i", "inventory.ini", "-i", inventory,
                            "playbooks/guest-close-access.yml"]})
+    if playbook is not None:
+        steps.append({"id": "verify", "label": verify_label(record), "password": False,
+                      "argv": ["hyperlabctl", "machine", "verify-provisioning", machine_id]})
     return {"schema": 1, "machine": machine_id, "spec": spec, "steps": steps}
+
+
+def step_ids(record: dict[str, Any]) -> list[str] | None:
+    """The ids of the steps this record's Template calls for, or None when
+    it has no reviewed provisioning."""
+    provision = _provision(record["template"]["id"], record["presentation"]["workspace_profile"])
+    if "blocked_reason" in provision:
+        return None
+    return list(WORKSTATION_STEP_IDS if provision["profile_playbook"] else SERVER_STEP_IDS)
+
+
+def looking_glass_proof(record: dict[str, Any]) -> bool:
+    """Whether the final step must see the Linux Looking Glass sender capture."""
+    return (record["device_capability"] == "vfio"
+            and record["presentation"]["looking_glass_mode"] == "linux-experimental")
+
+
+def verify_label(record: dict[str, Any]) -> str:
+    if looking_glass_proof(record):
+        return "Prove sudo asks for the password and Looking Glass reaches capture"
+    return "Prove sudo asks for the password"
+
+
+# ------------------------------------------------------------- the receipt
+#
+# Written only by privatestack-machine-provision, which cannot import this
+# module; a contract keeps the two layouts equal.
+
+RECEIPT_SCHEMA = 1
+RECEIPT_LIMIT = 256 * 1024
+RECEIPT_KEYS = {"schema", "machine", "record_sha256", "state", "started_at", "ended_at",
+                "from_step", "reason", "steps"}
+RECEIPT_STEP_KEYS = {"id", "label", "result", "exit"}
+RECEIPT_STATES = ("running", "finished", "failed", "interrupted")
+STEP_RESULTS = ("pending", "running", "ok", "failed", "interrupted")
+# The result the first unfinished step may have in each state of the run.
+UNFINISHED_RESULT = {"running": ("running", "pending"), "failed": ("failed",),
+                     "interrupted": ("interrupted", "pending")}
+PROVISIONER = "privatestack-machine-provision"
+TIME_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
+DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def receipt_directory(state_home: Path | None = None) -> Path:
+    return _state_home(state_home) / "hyperlab" / "provisioning"
+
+
+def _owned_directory(path: Path, *, exact_mode: int | None = None) -> bool:
+    """True for a real directory of this user; False when it is absent."""
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+            or (exact_mode is not None and stat.S_IMODE(info.st_mode) != exact_mode)):
+        raise Unavailable(f"{path} is not a private directory of this user")
+    return True
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    keys = [key for key, _value in pairs]
+    if len(keys) != len(set(keys)):
+        raise ValueError("a key is repeated")
+    return dict(pairs)
+
+
+def _integer(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def receipt_problem(document: Any, machine_id: str) -> str:
+    """Why a parsed receipt cannot be read, or "" when it holds."""
+    if not isinstance(document, dict) or set(document) != RECEIPT_KEYS:
+        return "the receipt does not have the receipt fields"
+    if document["schema"] != RECEIPT_SCHEMA or not _integer(document["schema"]):
+        return "the receipt has another schema"
+    if document["machine"] != machine_id:
+        return "the receipt names another Machine"
+    state, steps = document["state"], document["steps"]
+    if (not isinstance(document["record_sha256"], str)
+            or DIGEST_RE.fullmatch(document["record_sha256"]) is None
+            or state not in RECEIPT_STATES
+            or not isinstance(document["started_at"], str) or TIME_RE.fullmatch(document["started_at"]) is None
+            or (document["ended_at"] is not None if state == "running"
+                else not isinstance(document["ended_at"], str)
+                or TIME_RE.fullmatch(document["ended_at"]) is None)
+            or not isinstance(document["reason"], str) or len(document["reason"]) > 1000
+            or not _integer(document["from_step"])
+            or not isinstance(steps, list) or not steps):
+        return "the receipt has an invalid field"
+    for step in steps:
+        if (not isinstance(step, dict) or set(step) != RECEIPT_STEP_KEYS
+                or not isinstance(step["id"], str) or not isinstance(step["label"], str)
+                or step["result"] not in STEP_RESULTS
+                or not (step["exit"] is None or _integer(step["exit"]))):
+            return "the receipt has an invalid step"
+        if step["result"] == "ok" and step["exit"] != 0:
+            return "a step reads ok without exit status 0"
+        if step["result"] in ("pending", "running") and step["exit"] is not None:
+            return "a step that has not ended has an exit status"
+        if step["result"] == "failed" and step["exit"] == 0:
+            return "a failed step has exit status 0"
+    results = [step["result"] for step in steps]
+    unfinished = next((index for index, result in enumerate(results) if result != "ok"), None)
+    if state == "finished":
+        return "" if unfinished is None else "a finished receipt has a step that did not end with 0"
+    if (unfinished is None or results[unfinished] not in UNFINISHED_RESULT[state]
+            or any(result != "pending" for result in results[unfinished + 1:])):
+        return f"the steps of a {state} receipt are out of order"
+    if not 1 <= document["from_step"] <= unfinished + 1:
+        return "the receipt resumed after a step that had not ended with 0"
+    return ""
+
+
+def read_receipt(machine_id: str, *, state_home: Path | None = None) -> tuple[dict[str, Any] | None, str]:
+    """The receipt and "", (None, "missing") or (None, why it is unreadable)."""
+    try:
+        directory = receipt_directory(state_home)
+        if not (_owned_directory(directory.parent) and _owned_directory(directory, exact_mode=0o700)):
+            return None, "missing"
+        path = directory / f"{machine_id}.json"
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            return None, "missing"
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > RECEIPT_LIMIT):
+            return None, "the receipt is not a private regular file of this user"
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        with os.fdopen(descriptor, "rb") as stream:
+            data = stream.read(RECEIPT_LIMIT + 1)
+        document = json.loads(data.decode("utf-8"), object_pairs_hook=_unique_object)
+    except (HyperlabError, OSError, UnicodeDecodeError, ValueError) as exc:
+        return None, f"the receipt cannot be read ({exc})"
+    problem = receipt_problem(document, machine_id)
+    return (None, problem) if problem else (document, "")
+
+
+def provisioning_running(machine_id: str, *, state_home: Path | None = None) -> bool | None:
+    """Whether a provisioner holds this Machine's lock now; None if unknown."""
+    try:
+        path = receipt_directory(state_home) / f"{machine_id}.lock"
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except FileNotFoundError:
+        return False
+    except (HyperlabError, OSError):
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return None
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        except OSError:
+            return None
+        return False
+    finally:
+        os.close(descriptor)
+
+
+def resume_command(machine_id: str, step: int, repo_root: Path | str | None) -> str:
+    """The command that runs this Machine's provisioning again from `step`."""
+    command = f"{PROVISIONER} {machine_id}" + (f" --from {step}" if step > 1 else "")
+    return f"cd {shlex.quote(str(repo_root))} && {command}" if repo_root is not None else command
+
+
+def provisioning_status(record: dict[str, Any], *, record_sha256: str, state_home: Path | None = None,
+                        repo_root: Path | str | None = None) -> dict[str, Any]:
+    """What the receipt says about this record's provisioning.
+
+    Only "finished" means provisioned. Nothing here raises for a receipt:
+    whatever cannot be read reads "unknown".
+    """
+    machine_id = record["id"]
+    expected = step_ids(record)
+    try:
+        log: Path | None = receipt_directory(state_home) / f"{machine_id}.log"
+        if not stat.S_ISREG(log.lstat().st_mode):
+            log = None
+    except (HyperlabError, OSError):
+        log = None
+    status: dict[str, Any] = {
+        "status": "unknown", "receipt": "missing", "record_sha256": record_sha256,
+        "step": None, "steps": len(expected) if expected else None, "label": None,
+        "step_ids": expected, "running": False, "text": "Provisioning unknown",
+        "resume": resume_command(machine_id, 1, repo_root) if expected else None,
+        "log": str(log) if log is not None else None, "reason": "",
+    }
+    if expected is None:
+        status.update(receipt="unreadable", reason="this Template has no reviewed provisioning")
+        return status
+    receipt, problem = read_receipt(machine_id, state_home=state_home)
+    if receipt is None:
+        status.update(receipt="missing" if problem == "missing" else "unreadable",
+                      reason=("no provisioning receipt: provisioned before receipts existed, "
+                              "or never provisioned") if problem == "missing" else problem)
+        return status
+    if receipt["record_sha256"] != record_sha256:
+        status.update(receipt="stale", reason="the receipt belongs to another Machine record of this name")
+        return status
+    if [step["id"] for step in receipt["steps"]] != expected:
+        status.update(receipt="stale", reason="the receipt's steps are not the ones this Machine calls for")
+        return status
+    if receipt["state"] == "finished":
+        status.update(status="finished", receipt="finished", text="Provisioned", resume=None)
+        return status
+    index = next(index for index, step in enumerate(receipt["steps"]) if step["result"] != "ok")
+    step = receipt["steps"][index]
+    state = receipt["state"]
+    reason = receipt["reason"]
+    if state == "running":
+        running = provisioning_running(machine_id, state_home=state_home)
+        if running is None:
+            status.update(receipt="unreadable", reason="the provisioning lock cannot be read")
+            return status
+        if running:
+            status.update(status="incomplete", receipt="running", running=True, step=index + 1,
+                          label=step["label"], resume=None,
+                          text=f"Provisioning incomplete: step {index + 1} of {len(expected)} "
+                               f"({step['label']}), running now")
+            return status
+        state, reason = "interrupted", "the run ended without recording how (killed, or the host stopped)"
+    status.update(status="incomplete", receipt=state, step=index + 1, label=step["label"], reason=reason,
+                  resume=resume_command(machine_id, index + 1, repo_root),
+                  text=f"Provisioning incomplete: step {index + 1} of {len(expected)} ({step['label']})")
+    return status
+
+
+# ---------------------------------------------------------- the last step
+
+# Streams in which the Looking Glass sender has started a capture: it got
+# past the screen-cast portal's source selection.
+CAPTURED_STREAMS = ("starting", "streaming")
+VERIFY_DEADLINE = 300.0
+VERIFY_POLL = 3.0
+
+
+def sudo_verdict(returncode: int, stderr: str) -> str:
+    """`sudo -n true` in the guest: "refused" only when sudo itself asked
+    for a password; "passwordless" when it ran; anything else is unproven."""
+    if returncode == 0:
+        return "passwordless"
+    if returncode == 1 and "a password is required" in stderr.lower():
+        return "refused"
+    return "unverified"
+
+
+def capture_reached(report: Any) -> bool:
+    """A `looking-glass health` report whose sender has started a capture."""
+    return (isinstance(report, dict) and report.get("agent") == "yes"
+            and report.get("sender") == "running" and report.get("stream") in CAPTURED_STREAMS)
+
+
+PROBE_ERRORS = (HyperlabError, OSError, subprocess.TimeoutExpired)
+
+
+def verify_provisioning(record: dict[str, Any], *, sudo_probe: Callable[[], tuple[int, str]],
+                        restart_capture: Callable[[], Any], health: Callable[[], Any],
+                        say: Callable[[str], None], sleep: Callable[[float], None],
+                        clock: Callable[[], float], deadline: float = VERIFY_DEADLINE,
+                        poll: float = VERIFY_POLL) -> dict[str, Any]:
+    """The final step of a workstation's provisioning; `ok` only when every
+    proof held. The probes are injected; nothing here reaches a guest."""
+    machine_id = record["id"]
+    ids = step_ids(record)
+    if ids is None or "verify" not in ids:
+        raise ContractError(f"{machine_id} has no verification step: a server keeps passwordless sudo")
+    report: dict[str, Any] = {"machine": machine_id, "sudo": "unverified",
+                              "looking_glass": "not-required", "stream": None, "ok": False, "reason": ""}
+    try:
+        returncode, stderr = sudo_probe()
+    except PROBE_ERRORS as exc:
+        report["reason"] = f"sudo -n true could not be run in the guest: {exc}"
+        return report
+    report["sudo"] = sudo_verdict(returncode, stderr)
+    if report["sudo"] == "passwordless":
+        report["reason"] = "sudo -n true succeeded in the guest: passwordless sudo is still open"
+        return report
+    if report["sudo"] != "refused":
+        report["reason"] = (f"sudo -n true ended with {returncode} without asking for a password: "
+                            f"{stderr.strip()[-200:]}")
+        return report
+    say("sudo asks for the password: passwordless sudo has ended.")
+    if looking_glass_proof(record):
+        report["looking_glass"] = "unproven"
+        end = clock() + deadline
+        restarted = False
+        said = ""
+        while True:
+            try:
+                if not restarted:
+                    restart_capture()
+                    restarted = True
+                    say("Capture restarted; waiting for the sender to reach Capture Start.")
+                observed = health()
+                if capture_reached(observed):
+                    report.update(looking_glass="captured", stream=observed["stream"])
+                    break
+                detail = (f"agent {observed.get('agent')}, sender {observed.get('sender')}, "
+                          f"stream {observed.get('stream')}") if isinstance(observed, dict) else "no report"
+                report["stream"] = observed.get("stream") if isinstance(observed, dict) else None
+            except PROBE_ERRORS as exc:
+                detail = str(exc)
+            if detail != said:
+                say(f"Not yet: {detail}. Open Looking Glass for {machine_id} "
+                    f"(hyperlabctl open looking-glass {machine_id}) and log in if asked.")
+                said = detail
+            if clock() >= end:
+                report["reason"] = (f"the Looking Glass sender did not reach Capture Start within "
+                                    f"{int(deadline)} s ({detail})")
+                return report
+            sleep(poll)
+        say(f"The Looking Glass sender reached capture (stream {report['stream']}).")
+    report["ok"] = True
+    return report
