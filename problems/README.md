@@ -18,6 +18,10 @@ proof.
   title changes and other ignored Hyprland events restarted the watchers'
   heartbeat, so a busy session read "Workspaces unavailable"; the heartbeat
   now counts from the last published snapshot.
+- [`guest-fullscreen-fixture-torn-state-read.md`](guest-fullscreen-fixture-torn-state-read.md):
+  the fake compositor read a state file the test was rewriting in place and
+  crashed, so a correct UNKNOWN looked like a bad receipt; fixture files are
+  now replaced whole.
 
 - [`qml-wiring-missed-inherited-item-state.md`](qml-wiring-missed-inherited-item-state.md):
   structural wiring rejected the sphere's inherited Item.state, although
