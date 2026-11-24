@@ -384,3 +384,68 @@ with tempfile.TemporaryDirectory() as tmp:
         print(f"{name}: red ({len(fails)} failures, incl. {reason}); restored green", flush=True)
 PY
 ```
+
+## Guest fullscreen fixture writes
+
+The concurrent guest fullscreen tests change fixture files while the fake
+compositor reads them. An in-place rewrite let it read an empty `state`,
+crash, and turn a dispatch into an UNKNOWN outcome
+([problem record](../../problems/guest-fullscreen-fixture-torn-state-read.md)).
+The check is `python3 tools/hyperlabctl/tests/run.py`; the assertions are in
+`tests/test_vm_guest_fullscreen.py`. Each break was made on the file, the
+suite run, the saved copy restored and the suite run green again.
+
+| Mutation | File | Break | Result | Assertion that caught it |
+| --- | --- | --- | --- | --- |
+| `guest-write-in-place` | `tests/test_vm_guest_fullscreen.py` | `Guest.write` rewrites the file in place | red | `fixture_write_test_side` expected `('0', '3')`, got `('3', '3')` |
+| `compositor-write-in-place` | `tests/test_vm_guest_fullscreen.py` | The fake compositor's `write` rewrites in place | red | `fixture_write_compositor` expected `('0', '2')`, got `('2', '2')` |
+| `delayed-apply-in-place` | `tests/test_vm_guest_fullscreen.py` | The delayed-apply worker rewrites `state` in place | red | `fixture_write_delayed_apply` expected `('0', '2')`, got `('2', '2')` |
+
+Replay from `tools/hyperlabctl` on an otherwise idle tree:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+F = Path('tests/test_vm_guest_fullscreen.py')
+M = [
+ ('guest-write-in-place', F,
+  [('        staged = self.root / (".%s.%d.tmp" % (name, os.getpid()))\n'
+    '        staged.write_text(str(value), encoding="utf-8")\n'
+    '        os.replace(staged, self.root / name)\n',
+    '        (self.root / name).write_text(str(value), encoding="utf-8")\n')],
+  'fixture_write_test_side'),
+ ('compositor-write-in-place', F,
+  [('    staged = root / (".%s.%d.tmp" % (name, os.getpid()))\n'
+    '    staged.write_text(str(value))\n'
+    '    os.replace(staged, root / name)\n',
+    '    (root / name).write_text(str(value))\n')],
+  'fixture_write_compositor'),
+ ('delayed-apply-in-place', F,
+  [('(root / ".state.tmp").write_text("2")\nos.replace(root / ".state.tmp", root / "state")\n',
+    '(root / "state").write_text("2")\n')],
+  'fixture_write_delayed_apply'),
+]
+cmd = ['python3', 'tests/run.py']
+with tempfile.TemporaryDirectory() as tmp:
+    for name, path, edits, reason in M:
+        backup = Path(tmp) / (name + path.name); shutil.copy2(path, backup)
+        text = path.read_text()
+        for old, new in edits:
+            assert text.count(old) == 1, (name, old); text = text.replace(old, new, 1)
+        try:
+            path.write_text(text)
+            red = subprocess.run(cmd, text=True, capture_output=True, timeout=600)
+            out = red.stdout + red.stderr
+            fails = [l.strip() for l in out.splitlines() if l.strip().startswith('FAIL')]
+            assert red.returncode != 0 and reason in out, (name, red.returncode, fails[:5])
+        finally:
+            shutil.copy2(backup, path)
+        green = subprocess.run(cmd, text=True, capture_output=True, timeout=600)
+        assert green.returncode == 0, (name, 'restore failed')
+        print(f"{name}: red ({len(fails)} failures, incl. {reason}); restored green", flush=True)
+PY
+```
