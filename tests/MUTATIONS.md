@@ -6868,3 +6868,38 @@ The pre-change row was observed on the tree before the change with the
 busy-stream cases of the contract, before the clock case was added. Each break turned the contract red; restoring the saved adapter
 byte-for-byte made the same command pass. The Sway loops are not touched by
 any break and their quiet-stream heartbeat case stayed green throughout.
+
+## A provisioning reads finished only when every step ended with 0
+
+`tests/host_machine_provision_contract.py` runs the real provisioner over
+inert playbooks and a recording `hyperlabctl`, in-process and on a real PTY,
+and reads its receipts with hyperlabctl's own `provisioning_status`. It
+fails a step at each place a run can fail, the last one included, sends
+SIGINT, SIGTERM, SIGHUP and SIGKILL in the middle of a step, resumes with
+`--from`, holds the run lock from outside, damages the receipt, runs the
+final verification against a Looking Glass sender stopped at source
+selection and one that logged `Capture Start`, and renders the Machines
+card offscreen. See
+[the problem note](../problems/wizard-provisioning-interrupted.md).
+
+Replay one at a time from a saved copy of the named file, run the named
+check (or the whole contract), restore the copy byte-for-byte and run it
+again.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| pre-change | The provisioner before this change, under `check_receipts`. | `a server run that ended with 0 everywhere is not finished: 0 None` | Exit 0, contract OK. |
+| `finished-before-last-step` | In `privatestack-machine-provision.py`, write `receipt.end("finished")` when step M-1 ends, before the last step runs. | `SIGTERM in the last step left {... 'state': 'finished' ... 'close-access' ... 'result': 'running' ...}` | Exit 0, contract OK. |
+| `missing-receipt-ready` | In `machine_provision.py`, a missing receipt reads `finished` / `Provisioned`. | `a Machine without a receipt reads {'status': 'finished', 'receipt': 'missing', ... 'text': 'Provisioned' ...}` | Exit 0, contract OK. |
+| `no-interrupted-write` | The provisioner's signal path no longer calls `receipt.stop(...)`. | `SIGINT was not recorded as an interrupted step 3: {... 'state': 'running' ...}` | Exit 0, contract OK. |
+| `running-without-lock` | `provisioning_running` treats every lock file as held. | `a run that died without recording its end reads {... 'receipt': 'running', 'running': True ...}` | Exit 0, contract OK. |
+| `digest-ignored` | `provisioning_status` skips the record digest comparison. | `a receipt with another record's digest reads {'status': 'finished' ...}` | Exit 0, contract OK. |
+| `stuck-sender-accepted` | `CAPTURED_STREAMS` gains `"unknown"`. | `a sender stopped at source selection passed: {... 'looking_glass': 'captured', 'stream': 'unknown', 'ok': True ...}` | Exit 0, contract OK. |
+| `passwordless-sudo-accepted` | `sudo_verdict` reads exit 0 as `refused`. | `sudo answering (0, '') passed the step or went on to Looking Glass: {... 'ok': True ...}` | Exit 0, contract OK. |
+| `card-missing-reading-hidden` | In `MachineTile.qml`, a product row without `provisioning` shows nothing. | `provisioning card: "a product Machine without a reading is not unknown"` | Exit 0, contract OK. |
+| `resume-past-failed-step` | `resumable` drops `first <= unfinished`. | `['dev-r', '--from', '6'] skipped the failed step: 0 []` | Exit 0, contract OK. |
+| `verify-step-dropped` | `provision_steps` no longer appends the `verify` step (`tests/c10_machine_creation_plan_contract.py`). | `steps: ['create-domain', 'inventory', 'profile-first', 'profile-second', 'close-access']` | Exit 0, contract OK. |
+
+Each break turned its check red with the diagnostic shown (abridged where it
+prints a whole receipt); restoring the saved file byte-for-byte made the
+whole contract pass again.
