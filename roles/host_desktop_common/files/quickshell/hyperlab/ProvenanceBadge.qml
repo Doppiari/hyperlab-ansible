@@ -3,9 +3,9 @@
 // Where am I typing? The item draws the answer the bar core gives in colour
 // as a shape and words: the Machine's sphere with its name and domain
 // ("dev-01 · dev"), the host's grey sphere with "Host" while nothing has
-// focus, or the neutral outline with "Unknown" when focus cannot be placed. Colour is carried by
-// the sphere only and never without the domain word; the words stay in the
-// primary text tone.
+// focus, or the neutral outline with "Unknown" when focus cannot be placed.
+// Colour is carried by the sphere only and never without the domain word;
+// the words stay in the primary text tone.
 // A proven Machine whose inventory state the sphere cannot draw keeps its
 // domain and adds that state word beside the neutral outline (ADR 0064).
 //

@@ -2917,6 +2917,7 @@ PROVENANCE = """
             // forged it: by PID, by app id, by window id, by its old reason.
             const forgedHost = [
                 [910, "foot", "0x10", forgedFrom(real.desktop, v => { v.pid = 910; })],
+                [910, "", "", forgedFrom(real.desktop, v => { v.pid = 910; })],
                 [910, "foot", "0x10", forgedFrom(real.desktop, v => {
                     v.pid = 910; v.reason = "unregistered-host-process"; })],
                 [null, "foot", "0x1f", real.desktop],
