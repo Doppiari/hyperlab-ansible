@@ -172,6 +172,19 @@ def cli(args: list[str], stdin: str | None = None) -> subprocess.CompletedProces
 
 def check_unregistered_windows(resolver) -> None:
     """Direct resolve() and both CLI modes on a temporary proc/registry/spec."""
+    # host_native() refuses any snapshot that names something, whoever calls
+    # it: resolve() checking first is not the only guard.
+    desktop = {"pid": None, "app_id": "", "window_id": ""}
+    require(resolver.host_native(surface=desktop, reason="no-focused-client")["trust"]
+            == "host", "host_native() refused the empty desktop")
+    for named in ({**desktop, "pid": 1}, {**desktop, "app_id": "foot"},
+                  {**desktop, "window_id": "0x1"}):
+        try:
+            answer = resolver.host_native(surface=named, reason="no-focused-client")
+        except resolver.ProvenanceError:
+            continue
+        require(False, f"host_native() named {named} HOST: {answer}")
+
     for _, app_id, _ in UNREGISTERED_WINDOWS:
         require(
             not resolver.managed_hint(app_id),
