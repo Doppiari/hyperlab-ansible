@@ -6899,6 +6899,11 @@ again.
 | `card-missing-reading-hidden` | In `MachineTile.qml`, a product row without `provisioning` shows nothing. | `provisioning card: "a product Machine without a reading is not unknown"` | Exit 0, contract OK. |
 | `resume-past-failed-step` | `resumable` drops `first <= unfinished`. | `['dev-r', '--from', '6'] skipped the failed step: 0 []` | Exit 0, contract OK. |
 | `verify-step-dropped` | `provision_steps` no longer appends the `verify` step (`tests/c10_machine_creation_plan_contract.py`). | `steps: ['create-domain', 'inventory', 'profile-first', 'profile-second', 'close-access']` | Exit 0, contract OK. |
+| pre-review | The provisioner of the first round, under the dead-run resume case of `check_real_cli`. | `the offered command did not resume a dead run: refused: only a failed or interrupted provisioning can be resumed ...` | Exit 0, contract OK. |
+| `dead-run-resume-refused` | The read under the lock calls `resumable(provisioning, steps, first)` without `locked=True`. | `the offered command did not resume a dead run: refused: only a failed or interrupted provisioning can be resumed ...` | Exit 0, contract OK. |
+| `lock-reread-removed` | Delete the second `machine_record` and `resumable` under the lock. | `a run that finished before the lock was taken was resumed: 0 [['-i', 'inventory.ini', ..., 'playbooks/guest-close-access.yml']]` | Exit 0, contract OK. |
+| `lock-no-retry` | `LOCK_WAIT = 0.0`: the first contention refuses. | `a reader's probe of the lock refused a run: refused: another provisioning of dev-l is running` | Exit 0, contract OK. |
+| `resume-hint-unquoted` | `resume_hint` prints `cd {repo}` without `shlex.quote`. | `the terminal's resume command differs from the card's: "cd '/tmp/.../check out; $(x)/repo' && ..."` | Exit 0, contract OK. |
 
 Each break turned its check red with the diagnostic shown (abridged where it
 prints a whole receipt); restoring the saved file byte-for-byte made the
