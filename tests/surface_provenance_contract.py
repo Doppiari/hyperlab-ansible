@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -112,6 +115,166 @@ def registry_entry(
         "spec_sha256": spec_sha,
         "registered_by": "hyperlabctl",
     }
+
+
+def require_unverified(answer: dict, reason: str, what: str) -> None:
+    """An actual window without a verified registration names nobody."""
+    require(
+        answer.get("resolved") is False
+        and answer.get("trust") is None
+        and answer.get("trust_source") is None
+        and answer.get("domain") is None
+        and answer.get("network_profile") is None
+        and answer.get("guest_metadata_authoritative") is False
+        and answer.get("wallpaper_allowed") is False
+        and answer.get("rgb_allowed") is False,
+        f"{what} gained a trusted identity or presentation: {answer}",
+    )
+    require(
+        answer.get("reason") == reason
+        and answer.get("surface_class") == "unverified-window",
+        f"{what} is not an unverified window ({reason}): {answer}",
+    )
+
+
+# Windows a host process draws whose content the host cannot vouch for. The
+# app ids are what Foot, virt-manager and spicy report; the last is one no
+# list could ever anticipate. The titles look like trust words on purpose.
+UNREGISTERED_WINDOWS = (
+    ("plain foot", "foot", "HOST"),
+    ("foot running ssh", "foot", "ssh dev-01 CLEAN"),
+    ("virt-manager", "virt-manager", "win11clean-valley on QEMU/KVM"),
+    ("spicy", "spicy", "spice://localhost CLEAN"),
+    ("an unfamiliar app id", "org.example.unfamiliar-viewer-7f3a", "HOST trusted"),
+    ("a managed-looking spoof", "hyperlab-managed-ssh-dev", "dev-01 · dev"),
+    ("a capitalised spoof", "HyperLab", "CLEAN"),
+)
+
+# Spoofs of a managed transport's app id are refused by the managed-hint
+# path; they are unverified as well, never HOST.
+MANAGED_LOOKING = (
+    ("a Looking Glass spoof", "Looking-Glass-Client", "HOST"),
+    ("a managed ssh spoof", "hyperlab-managed-ssh", "CLEAN"),
+    ("a viewer spoof", "remote-viewer", "HOST"),
+)
+
+
+def cli(args: list[str], stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-I", "-B", str(RESOLVER), *args],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+
+def check_unregistered_windows(resolver) -> None:
+    """Direct resolve() and both CLI modes on a temporary proc/registry/spec."""
+    # host_native() refuses any snapshot that names something, whoever calls
+    # it: resolve() checking first is not the only guard.
+    desktop = {"pid": None, "app_id": "", "window_id": ""}
+    require(resolver.host_native(surface=desktop, reason="no-focused-client")["trust"]
+            == "host", "host_native() refused the empty desktop")
+    for named in ({**desktop, "pid": 1}, {**desktop, "app_id": "foot"},
+                  {**desktop, "window_id": "0x1"}):
+        try:
+            answer = resolver.host_native(surface=named, reason="no-focused-client")
+        except resolver.ProvenanceError:
+            continue
+        require(False, f"host_native() named {named} HOST: {answer}")
+
+    for _, app_id, _ in UNREGISTERED_WINDOWS:
+        require(
+            not resolver.managed_hint(app_id),
+            f"{app_id!r} is a managed hint; the case would not test the default",
+        )
+
+    with tempfile.TemporaryDirectory(prefix="hyperlab-provenance-unverified-") as temp_name:
+        temp = Path(temp_name)
+        repo = temp / "repo"
+        (repo / "vm-specs").mkdir(parents=True)
+        proc = temp / "proc"
+        proc.mkdir()
+        spec = repo / "vm-specs" / "dev-01.yml"
+        spec.write_text(
+            yaml.safe_dump({"name": "dev-01", "network_profile": "dev",
+                            "device_profile": "vfio", "looking_glass": True}),
+            encoding="utf-8",
+        )
+        # A registry with a real entry for another process: unrelated
+        # registrations never lend their trust to a window.
+        registry = {"version": 1, "entries": [registry_entry(
+            pid=47000, start="5", executable="/usr/local/bin/looking-glass-client",
+            kind="looking-glass", domain="dev-01", spec_sha=spec_hash(spec))]}
+        registry_path = temp / "surface-provenance.json"
+        registry_path.write_text(json.dumps(registry), encoding="utf-8")
+        registry_path.chmod(0o600)
+        foot = temp / "foot"
+        foot.write_text("#!/bin/sh\n", encoding="utf-8")
+
+        cases = []
+        for number, (label, app_id, title) in enumerate(UNREGISTERED_WINDOWS + MANAGED_LOOKING):
+            pid = 47100 + number
+            # The process is real and running on the host: that alone does
+            # not establish the provenance of what its window shows.
+            write_proc(proc, pid=pid, start_ticks="9", executable=foot)
+            surface = {"pid": pid, "app_id": app_id, "window_id": f"0x{pid:x}", "title": title}
+            managed = (label, app_id, title) in MANAGED_LOOKING
+            reason = "managed-surface-not-registered" if managed else "unregistered-window"
+            cases.append((label, surface, reason, managed))
+
+        common = ["--repo", str(repo), "--proc-root", str(proc)]
+        stream_lines = []
+        for number, (label, surface, reason, managed) in enumerate(cases, start=1):
+            direct = resolver.resolve(repo=repo, surface=surface, registry=registry,
+                                      proc_root=proc)
+            completed = cli([*common, "resolve", "--surface-json", json.dumps(surface),
+                             "--registry", str(registry_path)])
+            require(completed.returncode == 0,
+                    f"resolve CLI failed for {label}: {completed.stderr.strip()}")
+            printed = json.loads(completed.stdout)
+            for where, answer in (("resolve()", direct), ("resolve CLI", printed)):
+                if managed:
+                    require(answer["resolved"] is False and answer["trust"] is None
+                            and answer["reason"] == reason
+                            and answer["surface_class"] == "managed-unresolved"
+                            and answer["wallpaper_allowed"] is False
+                            and answer["rgb_allowed"] is False,
+                            f"{where}: {label} was not refused: {answer}")
+                else:
+                    require_unverified(answer, reason, f"{where}: {label}")
+            stream_lines.append(json.dumps({"request": number, "surface": {
+                key: surface[key] for key in ("pid", "app_id", "window_id")}}))
+
+        pidless = {"pid": None, "app_id": "foot", "window_id": "0x77"}
+        empty = {"pid": None, "app_id": "", "window_id": ""}
+        stream_lines.append(json.dumps({"request": len(cases) + 1, "surface": pidless}))
+        stream_lines.append(json.dumps({"request": len(cases) + 2, "surface": empty}))
+        completed = cli([*common, "stream", "--registry", str(registry_path)],
+                        stdin="\n".join(stream_lines) + "\n")
+        require(completed.returncode == 0, f"stream CLI failed: {completed.stderr.strip()}")
+        answers = [json.loads(line) for line in completed.stdout.splitlines()]
+        require([answer.get("request") for answer in answers] == list(range(1, len(cases) + 3))
+                and all(answer.get("status") == "ok" for answer in answers),
+                f"the stream did not answer every request in order: {answers}")
+        for (label, surface, reason, managed), answer in zip(cases, answers, strict=False):
+            provenance = answer["provenance"]
+            require(provenance["pid"] == surface["pid"],
+                    f"stream: {label} answered about another process")
+            if managed:
+                require(provenance["resolved"] is False and provenance["trust"] is None
+                        and provenance["reason"] == reason,
+                        f"stream: {label} was not refused: {provenance}")
+            else:
+                require_unverified(provenance, reason, f"stream: {label}")
+        require_unverified(answers[-2]["provenance"], "window-without-pid",
+                           "stream: a PID-less window")
+        desktop = answers[-1]["provenance"]
+        require(desktop["resolved"] is True and desktop["trust"] == "host"
+                and desktop["reason"] == "no-focused-client",
+                f"stream: the empty desktop is no longer HOST: {desktop}")
 
 
 def check_projected_machine(resolver) -> None:
@@ -328,7 +491,8 @@ def main() -> int:
             "guest metadata changed resolved trust",
         )
 
-        # A host application title that contains a VM name must stay HOST.
+        # A host application whose title names a VM is not thereby HOST:
+        # no registration, so it is an unverified window.
         host_surface = {
             "pid": 55001,
             "app_id": "firefox",
@@ -343,14 +507,10 @@ def main() -> int:
             proc_root=proc,
         )
 
-        require(
-            host["resolved"] is True
-            and host["trust"] == "host",
-            "host-native surface was not neutral HOST",
-        )
-        require(
-            host["trust_source"] == "host-native",
-            "host-native source changed",
+        require_unverified(
+            host,
+            "unregistered-window",
+            "an unregistered host application",
         )
 
         # Looking Glass without a HyperLab registration must fail closed.
@@ -458,6 +618,24 @@ def main() -> int:
             "spec drift did not fail closed",
         )
 
+        # A PID-less snapshot that still names a window is not the desktop.
+        for label, partial in (
+            ("app id only", {"app_id": "foot", "window_id": ""}),
+            ("window id only", {"app_id": "", "window_id": "17"}),
+            ("both", {"app_id": "org.example.Viewer", "window_id": "0x9"}),
+        ):
+            pidless = resolver.resolve(
+                repo=repo,
+                surface={"pid": None, "title": "HOST", **partial},
+                registry=registry,
+                proc_root=proc,
+            )
+            require_unverified(
+                pidless,
+                "window-without-pid",
+                f"a PID-less window ({label})",
+            )
+
         # Desktop/no focused client is neutral HOST.
         desktop = resolver.resolve(
             repo=repo,
@@ -476,6 +654,25 @@ def main() -> int:
             and desktop["resolved"] is True,
             "desktop focus did not resolve to neutral HOST",
         )
+        require(
+            desktop["reason"] == "no-focused-client"
+            and desktop["surface_class"] == "host-native"
+            and desktop["wallpaper_allowed"] is True
+            and desktop["rgb_allowed"] is True,
+            f"the empty desktop lost its HOST presentation: {desktop}",
+        )
+
+        # The genuinely empty snapshot is the only HOST answer, whatever
+        # registry is in force.
+        require(
+            resolver.resolve(
+                repo=repo,
+                surface={"pid": None, "app_id": "", "window_id": ""},
+                registry=registry,
+                proc_root=proc,
+            )["trust"] == "host",
+            "the empty desktop depends on the registry",
+        )
 
     source = RESOLVER.read_text(
         encoding="utf-8"
@@ -487,6 +684,8 @@ def main() -> int:
         '"registered-pid-start-time-mismatch"',
         '"registered-domain-spec-drift"',
         '"managed-surface-not-registered"',
+        '"unregistered-window"',
+        '"window-without-pid"',
         '"host-owned-vm-spec"',
         '"host-native"',
     ):
@@ -495,7 +694,14 @@ def main() -> int:
             f"resolver invariant missing: {required}",
         )
 
+    # The old rule named every unregistered process HOST.
+    require(
+        '"unregistered-host-process"' not in source,
+        "the resolver still knows unregistered-host-process",
+    )
+
     check_projected_machine(load_module())
+    check_unregistered_windows(load_module())
 
     print(
         "HyperLab host-owned focused-surface provenance contract: OK"

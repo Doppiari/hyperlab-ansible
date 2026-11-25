@@ -40,7 +40,10 @@ entered the pipeline.
     accepted: the shell creates a Machine through the reviewed bridge and one
     durable operation; the password and the become prompt stay in its
     terminal (operator's decision, 2026-11-05). Host-session libvirt authority
-    is already root-equivalent; that prompt does not confine it.
+    is already root-equivalent; that prompt does not confine it. Proposed
+    amendment (2026-11-25): every provisioning keeps a receipt and a log, a
+    Machine reads incomplete or unknown until a run finishes, and a
+    workstation's last step proves sudo and Looking Glass capture.
 18. [`0018-disposable-discards-on-stop.md`](0018-disposable-discards-on-stop.md)
     — accepted: a disposable Machine's disk is a libvirt transient disk, so
     every stop discards its writes (operator's decision, 2026-11-05).

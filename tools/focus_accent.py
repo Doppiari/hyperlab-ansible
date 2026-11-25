@@ -28,7 +28,9 @@ Keyboard RGB modes, read from ~/.config/hyperlab/rgb-mode:
 
 RGB is only driven while the trust-model theme is active, is written with
 runtime scope only and keeps the operator's brightness. Anything that is not
-a validated identity holds the current colours.
+a validated identity holds the current colours, except in focus-trust a
+window nobody registered (unverified, or managed-looking without a
+registration): it names no domain, so the operator's saved colours return.
 """
 
 from __future__ import annotations
@@ -213,6 +215,33 @@ def focus_identity(provenance: Any) -> tuple[str | None, str]:
     return trust, "resolved"
 
 
+# Resolver answers for a window nobody registered, by surface class: the
+# focused PID (or a missing PID) has no registration, so the answer names no
+# domain. A registered process that fails verification is not among them.
+UNREGISTERED_REASONS = {
+    "unverified-window": ("unregistered-window", "window-without-pid"),
+    "managed-unresolved": ("managed-surface-not-registered", "managed-surface-without-pid"),
+}
+
+
+def unregistered_window(provenance: Any) -> str | None:
+    """The class of a consistent resolver answer for a window nobody registered."""
+    if not (
+        isinstance(provenance, dict)
+        and provenance.get("resolved") is False
+        and provenance.get("trust") is None
+        and provenance.get("guest_metadata_authoritative") is False
+    ):
+        return None
+
+    surface_class = provenance.get("surface_class")
+
+    if provenance.get("reason") not in UNREGISTERED_REASONS.get(surface_class, ()):
+        return None
+
+    return surface_class
+
+
 # -------------------------------------------------------------------- plan
 
 
@@ -258,7 +287,17 @@ def plan(
             else system_identity(system_trust)
         )
 
-        if identity is None:
+        unregistered = unregistered_window(provenance) if rgb_mode == "focus-trust" else None
+
+        if identity is None and unregistered is not None:
+            # A window the host cannot place names no domain: the keyboard
+            # gets the operator's own colours back, not the last trust colour.
+            rgb.update({
+                "action": "restore",
+                "reason": ("focus-unverified-window" if unregistered == "unverified-window"
+                           else "focus-managed-surface-unregistered"),
+            })
+        elif identity is None:
             rgb["reason"] = (
                 "focus-provenance-" + focus_state
                 if rgb_mode == "focus-trust"
@@ -912,7 +951,8 @@ class Actuator:
         if self.state.rgb.degraded:
             self.rgb_retry_at = 0.0
             return
-        restoring = rgb["reason"] in ("rgb-mode-off", "theme-not-trust-model")
+        restoring = (rgb["reason"] in ("rgb-mode-off", "theme-not-trust-model")
+                     or rgb["action"] == "restore")
         zones = self.state.baseline if restoring else rgb["zones"]
         if zones is None or (not restoring and
                              (rgb["action"] != "set" or zones == self.rgb_applied)):

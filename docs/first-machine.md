@@ -12,8 +12,8 @@ sealed Golden Image  arch-dev-20261003   images/arch-dev-20261003.yml
 
 The shell's Create view runs the same steps: **Machines → New Machine**
 records and projects the Machine, then one operation window runs every
-`ansible-playbook` command of steps 2 and 3 below (for a server, those of
-"A server Machine"), in the same order with the same arguments, asking for
+command of steps 2 and 3 below (for a server, the `ansible-playbook`
+commands of "A server Machine"), in the same order with the same arguments, asking for
 your password for each `-K` playbook and, for a workstation, for the
 Machine account's password
 ([ADR 0017](adr/0017-shell-machine-creation.md)). The `ansible -m ping`
@@ -26,8 +26,10 @@ profile it accepts is the one the Machine record's Template maps to. It
 then runs nothing and asks for nothing.
 If a step fails, the operation stops there and ends `failed` with that
 step's exit status. The Machine record and its spec stay: a failed
-provisioning is not a refused creation, and the remaining steps are the
-commands below. By hand they are these commands.
+provisioning is not a refused creation. The run leaves a receipt, so the
+Machine reads "Provisioning incomplete" until the steps are finished
+([When provisioning stops](#when-provisioning-stops)). By hand the steps are
+these commands.
 
 ## Before
 
@@ -98,6 +100,7 @@ ansible-playbook -i inventory.ini -i /run/user/$UID/dev-01.ini \
   playbooks/guest-arch-dev-vfio.yml
 ansible-playbook -i inventory.ini -i /run/user/$UID/dev-01.ini \
   playbooks/guest-close-access.yml
+hyperlabctl machine verify-provisioning dev-01
 ```
 
 `openssl passwd -6` asks twice without echo and prints only the hash.
@@ -124,9 +127,69 @@ The inventory step also reads the new Machine's SSH host key through QEMU
 Guest Agent and pins it in `~/.ssh/known_hosts` for its address, so the
 strict SSH check never trusts a key shown on the network.
 
+The last command proves what the steps before it should have left, over
+the pinned SSH channel. `sudo -n true` in the guest must be refused with "a
+password is required": if it runs, passwordless sudo is still open and the
+step fails. For a VFIO Machine with `--looking-glass-mode
+linux-experimental` it then runs `hyperlabctl looking-glass restart-capture
+dev-01` and reads `hyperlabctl looking-glass health dev-01` every three
+seconds, for at most five minutes, until the sender has started a capture
+(stream `starting` or `streaming`). A sender stopped at the screen-cast
+portal's source selection never gets there
+([the problem](../problems/wizard-provisioning-interrupted.md)), and neither
+does one without a client: open Looking Glass for the Machine while the step
+waits (`hyperlabctl open looking-glass dev-01`, logging in when the console
+asks). Until this step passes, the Machine is not provisioned.
+
 The dev profile playbook is the one that built `arch-dev-vfio`. Every
 package is already in the image, so the first pass mostly configures the new
 account; the second must report `changed=0`.
+
+## When provisioning stops
+
+Every run of the operation, or of `privatestack-machine-provision NAME` by
+hand in the checkout, writes below `~/.local/state/hyperlab/provisioning/`
+(or `$XDG_STATE_HOME/hyperlab/provisioning/`):
+
+- `NAME.json`, the receipt: when the run started, each step's result
+  (`pending`, `running`, `ok`, `failed`, `interrupted`) and exit status, and
+  how the run ended: `finished`, `failed` or `interrupted`. It is replaced
+  atomically after every step and bound to the SHA-256 of the Machine
+  record.
+- `NAME.log`, everything the steps printed, the previous run's kept as
+  `NAME.log.1`. Prompts and passwords never reach it.
+- `NAME.lock`, held for the whole run: a second run of the same Machine is
+  refused, and a run killed without a word is told apart from a live one.
+
+Only a run whose every step ended with 0 writes `finished`. `hyperlabctl
+machine show NAME`, `hyperlabctl machine inventory` and the Machines view
+read the receipt:
+
+| Receipt | Reads |
+| --- | --- |
+| `finished`, for this record and its Template's steps | `Provisioned` |
+| `failed` at step N | `Provisioning incomplete: step N of M (label)` |
+| `interrupted` (Ctrl-C, a stopped operation, a closed terminal) | the same, at the step that was cut short |
+| `running`, while its lock is held | the same, `running now`, with no resume command |
+| `running` with no lock held (killed, power lost) | the same as `interrupted`, and resumed like it |
+| missing, unreadable, linked, of another record or other steps | `Provisioning unknown` |
+
+An incomplete Machine shows the command that resumes it, run in the
+checkout:
+
+```bash
+privatestack-machine-provision dev-01 --from 6
+```
+
+`--from N` continues only a failed or interrupted receipt of the same
+steps, at or before its first step that did not end with 0, and runs every
+step from N on. A Machine without a receipt (provisioned before receipts
+existed) offers the whole run, `privatestack-machine-provision dev-01`. That
+works while its `close-access` has not run (`vm-create.yml` validates an
+existing domain instead of recreating it). After `close-access` the profile
+passes need `-K` and the account's password, so the run fails there and the
+Machine keeps reading `Provisioning unknown`: commands run by hand never
+write a receipt.
 
 ## A server Machine
 

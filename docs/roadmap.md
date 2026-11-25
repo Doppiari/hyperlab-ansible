@@ -463,6 +463,16 @@ Details: [C10 — Machine Factory](#c10--machine-factory).
       `tests/arch_dev_vfio_hardware_gate_contract.py`; software-verified).
       The trusted host session's libvirt authority is root-equivalent; the
       hook and become prompt do not confine a hostile host owner.
+- [x] a passthrough device held by a running domain outside both GPU policy
+      surfaces (a hot-plug the hook never sees) is a `hyperlabctl doctor`
+      error naming it, and the shell shows the GPU state as unknown, reboot
+      to reset; an unreadable live XML is unknown, never clean
+      (`tools/hyperlabctl/tests/test_gpu_holders.py`,
+      `tests/host_quickshell_runtime_contract.py`; software-verified). Not
+      refused and not remembered after the holder stops
+      ([open record](../problems/gpu-held-outside-the-handoff-policy.md))
+- [ ] physical check on Nitro: hot-plug the GPU into an unmapped throwaway
+      domain and read the doctor report and the shell
 - [ ] a Machine declares `gpu_capable`; owning the GPU is a host-owned lease
       for one run, so a dev Machine can start without the GPU and restart
       with it for Blender or CUDA
@@ -851,6 +861,16 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
       (same ADR, software-verified)
 - [ ] the fullscreen ring accepted on Nitro over Looking Glass and the SPICE
       console
+- [x] a window nobody registered never reads HOST: a plain terminal,
+      virt-manager, spicy or an unknown app id is an unverified window with
+      no identity, wallpaper or trust keyboard colour, `Unknown` in the bar and the
+      warning ring when fullscreen; only the empty desktop is HOST
+      (ADR 0039 amendment; `tests/surface_provenance_contract.py`,
+      `tests/host_quickshell_runtime_contract.py`, software-verified)
+- [ ] the unverified plain terminal beside managed Looking Glass and
+      managed SSH, and group 12's warning ring around it, accepted on Nitro
+      (the earlier HOST-terminal observation does not count) and replayed
+      on Predator
 - [ ] study: Looking Glass as the everyday window for Linux Machines without
       a GPU too (the PipeWire sender captures any guest desktop), one kvmfr
       device per running Machine, SPICE kept as recovery only; Windows needs

@@ -16,8 +16,10 @@ Hyprland:
       -> the real provenance resolver's answer -> the real bar
 
 and reads the captured bar pixels, the runtime properties and the words for
-five states: a host terminal, a dev viewer, a dirty viewer, a window with no
-mapping and a stale focus source. Every fixture window carries a title that
+six states: the empty host desktop, a dev viewer, a dirty viewer, a window
+with no mapping, a plain host terminal and a stale focus source. A terminal
+is not a host surface: nothing registered it, so it reads Unknown with the
+unresolved marker, like the unmapped viewer. Every fixture window carries a title that
 names another Machine, so a mapping that read titles would be caught. It
 also proves the resolver's answer does not depend on the title and that the
 shell's mapping reads nothing but host provenance and the inventory.
@@ -203,7 +205,7 @@ SCENARIO = r"""
                 if (event.inventoryMode === "stale")
                     sharedState.machinesObservedAt = Date.now() - 600000;
                 check(unresolved !== null
-                      && unresolved.visible === (event.name === "unmapped")
+                      && unresolved.visible === (event.name === "unmapped" || event.name === "terminal")
                       && unresolved.text === "unresolved",
                       "Unknown has no distinct unresolved warning, or shows it for another state");
                 if (event.machineState) {
@@ -345,8 +347,11 @@ def load_fixture() -> dict:
     except (OSError, ValueError) as error:
         raise SystemExit(f"Bar core focus contract: unreadable fixture: {error}") from None
     names = [state["name"] for state in fixture["states"]]
-    require(names == ["host", "dev", "dirty", "unmapped", "stale"],
-            f"the fixture must hold the five reviewed states in order: {names}")
+    require(names == ["host", "dev", "dirty", "unmapped", "terminal", "stale"],
+            f"the fixture must hold the six reviewed states in order: {names}")
+    host = fixture["states"][0]
+    require(host["sway"] == {} and host["hyprland"] == {},
+            "the host state must be the empty desktop: a window is never HOST")
     require(len({machine["name"] for machine in fixture["machines"]}) == len(fixture["machines"]),
             "duplicated fixture Machine")
     require([case["state"] for case in fixture["inventory_states"]] == ["crashed", "unknown"],
@@ -776,7 +781,7 @@ def main() -> int:
         finally:
             shutil.rmtree(staged, ignore_errors=True)
 
-    print("Bar core focus contract: OK (Sway and Hyprland: host, dev, dirty, unmapped and "
+    print("Bar core focus contract: OK (Sway and Hyprland: empty desktop, dev, dirty, unmapped, terminal and "
           "stale focus; title-independent mapping; hollow Unknown; one answer for core and item; "
           "unelided domain/state words for 31-character names; unresolved marker; "
           "1440/800-pixel geometry with five occupied workspaces; fade and reduced motion)")

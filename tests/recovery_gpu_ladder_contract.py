@@ -104,10 +104,13 @@ def kv(widget: Any) -> dict[str, str]:
 
 
 def cli_ladder(levels: dict[str, int]) -> dict[str, Any]:
+    # A host with no libvirt domain: nothing can hold a device outside the
+    # GPU policy, so the recorded rung stands.
     ctx = SimpleNamespace(config=SimpleNamespace(var=lambda key, default: levels),
-                          read_text=lambda path: "2")
+                          read_text=lambda path: "2", cache={"inventory.domains": []})
     ctx.config.gpu_handoff_state = Path("unused-fixture-trust")
     trust = TrustProvider().collect(ctx)
+    assert trust["ladder_state"] == "recorded", trust
     with patch("hyperlabctl.commands.trust.doc.build", return_value={"trust": trust}), redirect_stdout(io.StringIO()) as out:
         assert TrustCommand().run(SimpleNamespace(json=True), ctx) == 0
     return {"provider": trust, "cli": json.loads(out.getvalue())["ladder"]}

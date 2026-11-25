@@ -34,6 +34,7 @@ not provide.
 | A guest reaching another network's guests | every ordered pair of domains is dropped at the host; `lab` forwards nothing | [`network-flows.md`](network-flows.md), `tests/network_flow_matrix_contract.py` |
 | A guest reaching the host's own services or another network's resolver | guest-to-host default deny: only replies, DHCP and DNS to its own gateway | same |
 | A guest pretending to be a more trusted Machine on screen | provenance and trust colours come from the host's resolver and the Machine registry, never from the guest | [`hyperlab-shell.md`](hyperlab-shell.md), focused-surface provenance |
+| A guest shown in a window nobody registered (a terminal holding an ssh session, a viewer, an unknown app) passing as the host | only the empty desktop is HOST; every window without a verified registration is unverified: no identity, no wallpaper or trust RGB (focus-trust restores the operator's keyboard colours), `Unknown` in the bar and the warning ring when fullscreen | `tests/surface_provenance_contract.py`, `tests/host_quickshell_runtime_contract.py` (scenarios `provenance` and `fullscreen-frame`), `tests/focus_provenance_accent_contract.py` |
 | A dirtier workload running on the GPU before a cleaner one in the same boot | the qemu hook checks prepare XML and reviewed QEMU arguments before enforcing clean → dev → dirty → lab; services use a reviewed class | [ADR 0022](adr/0022-network-trust-and-gpu-policy.md), `tests/hook.bats` |
 | A changed or unsealed image becoming a Machine | sealed images are pinned by digest and receipt and verified at every use | `tests/sealed_base_use_contract.py` |
 | Trusting an SSH host key shown on the network | the first key is read through the QEMU Guest Agent and pinned | `tools/guest_host_key.py` |
@@ -66,6 +67,17 @@ start remain unbuilt ([ADR 0018](adr/0018-disposable-discards-on-stop.md)).
   refusals and preservation of ladder state, not confinement of that trusted
   authority ([GPU handoff policy](gpu-handoff-policy.md),
   `tests/gpu_handoff_xml_contract.py`).
+
+- **A passthrough device hot-plugged by a host-session actor.** libvirt's
+  qemu hook has no phase for a hot-plug, so `virsh attach-device` can give a
+  running domain outside the GPU policy a PCI device the ladder never sees,
+  and the recorded rung stays cleaner than the GPU's real history. The hook
+  cannot refuse it. `hyperlabctl doctor` reads every live domain XML against
+  the installed GPU policy the hook reads and reports such a holder as an
+  error naming it; the shell then shows the GPU state as unknown, reboot to
+  reset, and anything it cannot read as unknown, never as clean. The report lasts only while the holder runs: nothing
+  records it afterwards, and only a host reboot resets the GPU
+  ([`../problems/gpu-held-outside-the-handoff-policy.md`](../problems/gpu-held-outside-the-handoff-policy.md)).
 
 - **An escape from QEMU.** Every QEMU process runs as the same user with
   no MAC confinement, so code that escapes one Machine's QEMU can open every
@@ -118,6 +130,7 @@ here so a reviewer sees them in one place:
 
 - [`qemu-processes-share-one-identity.md`](../problems/qemu-processes-share-one-identity.md) — above.
 - [`looking-glass-input-isolation.md`](../problems/looking-glass-input-isolation.md) — above.
+- [`gpu-held-outside-the-handoff-policy.md`](../problems/gpu-held-outside-the-handoff-policy.md) — above.
 - [`runtime-inventory-self-heal.md`](../problems/runtime-inventory-self-heal.md) —
   an on-demand action can find its ephemeral SSH inventory gone; an unsafe
   inventory is refused, and regenerating a missing one only through the

@@ -2,7 +2,7 @@
 
 import xml.etree.ElementTree as ET
 
-from .domainxml import parse_domain
+from .domainxml import parse_domain, require_identity
 from .errors import HyperlabError, Unavailable
 
 
@@ -81,6 +81,7 @@ def domain_detail(ctx, name):
     result = ctx.virsh("dumpxml", name)
     if not result.ok:
         raise Unavailable("dumpxml failed for %s" % name)
+    require_identity(result.stdout, name)
     detail = parse_domain(result.stdout)
     detail["name"] = detail["name"] or name
     detail["state"] = domain_state(ctx, name)
@@ -102,6 +103,7 @@ def domains(ctx):
                     {"name": name, "state": "unknown", "memory_mb": None,
                      "vcpus": None,
                      "networks": None, "hostdevs": [], "vfio": None,
+                     "pci_devices": None, "qemu_extension": None,
                      "managed": None, "product_managed": None,
                      "image": None, "image_sha256": None,
                      "device_profile": None, "lifecycle": None,

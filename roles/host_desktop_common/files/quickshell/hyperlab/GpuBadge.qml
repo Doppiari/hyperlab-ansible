@@ -55,10 +55,16 @@ ShellControl {
 
     readonly property bool claimCurrent: badge.claimState === "ok"
 
+    // The host says a domain outside the GPU policy holds a passthrough
+    // device: no rung describes the GPU until a reboot.
+    readonly property bool claimOutsidePolicy:
+        badge.claimCurrent && badge.claim.outsidePolicy === true
+
     // Loading is a short start-up wait; ShellState turns a source that never
     // answers into "unavailable", which is material.
     readonly property bool claimProblem:
         badge.claimState === "stale" || badge.claimState === "unavailable"
+        || badge.claimOutsidePolicy
 
     readonly property bool claimed: badge.claim.claimed === true
 
@@ -68,6 +74,9 @@ ShellControl {
         : ""
 
     readonly property string claimText: {
+        if (badge.claimOutsidePolicy)
+            return "Unknown, reboot to reset";
+
         if (badge.claimProblem)
             return badge.claimed
                 ? badge.identityWord + " " + badge.claim.level + " last seen"
@@ -118,6 +127,9 @@ ShellControl {
         if (badge.held)
             return badge.theme.textPrimary;
 
+        if (badge.claimOutsidePolicy)
+            return badge.theme.semanticStatusColor("bad");
+
         if (badge.claimProblem)
             return badge.theme.semanticStatusColor("warn");
 
@@ -167,6 +179,7 @@ ShellControl {
         },
 
         ShellLabel {
+            objectName: "gpu-badge-claim-qualifier"
             anchors.verticalCenter: parent.verticalCenter
             visible: badge.ownershipLeads && badge.claimProblem
             tokens: badge.tokens

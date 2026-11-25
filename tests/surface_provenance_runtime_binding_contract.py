@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import importlib.util
 import json
 import os
 import shutil
@@ -594,6 +595,68 @@ exit 0
         )
 
 
+def verify_snapshots_reach_resolver() -> None:
+    """The adapter's real snapshots, resolved by the real resolver.
+
+    Only the genuinely empty snapshot (nothing has focus) is the HOST
+    desktop. A snapshot without a PID that still names a window, as Sway
+    reports a focused empty workspace by its node id, is unverified.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "runtime_binding_resolver",
+        ROOT / "tools/surface_provenance.py",
+    )
+    require(spec is not None and spec.loader is not None, "resolver cannot be loaded")
+    resolver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(resolver)
+
+    cases = (
+        ("hyprland", "{}", "no-focused-client"),
+        ("sway", '{"focused":false,"nodes":[{"focused":false,"id":3,"nodes":[]}]}',
+         "no-focused-client"),
+        ("hyprland", '{"address":"0x5e","class":"foot","title":"HOST"}',
+         "window-without-pid"),
+        ("sway", '{"focused":false,"nodes":[{"focused":true,"id":7,"type":"workspace",'
+                 '"name":"1","nodes":[]}]}', "window-without-pid"),
+        ("sway", '{"focused":false,"nodes":[{"focused":true,"id":8,"app_id":"foot",'
+                 '"name":"CLEAN"}]}', "window-without-pid"),
+        ("hyprland", '{"address":"0x5f","pid":48200,"class":"foot","title":"HOST"}',
+         "unregistered-window"),
+    )
+
+    with tempfile.TemporaryDirectory(prefix="hyperlab-snapshot-resolver-") as temp_name:
+        temp = Path(temp_name)
+        repo = temp / "repo"
+        (repo / "vm-specs").mkdir(parents=True)
+        bin_dir = temp / "bin"
+        bin_dir.mkdir()
+        snapshot = temp / "snapshot.json"
+        write_fake_command(bin_dir / "swaymsg", f'cat "{snapshot}"\n')
+        write_fake_command(bin_dir / "hyprctl", f'cat "{snapshot}"\n')
+
+        for backend, raw, reason in cases:
+            snapshot.write_text(raw + "\n", encoding="utf-8")
+            completed = run_adapter(backend=backend, operation="focused-window-json",
+                                    bin_dir=bin_dir)
+            require(completed.returncode == 0,
+                    f"{backend} focused-window-json failed: {completed.stderr}")
+            surface = json.loads(completed.stdout)
+            surface.pop("fullscreen")
+            answer = resolver.resolve(repo=repo, surface=surface,
+                                      registry={"version": 1, "entries": []},
+                                      proc_root=temp / "proc")
+            require(answer["reason"] == reason,
+                    f"{backend} snapshot {raw} resolved as {answer['reason']}, not {reason}")
+            if reason == "no-focused-client":
+                require(answer["trust"] == "host" and answer["resolved"] is True,
+                        f"{backend}: the empty desktop is not HOST: {answer}")
+            else:
+                require(answer["trust"] is None and answer["resolved"] is False
+                        and answer["wallpaper_allowed"] is False
+                        and answer["rgb_allowed"] is False,
+                        f"{backend} snapshot {raw} gained trust: {answer}")
+
+
 def main() -> int:
     require(
         OPEN.is_file(),
@@ -608,6 +671,7 @@ def main() -> int:
     verify_launcher_source()
     verify_registry()
     verify_compositor_snapshot()
+    verify_snapshots_reach_resolver()
 
     print(
         "HyperLab launcher/compositor provenance binding contract: OK"

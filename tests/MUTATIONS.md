@@ -6015,6 +6015,217 @@ with tempfile.TemporaryDirectory(prefix="gpu-xml-mutations-") as temporary:
 PY
 ```
 
+### Guards another refusal would mask, and the standard Template
+
+Each guard below was correct, but no fixture failed when it alone was
+removed: a later edit could have dropped it unnoticed. The XML contract now
+has one fixture per guard, and the bats setup refuses to run when a fixed
+installed path is not substituted exactly once, so a suite run as root can
+never exercise the installed helper or policy instead of this tree's. The
+contract also renders a `workstation-dev-standard` Machine (ADR 0019's first
+lease Template, default run without the GPU) through the Machine factory,
+VM spec projection, guest planner and domain template, and requires the hook
+to accept it without creating or changing ladder state. That case is a
+positive control; the refusal paths it could hide are Q1, Q4 and Q5.
+
+Each break was observed red (exit 1, with the predicted reason) and the
+restored check green (exit 0). No mutation stayed green.
+
+| Case | Invariant broken | Observed red check |
+|---|---|---|
+| Q19 | Accept more than one `<name>` | XML contract duplicate-name fixture accepted |
+| Q20 | Follow a symlinked helper | XML contract redirected helper ran the reviewed XML |
+| Q21 | Follow a redirected policy directory | XML contract redirected-directory fixture accepted |
+| Q22 | Read a policy of any size | XML contract 4097-byte policy accepted |
+| Q23 | Read a non-regular policy | XML contract FIFO policy refused for the wrong reason |
+| Q24 | Ignore text after an argument | XML contract tail fixture accepted |
+| Q25 | Rename an installed path literal in the hook | Bats setup refuses; every test fails |
+
+Replay from the repository root, as above:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+helper = Path('roles/gpu_handoff/files/xml-preflight.py')
+hook = Path('roles/gpu_handoff/files/qemu')
+contract = ['python', 'tests/gpu_handoff_xml_contract.py']
+mutations = [
+    ('Q19-allow-duplicate-name', helper,
+     [('require(len(names) == 1 and', 'require(len(names) >= 1 and')],
+     contract, 'domain name mismatch'),
+    ('Q20-follow-helper-symlink', hook,
+     [(' || -L "${XML_PREFLIGHT}" ]]', ' ]]')],
+     contract, 'XML preflight missing, redirected or unreadable'),
+    ('Q21-follow-policy-parent-symlink', helper,
+     [('    require(not any(parent.is_symlink() for parent in path.parents),\n'
+       '            "unsafe Looking Glass policy: redirected directory")\n', '')],
+     contract, 'redirected directory'),
+    ('Q22-unbounded-policy', helper,
+     [('    require(len(raw) <= 4096, "invalid Looking Glass policy: too large")\n', '')],
+     contract, 'too large'),
+    ('Q23-accept-non-regular-policy', helper,
+     [('require(stat.S_ISREG(info.st_mode) and info.st_uid', 'require(info.st_uid')],
+     contract, 'regular file'),
+    ('Q24-ignore-argument-tail', helper,
+     [('\n                    and not (node.tail or "").strip() for node in args),', ' for node in args),')],
+     contract, 'unreviewed QEMU command-line'),
+    ('Q25-unchecked-bats-substitution', hook,
+     [('/etc/gpu-handoff/looking-glass.json', '/etc/gpu-handoff/looking-glass-policy.json')],
+     ['bats', '--filter', 'missing or malformed', 'tests/hook.bats'], 'looking-glass.json exactly once'),
+]
+with tempfile.TemporaryDirectory(prefix="gpu-xml-mutations-") as temporary:
+    for name, path, edits, command, reason in mutations:
+        backup = Path(temporary) / (name + "-" + path.name)
+        shutil.copy2(path, backup)
+        mutated = path.read_text()
+        for old, new in edits:
+            assert mutated.count(old) == 1, (name, old)
+            mutated = mutated.replace(old, new, 1)
+        try:
+            path.write_text(mutated)
+            red = subprocess.run(command, text=True, capture_output=True, check=False, timeout=300)
+            assert red.returncode != 0 and reason in red.stdout + red.stderr, (name, red)
+        finally:
+            shutil.copy2(backup, path)
+        green = subprocess.run(command, text=True, capture_output=True, check=False, timeout=300)
+        assert green.returncode == 0, (name, green)
+        print(f"{name}: red; restored green")
+PY
+```
+
+### The shell under a GPU held outside the policy
+
+`tests/host_quickshell_runtime_contract.py` feeds the shell a real backend
+trust payload (TrustProvider, document build and `waybar_field`, as
+`hyperlabctl watch --field trust` publishes it) for a running domain outside
+both GPU policy surfaces that holds a PCI hostdev, after a recorded DEV/2
+claim. The shell must drop the rung, read **Unknown, reboot to reset** on the
+Boot claim row and the rail badge, and not bring a rung back when the next
+read fails. Each break was observed red with the predicted message and the
+restored contract green.
+
+| Case | Invariant broken | Observed red check |
+|---|---|---|
+| S1 | ShellState ignores the outside-policy statement | "an outside-policy holder kept the recorded rung" |
+| S2 | The Boot claim row keeps its normal text | "an outside-policy holder rendered as" |
+| S3 | The rail badge keeps its normal text | "the rail hid an outside-policy holder" |
+
+Replay from the repository root:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+base = Path('roles/host_desktop_common/files/quickshell/hyperlab')
+state, badge, instrument = base / 'ShellState.qml', base / 'GpuBadge.qml', base / 'OwnershipInstrument.qml'
+contract = ['python3', 'tests/host_quickshell_runtime_contract.py']
+mutations = [
+    ('S1-outside-policy-ignored', state,
+     [('            && parsed.ladder === "outside-policy"\n', '            && parsed.ladder === "never"\n')],
+     'an outside-policy holder kept the recorded rung'),
+    ('S2-row-keeps-claim-text', instrument,
+     [('                    if (instrument.claimOutsidePolicy)\n                        return "Unknown, reboot to reset";\n\n', '')],
+     'an outside-policy holder rendered as'),
+    ('S3-rail-quiet', badge,
+     [('        if (badge.claimOutsidePolicy)\n            return "Unknown, reboot to reset";\n\n', '')],
+     'the rail hid an outside-policy holder'),
+]
+with tempfile.TemporaryDirectory() as temporary:
+    for name, path, edits, reason in mutations:
+        backup = Path(temporary) / (name + path.name)
+        shutil.copy2(path, backup)
+        text = path.read_text()
+        for old, new in edits:
+            assert text.count(old) == 1, (name, old)
+            text = text.replace(old, new, 1)
+        try:
+            path.write_text(text)
+            red = subprocess.run(contract, text=True, capture_output=True, check=False, timeout=900)
+            assert red.returncode != 0 and reason in red.stdout + red.stderr, (name, red.stdout[-800:], red.stderr[-800:])
+        finally:
+            shutil.copy2(backup, path)
+        print(f"{name}: red; restored", flush=True)
+    green = subprocess.run(contract, text=True, capture_output=True, check=False, timeout=900)
+    assert green.returncode == 0, green.stdout[-800:]
+    print("restored contract green")
+PY
+```
+
+### Review: the named holder on the rail and Looking Glass on a product identity
+
+Two cases from the review of the GPU-holder report. The rail badge is now
+also checked with the outside domain as the GPU's named owner: the owner
+leads and the reboot instruction rides in the qualifier label
+(`gpu-badge-claim-qualifier`). The XML contract renders the
+`workstation-dev-standard` Machine identity a second time through the same
+domain template with its VFIO branch and the reviewed Looking Glass block,
+transport from the host policy, and feeds it to the hook under a fixture-only
+`domains.d` mapping. That is a guard test, not a lease shape: ADR 0019's
+two-shape planner is unbuilt. It is refused while unmapped and accepted, at
+rung 2, once mapped.
+
+| Case | Invariant broken | Observed red check |
+|---|---|---|
+| S4 | The qualifier label is hidden when the GPU has a named owner | "the rail dropped the reboot instruction for a named holder" |
+| Q26 | The helper accepts Looking Glass only for the reference domain name | XML contract "product Machine Looking Glass XML refused"; the reference render (`tests/arch_dev_vfio_hardware_gate_contract.py`) and the default-boot case stayed green |
+
+Replay from the repository root:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+G = Path('roles/host_desktop_common/files/quickshell/hyperlab/GpuBadge.qml')
+X = Path('roles/gpu_handoff/files/xml-preflight.py')
+mutations = [
+    ('S4-qualifier-hidden-when-held', G,
+     [('            visible: badge.ownershipLeads && badge.claimProblem\n',
+       '            visible: badge.ownershipLeads && badge.claimProblem && !badge.held\n')],
+     ['python3', 'tests/host_quickshell_runtime_contract.py'],
+     'the rail dropped the reboot instruction for a named holder'),
+    ('Q26-looking-glass-for-reference-only', X,
+     [('    blocks = root.findall(f"./{{{QEMU}}}commandline")\n',
+       '    require(domain == "arch-dev-vfio", "unreviewed QEMU command-line: reference domain only")\n'
+       '    blocks = root.findall(f"./{{{QEMU}}}commandline")\n')],
+     ['python3', 'tests/gpu_handoff_xml_contract.py'], 'product Machine Looking Glass XML refused'),
+]
+with tempfile.TemporaryDirectory(prefix="r2-mutations-") as temporary:
+    for name, path, edits, command, reason in mutations:
+        backup = Path(temporary) / (name + "-" + path.name)
+        shutil.copy2(path, backup)
+        text = path.read_text()
+        for old, new in edits:
+            assert text.count(old) == 1, (name, old)
+            text = text.replace(old, new, 1)
+        try:
+            path.write_text(text)
+            red = subprocess.run(command, text=True, capture_output=True, check=False, timeout=900)
+            out = red.stdout + red.stderr
+            assert red.returncode != 0 and reason in out, (name, red.returncode, out[-600:])
+            if name.startswith('Q26'):
+                # The reference render and the default boot still pass.
+                other = subprocess.run(['python3', 'tests/arch_dev_vfio_hardware_gate_contract.py'],
+                                       text=True, capture_output=True, check=False, timeout=900)
+                assert other.returncode == 0, ('Q26 reference', other.stdout[-600:])
+                assert 'rendered workstation-dev-standard refused' not in out, 'Q26 default boot'
+        finally:
+            shutil.copy2(backup, path)
+        green = subprocess.run(command, text=True, capture_output=True, check=False, timeout=900)
+        assert green.returncode == 0, (name, 'restored check not green')
+        print(f"{name}: red; restored green", flush=True)
+PY
+```
+
 ## Palette output variant names
 
 The Quickshell writer deliberately includes the current variant in its top-level
@@ -6625,6 +6836,148 @@ The same showcase contract exercises poll replies and the compact layout.
 | Hide the compact external allocation line. | Explicit or automatic list mode loses visible memory, vCPU or network. |
 | Replace the network observation on identical replies. | The unchanged poll emits a replacement notification. |
 | Clear and repopulate the network delegates on a changed reply. | Dev loses keyboard focus between an arrow and Enter. |
+
+## The Hyprland watch heartbeat counts from the last snapshot
+
+`tests/host_compositor_adapter_behaviour_contract.py` drives the real
+`workspace-watch` and `focused-window-watch` through a fake Hyprland event
+socket and a fake `hyprctl`: one ignored `windowtitle` event per second for
+11 seconds with a 3-second heartbeat, a quiet stream, a listed event between
+two ignored ones, the end of the stream, a missing socket, and a staged copy
+whose clock the contract moves back an hour. See
+[the problem note](../problems/hyprland-watch-heartbeat-postponed-by-ignored-events.md).
+
+Every break edits
+`roles/host_desktop_common/files/privatestack-compositor-adapter.sh`. Replay
+one at a time from a saved copy, run
+`python tests/host_compositor_adapter_behaviour_contract.py`, restore the copy
+byte-for-byte and run it again.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| pre-change | The adapter before this change: both loops read with a fresh heartbeat timeout after every event. | `workspace-watch: a busy stream of unrelated events postponed the heartbeat (1 snapshots in 11s, expected at least 4)`, and the same for `focused-window-watch` | Exit 0, contract OK. |
+| `ws-heartbeat-rearmed-by-ignored-event` | The workspace loop's `case` gains `*) heartbeat_arm ;;`. | `workspace-watch: a busy stream of unrelated events postponed the heartbeat (1 snapshots in 11s, expected at least 4)` | Exit 0, contract OK. |
+| `focus-heartbeat-rearmed-by-ignored-event` | The focus loop's `case` gains `*) heartbeat_arm ;;`. | `focused-window-watch: a busy stream of unrelated events postponed the heartbeat (1 snapshots in 11s, expected at least 4)` | Exit 0, contract OK. |
+| `ws-snapshot-on-ignored-event` | The workspace loop's `case` gains `*) workspace_publish_hyprland ;;`. | `workspace-watch: unrelated events published snapshots of their own (12 snapshots in 11s)` | Exit 0, contract OK. |
+| `focus-snapshot-on-ignored-event` | The focus loop's `case` gains `*) focused_publish_hyprland ;;`. | `focused-window-watch: unrelated events published snapshots of their own (12 snapshots in 11s)` | Exit 0, contract OK. |
+| `ws-heartbeat-not-rearmed` | `workspace_publish_hyprland` no longer calls `heartbeat_arm`, so the heartbeat is always due. | `workspace-watch: unrelated events published snapshots of their own (304 snapshots in 11s)` | Exit 0, contract OK. |
+| `clock-back-unbounded` | Delete the branch of `heartbeat_wait` that pulls a deadline more than one heartbeat away back to one heartbeat. | `a wall clock moved back stretched the heartbeat: snapshots at ['0.0']` | Exit 0, contract OK. |
+| `ws-listed-event-ignored` | Drop `workspace>>` from the workspace loop's listed events. | `workspace-watch: a listed event did not publish at once, or an unrelated one did: snapshots at ['0.1']` | Exit 0, contract OK. |
+
+The pre-change row was observed on the tree before the change with the
+busy-stream cases of the contract, before the clock case was added. Each break turned the contract red; restoring the saved adapter
+byte-for-byte made the same command pass. The Sway loops are not touched by
+any break and their quiet-stream heartbeat case stayed green throughout.
+
+## A provisioning reads finished only when every step ended with 0
+
+`tests/host_machine_provision_contract.py` runs the real provisioner over
+inert playbooks and a recording `hyperlabctl`, in-process and on a real PTY,
+and reads its receipts with hyperlabctl's own `provisioning_status`. It
+fails a step at each place a run can fail, the last one included, sends
+SIGINT, SIGTERM, SIGHUP and SIGKILL in the middle of a step, resumes with
+`--from`, holds the run lock from outside, damages the receipt, runs the
+final verification against a Looking Glass sender stopped at source
+selection and one that logged `Capture Start`, and renders the Machines
+card offscreen. See
+[the problem note](../problems/wizard-provisioning-interrupted.md).
+
+Replay one at a time from a saved copy of the named file, run the named
+check (or the whole contract), restore the copy byte-for-byte and run it
+again.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| pre-change | The provisioner before this change, under `check_receipts`. | `a server run that ended with 0 everywhere is not finished: 0 None` | Exit 0, contract OK. |
+| `finished-before-last-step` | In `privatestack-machine-provision.py`, write `receipt.end("finished")` when step M-1 ends, before the last step runs. | `SIGTERM in the last step left {... 'state': 'finished' ... 'close-access' ... 'result': 'running' ...}` | Exit 0, contract OK. |
+| `missing-receipt-ready` | In `machine_provision.py`, a missing receipt reads `finished` / `Provisioned`. | `a Machine without a receipt reads {'status': 'finished', 'receipt': 'missing', ... 'text': 'Provisioned' ...}` | Exit 0, contract OK. |
+| `no-interrupted-write` | The provisioner's signal path no longer calls `receipt.stop(...)`. | `SIGINT was not recorded as an interrupted step 3: {... 'state': 'running' ...}` | Exit 0, contract OK. |
+| `running-without-lock` | `provisioning_running` treats every lock file as held. | `a run that died without recording its end reads {... 'receipt': 'running', 'running': True ...}` | Exit 0, contract OK. |
+| `digest-ignored` | `provisioning_status` skips the record digest comparison. | `a receipt with another record's digest reads {'status': 'finished' ...}` | Exit 0, contract OK. |
+| `stuck-sender-accepted` | `CAPTURED_STREAMS` gains `"unknown"`. | `a sender stopped at source selection passed: {... 'looking_glass': 'captured', 'stream': 'unknown', 'ok': True ...}` | Exit 0, contract OK. |
+| `passwordless-sudo-accepted` | `sudo_verdict` reads exit 0 as `refused`. | `sudo answering (0, '') passed the step or went on to Looking Glass: {... 'ok': True ...}` | Exit 0, contract OK. |
+| `card-missing-reading-hidden` | In `MachineTile.qml`, a product row without `provisioning` shows nothing. | `provisioning card: "a product Machine without a reading is not unknown"` | Exit 0, contract OK. |
+| `resume-past-failed-step` | `resumable` drops `first <= unfinished`. | `['dev-r', '--from', '6'] skipped the failed step: 0 []` | Exit 0, contract OK. |
+| `verify-step-dropped` | `provision_steps` no longer appends the `verify` step (`tests/c10_machine_creation_plan_contract.py`). | `steps: ['create-domain', 'inventory', 'profile-first', 'profile-second', 'close-access']` | Exit 0, contract OK. |
+| pre-review | The provisioner of the first round, under the dead-run resume case of `check_real_cli`. | `the offered command did not resume a dead run: refused: only a failed or interrupted provisioning can be resumed ...` | Exit 0, contract OK. |
+| `dead-run-resume-refused` | The read under the lock calls `resumable(provisioning, steps, first)` without `locked=True`. | `the offered command did not resume a dead run: refused: only a failed or interrupted provisioning can be resumed ...` | Exit 0, contract OK. |
+| `lock-reread-removed` | Delete the second `machine_record` and `resumable` under the lock. | `a run that finished before the lock was taken was resumed: 0 [['-i', 'inventory.ini', ..., 'playbooks/guest-close-access.yml']]` | Exit 0, contract OK. |
+| `lock-no-retry` | `LOCK_WAIT = 0.0`: the first contention refuses. | `a reader's probe of the lock refused a run: refused: another provisioning of dev-l is running` | Exit 0, contract OK. |
+| `resume-hint-unquoted` | `resume_hint` prints `cd {repo}` without `shlex.quote`. | `the terminal's resume command differs from the card's: "cd '/tmp/.../check out; $(x)/repo' && ..."` | Exit 0, contract OK. |
+
+Each break turned its check red with the diagnostic shown (abridged where it
+prints a whole receipt); restoring the saved file byte-for-byte made the
+whole contract pass again.
+
+## The sender capture harness queues its own initial failure
+
+`tests/looking_glass_sender_capture_contract.py` now queues each failure
+before the initial format from the initializing thread, without waiting,
+instead of from a producer thread that could still be inside
+`pw_loop_invoke` when initialization destroyed the loop. See
+[the problem note](../problems/looking-glass-sender-capture-harness-invoke-after-free.md).
+
+The patch breaks edit
+`roles/guest_looking_glass_linux/files/pipewire-thread-loop-runtime.patch`
+inside one line, so its hunk keeps its length. Replay one at a time from a
+saved copy, run `python tests/looking_glass_sender_capture_contract.py`,
+restore the copy byte-for-byte and run it again.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| pre-change | The harness before this change: a producer thread sleeps 100 ms and makes a blocking `pw_loop_invoke`. | Under 16 parallel runs only: `initial-failure-N: '' (exit -11)` in 9 of 96 contract runs (3 per scenario), and exit 139 in 32 of 1500 runs of the `initial-failure-2` harness. A single run usually passes. | 96 of 96 parallel contract runs OK. |
+| `initial-wait-ignores-failure` | The initial wait loses `!this->streamFailed`. | `initial-failure-0: the harness itself hung` | Exit 0, contract OK. |
+| `initial-failure-accepted` | The check after the initial wait reads `if (this->stop)`. | `initial-failure-0: 'initialization accepted a failure before the first format' (exit 1)` | Exit 0, contract OK. |
+| `core-error-not-failure` | `coreErrorCallback` no longer sets `streamFailed`. | `initial-failure-2: the harness itself hung` | Exit 0, contract OK. |
+
+The pre-change row is timing-dependent: it shows a race and goes red only
+under load; it is not a per-run check. Each patch break turned the contract
+red on the first run; restoring the saved patch made it pass again.
+
+## Unregistered windows stay unverified
+
+A host process does not establish what its window shows, so every actual
+window without a verified registration is an unverified window and only the
+empty focus snapshot is `HOST`
+([ADR 0039](../docs/adr/0039-host-frame-around-fullscreen-guests.md),
+amendment of 2026-11-25). Each break changes one file. Save a copy, apply
+the break, run the listed check, restore the copy byte for byte and run it
+again. The QML breaks were replayed against the `provenance` and
+`fullscreen-frame` scenarios of `tests/host_quickshell_runtime_contract.py`,
+which receive the real resolver's answers from `resolve()`, the `resolve`
+command and the `stream` command.
+
+| Mutation | Break | Check | Observed red diagnostic |
+| --- | --- | --- | --- |
+| `unregistered-is-host` | `resolve()` returns `host_native(reason="unregistered-host-process")` for an unregistered PID without a managed hint again, and `host_native()` drops its empty-snapshot guard. | `python tests/surface_provenance_contract.py`; runtime `provenance` | `an unregistered host application gained a trusted identity or presentation`; `provenance: what + " was not presented as an unverified window"` |
+| `shell-accepts-window-host` | `ShellState.validProvenance()` stops refusing a host-native answer whose PID, app id or window id is set. | runtime `provenance` | `a forged answer for an actual window was presented (case " + index + ")` |
+| `pidless-is-desktop` | `empty_snapshot()` answers true for every PID-less snapshot. | `python tests/surface_provenance_contract.py`; `python tests/surface_provenance_live_binding_contract.py`; `python tests/surface_provenance_runtime_binding_contract.py` | `a PID-less window (app id only) gained a trusted identity or presentation`; `a managed-looking surface without a PID resolved`; `hyprland snapshot {"address":"0x5e","class":"foot","title":"HOST"} resolved as no-focused-client, not window-without-pid` |
+| `no-ring-for-unverified` | `ShellState.fullscreenFrame` hides the ring for `unregistered-window` and `window-without-pid`. | runtime `fullscreen-frame` | `fullscreen-frame: what + " did not get the warning ring"` |
+| `accent-for-unverified` | `focus_accent.focus_identity()` answers `host` for an `unverified-window`. | `python tests/focus_provenance_accent_contract.py` | `foot got an accent in off: {... 'identity': 'host', 'state': 'resolved', ...}` |
+| `coordinator-plans-unverified` | `build_plan()` treats an `unverified-window` as resolved HOST with wallpaper and RGB allowed. | `python tests/trust_presentation_coordinator_contract.py` | `the unverified foot window planned presentation: {... 'mode': 'planned', ...}` |
+| `group-12-no-ring` | Group 12 asks "Is there NO ring around the fullscreen host terminal?" again. | `python tests/acceptance_scripts_contract.py` | `12's steps are missing or out of order` |
+| `unverified-holds-keyboard` | `focus_accent.plan()` loses its `unregistered_window()` branch, so focus-trust holds the previous trust colour on a window nobody registered. | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not plan the operator's colours for foot: {... 'action': 'hold', ... 'reason': 'focus-provenance-unresolved'}` |
+| `restore-ignored-by-actuator` | `apply_rgb()` treats only `rgb-mode-off` and `theme-not-trust-model` as restoring, not `action == "restore"`. | `python tests/focus_provenance_accent_contract.py` | `foot: the keyboard kept a trust colour instead of the operator's saved colours: []` |
+| `unverified-class-dropped` | `UNREGISTERED_REASONS` loses its `unverified-window` entry. | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not plan the operator's colours for foot: {... 'action': 'hold', ...}` |
+| `managed-unregistered-holds` | `UNREGISTERED_REASONS` loses its `managed-unresolved` entry. | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not plan the operator's colours for managed-surface-not-registered: {... 'action': 'hold', ...}` |
+| `managed-without-pid-holds` | The `managed-unresolved` entry keeps only `managed-surface-not-registered`. | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not plan the operator's colours for managed-surface-without-pid: {... 'action': 'hold', ...}` |
+| `registered-failure-restores` | The `managed-unresolved` entry gains `registered-pid-start-time-mismatch`. | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not hold for {... 'reason': 'registered-pid-start-time-mismatch' ...}` |
+| `reason-any-class` | `unregistered_window()` accepts a reason of either class for either class. | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not hold for {... 'surface_class': 'managed-unresolved', 'reason': 'unregistered-window' ...}` |
+| `unregistered-guard-<field>` | `unregistered_window()` drops one of `trust is None`, `resolved is False` or `guest_metadata_authoritative is False` (three breaks). | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not hold for {...}: {... 'action': 'restore', ...}`, naming the inconsistent answer the dropped check refused |
+| `host-native-pid-guard` | `ShellState.validProvenance()` drops `value.pid !== null` from its host-native refusal. | runtime `provenance` | `a forged answer for an actual window was presented (case " + index + ")` |
+| `host-native-guard` | `surface_provenance.host_native()` drops its `require(empty_snapshot(surface), ...)` alone; `resolve()` still checks first. | `python tests/surface_provenance_contract.py` | `host_native() named {'pid': 1, 'app_id': '', 'window_id': ''} HOST: {...}` |
+
+Every break exited 1 with the diagnostic listed. Each restored copy was
+byte-identical to the original, and every listed check exited 0 after the
+restoration. Before the direct `host_native()` cases were added,
+`host-native-guard` stayed green: its only caller checks the snapshot
+first. Before the PID-only forged case `[910, "", ""]` was added,
+`host-native-pid-guard` stayed green: every forged case with a PID also
+carried an app id, which the next clause refused first. Keeping the
+`host-owned-vm-spec` source test in `ShellState.fullscreenFrame` has no
+mutation: `validProvenance()` lets only a `host-owned-vm-spec` answer
+reach `resolved` with a guest identity, so the clause is defence in depth
+that no answer the shell accepts can reach.
 
 ## Documentation captures: navigation IPC, live walk and demo renders
 

@@ -184,15 +184,20 @@ def check_stream() -> None:
             "window_id": "0x2",
         }
 
-        # No registry yet: host-native stays HOST, a managed-looking surface
-        # fails closed.
+        # No registry yet: a host application's window is unverified, never
+        # HOST, and a managed-looking surface fails closed.
         answer = stream.ask(request(1, host))
         require(
             answer["request"] == 1
             and answer["status"] == "ok"
-            and answer["provenance"]["trust"] == "host"
-            and answer["provenance"]["trust_source"] == "host-native",
-            "host-native surface did not resolve to HOST",
+            and answer["provenance"]["resolved"] is False
+            and answer["provenance"]["trust"] is None
+            and answer["provenance"]["trust_source"] is None
+            and answer["provenance"]["surface_class"] == "unverified-window"
+            and answer["provenance"]["reason"] == "unregistered-window"
+            and answer["provenance"]["wallpaper_allowed"] is False
+            and answer["provenance"]["rgb_allowed"] is False,
+            f"an unregistered window did not stay unverified: {answer}",
         )
 
         answer = stream.ask(request(2, managed))
@@ -271,6 +276,18 @@ def check_stream() -> None:
             == "managed-surface-without-pid",
             "a managed-looking surface without a PID resolved",
         )
+
+        # A PID-less snapshot that still names a window is not the desktop.
+        for number, partial in ((12, {"app_id": "foot", "window_id": ""}),
+                                (13, {"app_id": "", "window_id": "0x4"})):
+            answer = stream.ask(request(number, {"pid": None, **partial}))
+            require(
+                answer["request"] == number
+                and answer["provenance"]["resolved"] is False
+                and answer["provenance"]["trust"] is None
+                and answer["provenance"]["reason"] == "window-without-pid",
+                f"a PID-less window resolved as the desktop: {answer}",
+            )
 
         answer = stream.ask(request(11, {"pid": None, "app_id": "",
                                          "window_id": ""}))

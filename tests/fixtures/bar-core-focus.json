@@ -34,8 +34,8 @@
       "name": "host",
       "expect": "host",
       "words": "Host",
-      "sway": {"id": 11, "pid": 900, "app_id": "foot", "name": "ssh dirty-01 (dev-01)", "fullscreen_mode": 0},
-      "hyprland": {"pid": 900, "class": "foot", "address": "0x5a11", "title": "ssh dirty-01 (dev-01)", "fullscreen": 0}
+      "sway": {},
+      "hyprland": {}
     },
     {
       "name": "dev",
@@ -57,6 +57,13 @@
       "words": "Unknown",
       "sway": {"id": 14, "pid": 903, "app_id": "looking-glass-client", "name": "dev-01", "fullscreen_mode": 0},
       "hyprland": {"pid": 903, "class": "looking-glass-client", "address": "0x5a14", "title": "dev-01", "fullscreen": 0}
+    },
+    {
+      "name": "terminal",
+      "expect": "unknown",
+      "words": "Unknown",
+      "sway": {"id": 11, "pid": 900, "app_id": "foot", "name": "ssh dirty-01 (dev-01)", "fullscreen_mode": 0},
+      "hyprland": {"pid": 900, "class": "foot", "address": "0x5a11", "title": "ssh dirty-01 (dev-01)", "fullscreen": 0}
     },
     {
       "name": "stale",

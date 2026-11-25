@@ -195,7 +195,7 @@ LIVE_SETUP = r'''
             sharedState.focusObservedAt = Date.now();
             if (live.focus.kind === "host")
                 sharedState.provenanceObservation = sharedState.provenanceResult(
-                    "resolved", "host", "host-native", "", "unregistered-host-process", "Host process");
+                    "resolved", "host", "host-native", "", "no-focused-client", "No focused window");
             else if (live.focus.kind === "machine")
                 sharedState.provenanceObservation = sharedState.provenanceResult(
                     "resolved", live.focus.identity, "host-owned-vm-spec", live.focus.name,

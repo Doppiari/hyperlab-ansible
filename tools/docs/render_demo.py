@@ -155,7 +155,8 @@ def provenance(entry: dict, pid: int, domain_of: dict[str, str]) -> dict:
     """A resolver answer shaped as ShellState validates it."""
     base = {"schema": 1, "guest_metadata_authoritative": False, "pid": pid}
     if entry["id"] == "host":
-        return dict(base, resolved=True, reason="unregistered-host-process",
+        # HOST is the empty desktop only: no process, no window.
+        return dict(base, pid=None, resolved=True, reason="no-focused-client",
                     surface_class="host-native", trust="host", presentation_identity="host",
                     trust_source="host-native", domain=None, network_profile=None,
                     wallpaper_allowed=True, rgb_allowed=True)
@@ -348,9 +349,11 @@ def scene(fixture: dict, out: Path, size: str, wallpaper: Path) -> tuple[str, li
     answers = {}
     for index, entry in enumerate(fixture["focus"]):
         pid = 900 + index
-        app = "foot" if entry["id"] == "host" else "looking-glass-client"
+        surface = ({"pid": None, "app_id": "", "window_id": ""} if entry["id"] == "host"
+                   else {"pid": pid, "app_id": "looking-glass-client",
+                         "window_id": f"0x5a{index:02d}"})
         answers[entry["id"]] = {
-            "surface": {"pid": pid, "app_id": app, "window_id": f"0x5a{index:02d}"},
+            "surface": surface,
             "answer": provenance(entry, pid, domain_of),
         }
     usb = dict(runtime.USB_ANSWER, devices=runtime.USB_ANSWER["devices"][:3])

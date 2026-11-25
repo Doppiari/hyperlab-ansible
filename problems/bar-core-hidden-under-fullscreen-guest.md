@@ -22,7 +22,8 @@ on the overlay layer above every window. It uses the same focused-surface
 provenance (`ShellState.fullscreenFrame` reads
 `ShellState.focusedProvenance`), so a fullscreen guest still gets a host-drawn
 ring in its domain colour, or the warning colour while the surface is
-resolving, unresolved or unavailable. A fullscreen host window gets no ring.
+resolving, unresolved or unavailable. A fullscreen window nobody registered,
+a plain host terminal included, gets the warning ring too.
 
 ## The gap
 

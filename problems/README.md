@@ -4,6 +4,10 @@ These notes keep the failures that changed a HyperLab contract. Start from the
 symptom; each page records what was actually wrong, the fix and the regression
 proof.
 
+- [`looking-glass-sender-capture-harness-invoke-after-free.md`](looking-glass-sender-capture-harness-invoke-after-free.md):
+  the capture contract's failure thread could still be inside the PipeWire
+  loop that initialization had just destroyed, and crashed; the failure is
+  now queued by the initializing thread itself.
 - [`bar-focus-words-elided-domain.md`](bar-focus-words-elided-domain.md):
   middle elision hid the domain beside a coloured core; a separate label now
   keeps domain/state words unelided and tests their painted bounds.
@@ -14,6 +18,18 @@ proof.
 - [`bar-geometry-measured-in-fallback-fonts.md`](bar-geometry-measured-in-fallback-fonts.md):
   CI drew the rail in DejaVu and reported an overlap the host fonts do not
   have; the contract now refuses fallback fonts and CI installs the shell's.
+- [`wizard-provisioning-interrupted.md`](wizard-provisioning-interrupted.md):
+  a provisioning cut off half way left nothing behind, so the Machine looked
+  ready; every run now keeps a receipt and a log, a Machine reads incomplete
+  or unknown until a run finishes, and the last step proves sudo and capture.
+- [`hyprland-watch-heartbeat-postponed-by-ignored-events.md`](hyprland-watch-heartbeat-postponed-by-ignored-events.md):
+  title changes and other ignored Hyprland events restarted the watchers'
+  heartbeat, so a busy session read "Workspaces unavailable"; the heartbeat
+  now counts from the last published snapshot.
+- [`guest-fullscreen-fixture-torn-state-read.md`](guest-fullscreen-fixture-torn-state-read.md):
+  the fake compositor read a state file the test was rewriting in place and
+  crashed, so a correct UNKNOWN looked like a bad receipt; fixture files are
+  now replaced whole.
 
 - [`qml-wiring-missed-inherited-item-state.md`](qml-wiring-missed-inherited-item-state.md):
   structural wiring rejected the sphere's inherited Item.state, although
@@ -494,6 +510,10 @@ proof.
 - [`external-machines-hidden-and-coloured.md`](external-machines-hidden-and-coloured.md):
   native Machines hid external domains and undercounted running state, while
   recovery assigned DEV without a reviewed spec.
+- [`gpu-held-outside-the-handoff-policy.md`](gpu-held-outside-the-handoff-policy.md):
+  a device attached to a running domain never reaches the qemu hook, so the
+  recorded rung outlived the GPU's real history; doctor and the shell now
+  report the holder as unknown, reboot to reset. Open: nothing remembers it.
 - [`bar-core-hidden-under-fullscreen-guest.md`](bar-core-hidden-under-fullscreen-guest.md):
   a fullscreen guest covers the bar core and focus item; only the ADR 0039
   ring remains, in colour alone and without a hollow Unknown. Open.

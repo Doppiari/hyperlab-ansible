@@ -8,6 +8,11 @@ REMEDIES = {
     "host.profile_unknown": "ansible-playbook playbooks/preflight.yml -K",
     "trust.level_unmapped": "check gpu_trust_levels in group_vars/all/networks.yml "
                             "against /run/gpu-handoff/trust",
+    "trust.gpu_outside_policy": "shut the named domain down, then reboot the host: "
+                                "only a reboot resets the GPU and its rung",
+    "trust.gpu_holders_unverified": "read the named domain with virsh -c qemu:///system "
+                                    "dumpxml <name> and check /etc/gpu-handoff/domains "
+                                    "and domains.d, then run hyperlabctl doctor again",
     "memory.overcommitted": "shut a domain down, or lower its allocation in its vm-spec",
     "gpu.id_absent": "ansible-playbook playbooks/preflight.yml -K "
                      "(the profile does not match this machine)",
@@ -16,6 +21,9 @@ REMEDIES = {
     "networks.inactive": "virsh -c qemu:///system net-start <name>",
     "domains.unguarded_vfio": "add the fixture domain to gpu_domain_profiles in "
                               "group_vars/all/networks.yml, then re-run foundation.yml",
+    "domains.gpu_policy_without_product_metadata": "remove the stale domains.d entry through "
+                                                   "the reviewed Machine lifecycle, or recreate "
+                                                   "the domain as a product Machine",
     "domains.gpu_policy_unverified": "re-apply the managed Machine through the reviewed "
                                      "guest lifecycle so its root-owned GPU handoff "
                                      "policy matches gpu_handoff_profile",

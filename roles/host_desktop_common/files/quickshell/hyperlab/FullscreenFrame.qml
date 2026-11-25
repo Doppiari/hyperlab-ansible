@@ -2,11 +2,12 @@
 //
 // A fullscreen window covers the rail and loses its border, so nothing
 // host-drawn would contradict whatever it shows, including a fake host
-// desktop. While the focused window is fullscreen and the host has not
-// resolved it as its own, this ring is drawn around its output on the
-// overlay layer, above every window, in the provenance colour the host
-// resolved; an unresolved surface gets the warning colour. It takes no input
-// and reserves no space. The guest never draws or controls it.
+// desktop. While the focused window is fullscreen, this ring is drawn
+// around its output on the overlay layer, above every window: in the
+// provenance colour of a verified guest viewer, and in the warning colour
+// for anything else, a plain host terminal included, since a host process
+// does not prove what its window shows. It takes no input and reserves no
+// space. The guest never draws or controls it.
 
 import Quickshell
 import Quickshell.Wayland

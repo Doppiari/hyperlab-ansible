@@ -2,10 +2,10 @@
 //
 // Where am I typing? The item draws the answer the bar core gives in colour
 // as a shape and words: the Machine's sphere with its name and domain
-// ("dev-01 · dev"), the host's grey sphere with "Host", or the neutral
-// outline with "Unknown" when focus cannot be placed. Colour is carried by
-// the sphere only and never without the domain word; the words stay in the
-// primary text tone.
+// ("dev-01 · dev"), the host's grey sphere with "Host" while nothing has
+// focus, or the neutral outline with "Unknown" when focus cannot be placed.
+// Colour is carried by the sphere only and never without the domain word;
+// the words stay in the primary text tone.
 // A proven Machine whose inventory state the sphere cannot draw keeps its
 // domain and adds that state word beside the neutral outline (ADR 0064).
 //
@@ -34,9 +34,10 @@ ShellControl {
     readonly property string identity:
         badge.resolved ? String(badge.provenance.identity) : ""
 
-    // A managed-looking surface without valid host provenance is a finding,
-    // not an absence; it reads Unknown with an unresolved marker and its
-    // reason in the accessible name and in Diagnostics.
+    // A managed-looking surface without valid host provenance, or a window
+    // nobody registered (a plain terminal included), is a finding, not an
+    // absence; it reads Unknown with an unresolved marker and its reason in
+    // the accessible name and in Diagnostics. Host is the empty desktop only.
     readonly property bool unresolved:
         badge.provenance && badge.provenance.state === "unresolved"
 

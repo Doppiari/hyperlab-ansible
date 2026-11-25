@@ -481,6 +481,71 @@ def main() -> int:
             "orphan surface received RGB values",
         )
 
+        # Windows nobody registered, drawn by real host processes: a plain
+        # terminal, virt-manager, spicy, an app id no list knows, a spoof of
+        # the managed ssh id, and a PID-less window. None of them may plan
+        # wallpaper or RGB, and none of them is HOST.
+        host_binary = temp / "foot"
+        host_binary.write_text("#!/bin/sh\n", encoding="utf-8")
+        windows = (
+            (61001, "foot", "HOST"),
+            (61002, "virt-manager", "win11clean-valley on QEMU/KVM"),
+            (61003, "spicy", "CLEAN"),
+            (61004, "org.example.unfamiliar-viewer", "HOST trusted"),
+            (61005, "hyperlab-managed-ssh-dev", "dev-01 · dev"),
+            (None, "foot", "HOST"),
+        )
+
+        for pid, app_id, title in windows:
+            if pid is not None:
+                write_fake_proc(
+                    proc_root,
+                    pid=pid,
+                    start_ticks="1",
+                    executable=host_binary,
+                )
+
+            unverified = coordinator.build_plan(
+                repo=repo,
+                pool_root=POOL,
+                surface={
+                    "pid": pid,
+                    "app_id": app_id,
+                    "window_id": "0x6100",
+                    "title": title,
+                },
+                registry_path=registry,
+                proc_root=proc_root,
+                epoch=0,
+                resolver_module=resolver,
+                engine_module=engine,
+            )
+
+            require(
+                unverified["mode"] == "hold"
+                and unverified["provenance_resolved"] is False
+                and unverified["trust"] is None
+                and unverified["trust_source"] is None
+                and unverified["domain"] is None
+                and unverified["wallpaper_action"] == "hold"
+                and unverified["wallpaper"] is None
+                and unverified["rgb_action"] == "hold"
+                and unverified["rgb_zones"] is None,
+                f"the unverified {app_id} window planned presentation: "
+                f"{unverified}",
+            )
+
+            require(
+                unverified["reason"]
+                == (
+                    "window-without-pid"
+                    if pid is None
+                    else "unregistered-window"
+                ),
+                f"the {app_id} window was held for another reason: "
+                f"{unverified['reason']}",
+            )
+
     source = COORDINATOR.read_text(
         encoding="utf-8"
     )

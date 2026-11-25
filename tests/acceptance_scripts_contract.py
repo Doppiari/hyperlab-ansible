@@ -999,10 +999,11 @@ def check_16_phases_run() -> None:
 
 def check_12_run() -> None:
     # ADR 0039: the ring over a fullscreen Looking Glass window and over a
-    # fullscreen SPICE console, never over a fullscreen host window.
+    # fullscreen SPICE console in dev's colour, and the warning ring over a
+    # fullscreen plain terminal, which is no trusted host surface.
     report = run_12(FAKE_HYPERLABCTL_OK)[0]
     steps = ["PASS  ring around the fullscreen guest (operator)",
-             "PASS  no ring for the host (operator)",
+             "PASS  warning ring around the fullscreen terminal (operator)",
              "hyperlabctl open console dev-01",
              "PASS  ring around the fullscreen SPICE console (operator)",
              "group 12-fullscreen-ring: 5 passed, 0 failed, 0 skipped"]
@@ -1016,6 +1017,25 @@ def check_12_run() -> None:
     require("close Looking Glass" in report[found[1]:found[2]],
             f"12 opens the console without closing Looking Glass first: {report}")
 
+    require("no ring for the host" not in report,
+            f"12 still treats a fullscreen terminal as the trusted host: {report}")
+    require("plain terminal" in report[found[0]:found[1]],
+            f"12 does not ask for a plain terminal before the warning ring: {report}")
+
+    # Each question is answered by its own words; a "no" to the warning ring
+    # fails exactly that step and the run. A question asking for no ring
+    # around the terminal is never answered, so the run cannot finish.
+    refused = run_12(FAKE_HYPERLABCTL_OK, answers={
+        "Is there a 4 px ring in dev's colour around the screen? [y/n]": "y",
+        "Do clicks at the screen edges reach the guest? [y/n]": "y",
+        "Is there a 4 px ring in the warning colour (amber), not dev's colour, "
+        "around the fullscreen terminal? [y/n]": "n",
+        "Is there a 4 px ring in dev's colour around the fullscreen console? [y/n]": "y",
+    })[0]
+    require("FAIL  warning ring around the fullscreen terminal (operator)" in refused
+            and refused.rstrip().endswith("group 12-fullscreen-ring: 4 passed, 1 failed, 0 skipped"),
+            f"a missing warning ring around the terminal did not fail 12: {refused}")
+
     # As group 16 (problems/looking-glass-acceptance-asked-before-the-stream.md):
     # with no client on the sender the window shows dev-01's SPICE display.
     idle, (calls, slept) = run_12(FAKE_HYPERLABCTL_IDLE)
@@ -1026,9 +1046,9 @@ def check_12_run() -> None:
             f"12 did not wait 60 s for health ok ({calls} answers, slept {slept})")
 
 
-def run_12(hyperlabctl: str) -> tuple[str, tuple[int, list[str]]]:
-    """Group 12 against fake tools, answering yes; with how many times it
-    asked for the health and what it asked sleep for."""
+def run_12(hyperlabctl: str, answers: dict[str, str] | None = None) -> tuple[str, tuple[int, list[str]]]:
+    """Group 12 against fake tools, answering yes unless told otherwise; with
+    how many times it asked for the health and what it asked sleep for."""
     calls = Path(tempfile.mkdtemp())
     try:
         report = run_in_terminal(
@@ -1036,7 +1056,7 @@ def run_12(hyperlabctl: str) -> tuple[str, tuple[int, list[str]]]:
             {"grim": "#!/bin/sh\nexit 1\n",
              "hyperlabctl": hyperlabctl.replace('"$FAKE_DIR/health-calls"', f'"{calls}/health-calls"'),
              "sleep": FAKE_SLEEP.replace('"$FAKE_DIR/slept"', f'"{calls}/slept"')},
-            {}, {"[y/n]": "y"}, {"HYPERLABCTL": "hyperlabctl"})
+            {}, answers or {"[y/n]": "y"}, {"HYPERLABCTL": "hyperlabctl"})
         health = (calls / "health-calls").read_text().count("x") if (calls / "health-calls").exists() else 0
         slept = (calls / "slept").read_text().split() if (calls / "slept").exists() else []
     finally:

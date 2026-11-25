@@ -170,3 +170,74 @@ Creation is split along the existing boundary.
   ([ADR 0018](0018-disposable-discards-on-stop.md)); the GPU lease is a
   design accepted on 2026-11-05 and is not built
   ([ADR 0019](0019-gpu-lease.md)).
+
+## Amendment (2026-11-25): a receipt for every provisioning
+
+Status of this amendment: proposed.
+
+A provisioning of `sid` stopped in its profile passes and the Machine still
+looked ready: nothing kept the failure once the operation window was gone
+([the problem](../../problems/wizard-provisioning-interrupted.md)).
+
+- **Receipt.** Once the whole plan is validated, the provisioner takes
+  `$XDG_STATE_HOME/hyperlab/provisioning/NAME.lock` (exclusive; a second run
+  of the same Machine is refused) and keeps, beside it, `NAME.json` and
+  `NAME.log` (0600 in a 0700 directory). The receipt names the Machine, the
+  SHA-256 of its record as `machine show` read it, when the run started and
+  ended, and every step's result and exit status. It is replaced atomically
+  after every change. Only a run whose every step ended with 0 writes
+  `finished`, in the same write as the last step's result. A failed step,
+  a refusal, SIGINT, SIGTERM, SIGHUP and a closed terminal record the step
+  where the run stopped; SIGKILL and a lost power leave `running`, which no
+  lock then holds. The log keeps everything the steps printed (their output
+  goes through a pipe; their input stays the terminal, so the become prompt
+  and the password prompts never reach it) and the previous run's log.
+- **Reading.** `hyperlabctl machine show` and `machine inventory` add
+  `provisioning` to the Machine: `finished` only for a receipt of this
+  record's digest, with its Template's steps, every one ok. A failed,
+  interrupted or dead run reads "Provisioning incomplete: step N of M
+  (label)" with the command that resumes it; a missing, unreadable,
+  linked or foreign receipt reads "Provisioning unknown". The Machines card
+  shows the same text and command for a product Machine and treats a row
+  without a reading as unknown.
+- **Resume.** `privatestack-machine-provision NAME --from N`, run by hand
+  in the checkout, continues a failed or interrupted receipt of the same
+  steps at or before its first step that did not end with 0. It reads the
+  receipt again once it holds the lock; a receipt still `running` then is a
+  dead run's, held only by that lock, and is resumed like an interrupted
+  one. A reader tests the lock by taking it shared for an instant, so a run
+  waits up to two seconds for it before calling another run live. The runner
+  still accepts only `[provisioner, NAME]`; nothing the shell submits can
+  resume or skip a step.
+- **Proof.** A workstation gets a last step, `hyperlabctl machine
+  verify-provisioning NAME`: `sudo -n true` over the pinned SSH channel
+  must be refused for a password, and for a VFIO Machine with Linux Looking
+  Glass `restart-capture` then `health` must show the sender started a
+  capture (stream `starting` or `streaming`) within five minutes. A server
+  keeps passwordless sudo by design and gets no such step.
+
+Ruled out:
+
+- *The receipt in the runtime directory* beside the hash file and the
+  operation record: it is memory, and a reboot, one of the ways a run is
+  cut off, would erase the evidence that it was.
+- *The receipt in the Machine record*: the record is declarative intent,
+  published and withdrawn by digest; a run's outcome is an observation, and
+  writing it would change the digest that binds the receipt and the
+  withdrawal.
+- *The operation record as the source*: it lives in the runtime directory
+  too, exists only for runs launched from the shell (not for a resume by
+  hand) and records the provisioner's exit status, not which step it
+  reached.
+- *`--from` accepted by the runner*: the shell could then ask to skip
+  steps; the runner keeps accepting exactly `[provisioner, NAME]`, and a
+  resume stays a reviewed command typed in a terminal of the checkout.
+
+Consequences: a Machine provisioned before receipts existed reads
+"Provisioning unknown" until a whole run finishes; commands run by hand
+from [`../first-machine.md`](../first-machine.md) write no receipt. The
+receipt layout is held in both programs, like the profile table, and a
+contract keeps them equal. The Looking Glass proof needs an open client,
+since a sender without one stops its capture; that, and the timing on real
+hardware, are unobserved.
+

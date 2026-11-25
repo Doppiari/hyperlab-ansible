@@ -31,6 +31,9 @@ Column {
     // visible with that qualifier rather than dropping the restriction.
     readonly property string claimState: instrument.shellState.trustClaimState
     readonly property bool claimCurrent: instrument.claimState === "ok"
+    // A current host statement that no rung describes the GPU.
+    readonly property bool claimOutsidePolicy:
+        instrument.claimCurrent && instrument.claim.outsidePolicy === true
     readonly property bool claimRetained:
         !instrument.claimCurrent && instrument.claim.claimed === true
 
@@ -196,6 +199,9 @@ Column {
                 tokens: instrument.tokens
                 role: "mono"
                 text: {
+                    if (instrument.claimOutsidePolicy)
+                        return "Unknown, reboot to reset";
+
                     if (instrument.claimCurrent)
                         return instrument.claim.claimed === true
                             ? "· rung " + instrument.claim.level + " until reboot"
@@ -208,7 +214,9 @@ Column {
                     return "Unknown · " + instrument.claimQualifier;
                 }
                 color:
-                    instrument.claimCurrent
+                    instrument.claimOutsidePolicy
+                    ? instrument.theme.semanticStatusColor("bad")
+                    : instrument.claimCurrent
                     ? instrument.theme.textPrimary
                     : instrument.theme.semanticStatusColor("warn")
             }

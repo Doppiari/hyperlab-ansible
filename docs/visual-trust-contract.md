@@ -98,8 +98,15 @@ Glass, SPICE and future seamless-application surfaces inherit that host-owned
 provenance. Guest-provided window titles, application IDs and application names
 are presentation metadata only and are not authority for trust classification.
 
-Host-native applications are neutral host surfaces. `HOST` is not a sixth
-network domain and must not be represented as `clean`.
+`HOST` is the empty host desktop only: the focus snapshot with no process,
+application ID or window. A host process does not establish what its window
+shows (a plain terminal can hold an ssh session to any Machine), so every
+actual window without a verified registration, host applications included,
+is an unverified window: no trust identity, no domain colour, `Unknown` with
+`unresolved` in the bar, and the warning ring when fullscreen
+([ADR 0039](adr/0039-host-frame-around-fullscreen-guests.md), amendment of
+2026-11-25). `HOST` is not a sixth network domain and must not be
+represented as `clean`.
 
 The canonical visual identities remain:
 
@@ -108,7 +115,9 @@ The canonical visual identities remain:
 - `services`: cyan;
 - `dirty`: orange;
 - `lab`: violet;
-- host-native: neutral HOST identity;
+- the empty host desktop: neutral HOST identity;
+- unverified window: no identity, neutral outline in the bar, warning ring
+  when fullscreen;
 - unclassified machines: neutral outline and transparent fill; `external` for
   a domain outside a readable registry, `unclassified` for a registry Machine
   without a resolved identity, `membership unknown` when the registry is
@@ -190,8 +199,12 @@ checked by `tests/machine_sphere_contract.py`).
 
 Trust-mode keyboard RGB follows the host-resolved provenance of the currently
 focused surface. Focusing a managed guest surface selects that surface's trust
-identity; focusing a host-native surface returns the keyboard to the neutral
-host indication.
+identity; the empty host desktop returns the keyboard to the neutral host
+indication. A window nobody registered, an unverified window or a
+managed-looking one, names no domain: the keyboard gets the operator's own
+saved colours back, never the previous window's trust colour. A surface
+whose answer is still pending, or a registered process that fails
+verification, holds the current colours.
 
 The keyboard is an additional physical trust signal, not the source of truth.
 Control Center state, Waybar/domain indicators, window/seamless-app markers and

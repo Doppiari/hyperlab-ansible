@@ -2644,8 +2644,8 @@ def backend_trust_payloads() -> dict[str, str]:
     from hyperlabctl import document
     from hyperlabctl.render import waybar_field
 
-    def payload(trust, error=None):
-        ctx = world.build(trust=trust)
+    def payload(trust, error=None, domains=None):
+        ctx = world.build(trust=trust, domains=domains)
         target = str(ctx.config.gpu_handoff_state)
         real = Path.read_text
 
@@ -2654,9 +2654,19 @@ def backend_trust_payloads() -> dict[str, str]:
                 raise error
             return real(self, *args, **kwargs)
 
-        with mock.patch.object(Path, "read_text", read_text):
+        # The managed GPU policy surface is root-owned on the host; the
+        # fixture answers it as readable and empty, never from /etc.
+        with mock.patch.object(Path, "read_text", read_text), mock.patch(
+            "hyperlabctl.providers.domains.observe_managed_gpu_policies",
+            return_value=({}, "ok"),
+        ):
             built = document.build(ctx, only={"trust"})
         return json.dumps(waybar_field(built, "trust"))
+
+    # A running domain in neither GPU policy surface holds a PCI hostdev,
+    # attached after its prepare: the hook recorded DEV/2 without seeing it.
+    rogue = [{"name": "rogue-tmp", "state": "running", "memory_mb": 1024,
+              "network": "lab", "vfio": True}]
 
     return {
         "dev": payload(2),
@@ -2664,19 +2674,37 @@ def backend_trust_payloads() -> dict[str, str]:
         "permission": payload(2, PermissionError(errno.EACCES, "Permission denied")),
         "io": payload(2, OSError(errno.EIO, "Input/output error")),
         "malformed": payload("garbage"),
+        "outside": payload(2, domains=rogue),
     }
+
+
+# Windows that a host process draws but nobody registered: what Foot,
+# virt-manager and spicy report, an app id no list anticipates and a spoof of
+# the managed ssh id. Their PIDs are not in any registry.
+UNREGISTERED_WINDOWS = {
+    "foot": (910, "foot"),
+    "virt-manager": (911, "virt-manager"),
+    "spicy": (912, "spicy"),
+    "unfamiliar": (913, "org.example.unfamiliar-viewer"),
+    "spoof": (914, "hyperlab-managed-ssh-dev"),
+}
 
 
 def resolver_answers() -> dict[str, dict]:
     """Provenance answers produced by the real reviewed resolver.
 
-    HOST for an unregistered host process, DEV for a verified Looking Glass
-    registration, and fail-closed for an unregistered Looking Glass surface.
-    The reviewed executable is bound to a fixture binary for the DEV case
-    only; nothing outside the fixture's temporary directory is read.
+    DEV for a verified Looking Glass registration; fail-closed for an
+    unregistered Looking Glass surface; an unverified window for every
+    unregistered host window and for a PID-less window; HOST for the empty
+    desktop only. The unverified and desktop answers are the same from
+    resolve(), from the resolve command and from the stream command, and the
+    returned answers are those. The reviewed executable is bound to a fixture
+    binary for the DEV case only; nothing outside the fixture's temporary
+    directory is read.
     """
     import hashlib
     import importlib.util
+    import sys
 
     import yaml
 
@@ -2699,41 +2727,91 @@ def resolver_answers() -> dict[str, dict]:
             "network_profile": "dev",
             "looking_glass": True,
         }), encoding="utf-8")
+        digest = hashlib.sha256(spec_path.read_bytes()).hexdigest()
 
         transport = temp / "looking-glass-client"
         transport.write_text("#!/bin/sh\n", encoding="utf-8")
         resolver.EXPECTED_EXECUTABLES["looking-glass"] = str(transport.resolve())
 
-        proc = temp / "proc" / "901"
-        proc.mkdir(parents=True)
-        (proc / "stat").write_text(
-            "901 (looking-glass) S " + "0 " * 18 + "4242 0 0\n",
-            encoding="utf-8",
-        )
-        (proc / "exe").symlink_to(transport)
+        for pid in [901] + [pid for pid, _ in UNREGISTERED_WINDOWS.values()]:
+            proc = temp / "proc" / str(pid)
+            proc.mkdir(parents=True)
+            (proc / "stat").write_text(
+                f"{pid} (host) S " + "0 " * 18 + "4242 0 0\n",
+                encoding="utf-8",
+            )
+            (proc / "exe").symlink_to(transport)
 
-        registry = {"version": 1, "entries": [{
+        entry = {
             "pid": 901,
             "process_start_ticks": "4242",
             "executable": str(transport.resolve()),
             "surface_kind": "looking-glass",
             "domain": "arch-dev-vfio",
-            "spec_sha256": hashlib.sha256(spec_path.read_bytes()).hexdigest(),
+            "spec_sha256": digest,
             "registered_by": "hyperlabctl",
-        }]}
+        }
+        registry = {"version": 1, "entries": [entry]}
 
-        def answer(pid: int, app_id: str) -> dict:
+        # The commands run with the reviewed executable path, so their
+        # registry names it; the unregistered PIDs are absent either way.
+        registry_path = temp / "surface-provenance.json"
+        registry_path.write_text(json.dumps({"version": 1, "entries": [dict(
+            entry, executable="/usr/local/bin/looking-glass-client")]}), encoding="utf-8")
+        registry_path.chmod(0o600)
+        common = [sys.executable, "-I", "-B", str(ROOT / "tools/surface_provenance.py"),
+                  "--repo", str(repo), "--proc-root", str(temp / "proc")]
+
+        def direct(surface: dict) -> dict:
             return resolver.resolve(
                 repo=repo,
-                surface={"pid": pid, "app_id": app_id, "window_id": "0x1"},
+                surface=surface,
                 registry=registry,
                 proc_root=temp / "proc",
             )
 
+        def answer(pid: int, app_id: str) -> dict:
+            return direct({"pid": pid, "app_id": app_id, "window_id": "0x1"})
+
+        surfaces = {label: {"pid": pid, "app_id": app_id, "window_id": "0x1"}
+                    for label, (pid, app_id) in UNREGISTERED_WINDOWS.items()}
+        surfaces["pidless"] = {"pid": None, "app_id": "foot", "window_id": "0x1f"}
+        surfaces["desktop"] = {"pid": None, "app_id": "", "window_id": ""}
+
+        lines = "".join(json.dumps({"request": number, "surface": surface}) + "\n"
+                        for number, surface in enumerate(surfaces.values(), start=1))
+        streamed = subprocess.run(
+            [*common, "stream", "--registry", str(registry_path)],
+            input=lines, capture_output=True, text=True, timeout=60, check=False,
+        )
+        if streamed.returncode != 0:
+            raise SystemExit("HyperLab Quickshell runtime contract: the resolver "
+                             f"stream failed: {streamed.stderr.strip()}")
+        stream_answers = [json.loads(line) for line in streamed.stdout.splitlines()]
+
+        produced = {}
+        for number, (label, surface) in enumerate(surfaces.items()):
+            printed = subprocess.run(
+                [*common, "resolve", "--surface-json", json.dumps(surface),
+                 "--registry", str(registry_path)],
+                capture_output=True, text=True, timeout=60, check=False,
+            )
+            from_stream = stream_answers[number] if number < len(stream_answers) else {}
+            value = direct(surface)
+            if (printed.returncode != 0 or json.loads(printed.stdout) != value
+                    or from_stream.get("request") != number + 1
+                    or from_stream.get("status") != "ok"
+                    or from_stream.get("provenance") != value):
+                raise SystemExit("HyperLab Quickshell runtime contract: resolve(), the "
+                                 f"resolve command and the stream disagree on {label}")
+            produced[label] = value
+
         return {
-            "host": answer(900, "foot"),
             "dev": answer(901, "looking-glass-client"),
             "unresolved": answer(902, "looking-glass-client"),
+            "desktop": produced.pop("desktop"),
+            "pidless": produced.pop("pidless"),
+            "windows": produced,
         }
 
 
@@ -2766,28 +2844,113 @@ PROVENANCE = """
 
             check(badge !== null, "the rail provenance badge is not rendered");
 
-            // Host-native: HOST from the resolver, context unchanged.
-            focus(900, "foot", "0x10");
+            function forgedFrom(base, change) {
+                const value = JSON.parse(JSON.stringify(base));
+                change(value);
+                return value;
+            }
+
+            function unverified(code, what) {
+                check(sharedState.focusedProvenance.state === "unresolved"
+                      && !sharedState.focusedProvenance.available
+                      && sharedState.focusedProvenance.identity === ""
+                      && sharedState.focusedProvenance.source === ""
+                      && sharedState.focusedProvenance.domain === ""
+                      && sharedState.focusedProvenance.reasonCode === code,
+                      what + " was not presented as an unverified window");
+                check(sharedState.focusedMachine.kind === "unknown"
+                      && badge.kind === "unknown" && badge.unresolved && !badge.resolved
+                      && badge.identity === "" && badge.words === "Unknown"
+                      && badge.accessibleName.indexOf("Focus unknown") === 0
+                      && badge.accessibleName.toLowerCase().indexOf("host:") < 0,
+                      what + ": the rail badge did not say Unknown, unresolved");
+                const marker = window.find(rail, "focus-unresolved");
+                check(marker !== null && marker.visible && marker.text === "unresolved",
+                      what + ": the unresolved marker is not drawn");
+            }
+
+            // A plain host terminal: the resolver names nobody, context
+            // unchanged.
+            focus(910, "foot", "0x10");
             check(sharedState.focusedProvenance.state === "resolving"
                   && sharedState.focusedProvenance.identity === "",
                   "a newly focused surface did not start without an identity");
             const sent = JSON.parse(sharedState.provenanceRequestLine);
-            check(sent.surface.pid === 900
+            check(sent.surface.pid === 910
                   && sent.request === sharedState.provenanceRequest,
                   "the focused PID did not reach the resolver request");
             check(sharedState.provenanceRequestLine.indexOf("title") < 0
                   && sharedState.provenanceRequestLine.indexOf("CLEAN") < 0,
                   "the window title reached the resolver request");
             const hostRequest = sharedState.provenanceRequest;
-            answer(real.host);
-            check(sharedState.focusedProvenance.available
-                  && sharedState.focusedProvenance.identity === "host"
-                  && sharedState.focusedProvenance.source === "host-native",
-                  "a host-native answer did not present HOST");
-            check(badge.resolved && badge.identity === "host",
-                  "the rail badge did not present HOST");
+            answer(real.windows.foot);
+            unverified("unregistered-window", "a plain Foot window");
             check(sharedState.focusedSurface === "foot",
                   "compositor context changed with provenance");
+
+            // Every unregistered window, whatever its app id and title.
+            const windows = @@WINDOWS@@;
+            for (const label of Object.keys(windows)) {
+                focus(windows[label][0], windows[label][1], "0x1" + label.length);
+                answer(real.windows[label]);
+                unverified("unregistered-window", "the " + label + " window");
+            }
+
+            // A PID-less snapshot that still names a window.
+            focus(null, "foot", "0x1f");
+            answer(real.pidless);
+            unverified("window-without-pid", "a PID-less window");
+
+            // The genuinely empty desktop keeps HOST.
+            focus(null, "", "");
+            answer(real.desktop);
+            check(sharedState.focusedProvenance.available
+                  && sharedState.focusedProvenance.identity === "host"
+                  && sharedState.focusedProvenance.source === "host-native"
+                  && sharedState.focusedProvenance.reasonCode === "no-focused-client",
+                  "the empty desktop did not present HOST");
+            check(badge.resolved && badge.identity === "host" && badge.kind === "host"
+                  && !badge.unresolved,
+                  "the rail badge did not present HOST on the empty desktop");
+
+            // A resolved HOST answer for an actual window is refused, whoever
+            // forged it: by PID, by app id, by window id, by its old reason.
+            const forgedHost = [
+                [910, "foot", "0x10", forgedFrom(real.desktop, v => { v.pid = 910; })],
+                [910, "", "", forgedFrom(real.desktop, v => { v.pid = 910; })],
+                [910, "foot", "0x10", forgedFrom(real.desktop, v => {
+                    v.pid = 910; v.reason = "unregistered-host-process"; })],
+                [null, "foot", "0x1f", real.desktop],
+                [null, "", "0x1f", real.desktop],
+                [null, "foot", "", real.desktop],
+                [910, "foot", "0x10", forgedFrom(real.windows.foot, v => {
+                    v.resolved = true; v.trust = "host"; v.trust_source = "host-native";
+                    v.surface_class = "host-native"; v.wallpaper_allowed = true;
+                    v.rgb_allowed = true; })],
+                [910, "foot", "0x10", forgedFrom(real.windows.foot, v => {
+                    v.surface_class = "managed-unresolved"; })],
+                [910, "foot", "0x10", forgedFrom(real.windows.foot, v => {
+                    v.reason = "window-without-pid"; })],
+                [null, "foot", "0x1f", forgedFrom(real.pidless, v => {
+                    v.reason = "unregistered-window"; })],
+                [902, "looking-glass-client", "0x12", forgedFrom(real.unresolved, v => {
+                    v.surface_class = "unverified-window"; })],
+                [910, "foot", "0x10", forgedFrom(real.windows.foot, v => {
+                    v.wallpaper_allowed = true; })]
+            ];
+            for (let index = 0; index < forgedHost.length; index++) {
+                const [pid, app, windowId, forgedAnswer] = forgedHost[index];
+                focus(pid, app, windowId);
+                answer(forgedAnswer);
+                check(sharedState.focusedProvenance.state === "unavailable"
+                      && sharedState.focusedProvenance.reasonCode === "resolver-invalid"
+                      && sharedState.focusedProvenance.identity === ""
+                      && sharedState.focusedMachine.kind === "unknown",
+                      "a forged answer for an actual window was presented (case " + index + ")");
+                check(badge.kind !== "host" && !badge.resolved,
+                      "a forged answer put HOST on the badge (case " + index + ")");
+            }
+            focus(910, "foot", "0x10");
 
             // Managed DEV: the previous identity is dropped at once, and a
             // late answer to an older request is ignored.
@@ -2795,7 +2958,7 @@ PROVENANCE = """
             check(!sharedState.focusedProvenance.available
                   && sharedState.focusedProvenance.identity === "",
                   "the previous identity stayed attached to a new surface");
-            answer(real.host, hostRequest);
+            answer(real.windows.foot, hostRequest);
             check(sharedState.focusedProvenance.state === "resolving",
                   "an answer to an older request was applied");
             answer(real.dev);
@@ -2828,7 +2991,7 @@ PROVENANCE = """
                   "an identical tuple retained stale provenance");
 
             // Back to a host window: DEV never follows it.
-            focus(900, "foot", "0x10");
+            focus(910, "foot", "0x10");
             check(sharedState.focusedProvenance.identity === "",
                   "DEV stayed attached to a host window");
             answer(real.dev);
@@ -2932,13 +3095,38 @@ PROVENANCE = """
             check(sharedState.focusedProvenance.state === "unavailable",
                   "a second answer replaced a rejected answer");
 
+            // A -> B -> A: a late answer for A never lands on B, and A needs
+            // a fresh answer when it comes back.
             focus(901, "looking-glass-client", "0x11");
             const oldDev = sharedState.provenanceRequest;
-            focus(900, "firefox", "0x10");
-            answer(real.host);
+            focus(910, "foot", "0x10");
+            const footRequest = sharedState.provenanceRequest;
             answer(real.dev, oldDev);
-            check(sharedState.focusedProvenance.identity === "host",
-                  "a late DEV answer replaced Firefox HOST");
+            check(sharedState.focusedProvenance.state === "resolving"
+                  && sharedState.focusedMachine.kind === "unknown",
+                  "a late DEV answer landed on the Foot window");
+            answer(real.windows.foot);
+            answer(real.dev, oldDev);
+            unverified("unregistered-window", "Foot after a late DEV answer");
+            focus(901, "looking-glass-client", "0x11");
+            answer(real.windows.foot, footRequest);
+            check(sharedState.focusedProvenance.state === "resolving"
+                  && badge.kind === "unknown",
+                  "the Foot answer was reused for the Looking Glass window");
+            answer(real.dev);
+            check(sharedState.focusedProvenance.identity === "dev",
+                  "returning to the guest did not resolve it again");
+
+            // A resolver restart while an unverified window has focus.
+            focus(910, "foot", "0x10");
+            answer(real.windows.foot);
+            sharedState.provenanceStopped();
+            check(sharedState.focusedProvenance.state === "unavailable"
+                  && badge.kind === "unknown" && !badge.resolved,
+                  "a stopped resolver left an identity on the Foot window");
+            focus(910, "foot", "0x10");
+            answer(real.windows.foot);
+            unverified("unregistered-window", "Foot after a resolver restart");
 
             // A failed focus source makes provenance unavailable.
             sharedState.applyFocusPayload("not json");
@@ -3008,6 +3196,38 @@ TRUST_PROVIDER_PATH = """
             check(sharedState.gpuOwnership.known
                   && sharedState.gpuOwnership.owner === "",
                   "a trust read failure changed GPU ownership");
+
+            // A passthrough holder outside the GPU policy replaces the
+            // recorded rung: the GPU state is unknown until a reboot.
+            sharedState.applyTrustPayload(payloads.dev);
+            sharedState.applyTrustPayload(payloads.outside);
+            check(sharedState.trustClaimState === "ok"
+                  && !sharedState.trustClaim.claimed
+                  && sharedState.trustClaim.outsidePolicy === true
+                  && sharedState.trustClaim.level === -1,
+                  "an outside-policy holder kept the recorded rung");
+            check(claimText.text === "Unknown, reboot to reset",
+                  "an outside-policy holder rendered as: " + claimText.text);
+            check(badge.visible && badge.stateText === "Unknown, reboot to reset",
+                  "the rail hid an outside-policy holder: " + badge.stateText);
+
+            // The outside domain is usually the GPU's current owner: the rail
+            // then names it and still carries the reboot instruction.
+            sharedState.applyGpuPayload(JSON.stringify(
+                { known: true, owner: "rogue-tmp", bound: true }));
+            const qualifier = window.find(badge, "gpu-badge-claim-qualifier");
+            check(badge.visible && badge.stateText === "rogue-tmp",
+                  "the rail did not name the outside holder: " + badge.stateText);
+            check(qualifier !== null && qualifier.visible
+                  && qualifier.text.indexOf("Unknown, reboot to reset") >= 0,
+                  "the rail dropped the reboot instruction for a named holder: "
+                  + (qualifier === null ? "no qualifier" : qualifier.text));
+            sharedState.applyGpuPayload(JSON.stringify(
+                { known: true, owner: "", bound: true }));
+            sharedState.applyTrustPayload(payloads.io);
+            check(!sharedState.trustClaim.claimed
+                  && claimText.text.indexOf("rung") < 0,
+                  "a read failure after outside-policy restored a rung");
 """
 
 
@@ -3470,10 +3690,83 @@ FULLSCREEN = """
                   "the ring is not the guest's provenance colour");
             check(ring.border.width === sharedTokens.fullscreenRing, "the ring width is not the token");
 
-            // A host window fullscreen: no ring.
-            focus(900, "foot", "0x10", true);
-            answer(real.host);
-            check(!fullscreenFrame.visible, "the ring showed around a fullscreen host window");
+            function warned(what) {
+                check(fullscreenFrame.visible
+                      && Qt.colorEqual(ring.border.color, sharedTheme.semanticStatusColor("warn")),
+                      what + " did not get the warning ring");
+                check(!sharedState.fullscreenFrame.resolved
+                      && sharedState.fullscreenFrame.identity === "",
+                      what + " gave the ring an identity");
+            }
+
+            // A plain host terminal fullscreen: nothing proves what it
+            // shows, so it gets the warning ring, never HOST or no ring.
+            focus(910, "foot", "0x10", true);
+            warned("a fullscreen Foot window still resolving");
+            answer(real.windows.foot);
+            check(sharedState.focusedProvenance.reasonCode === "unregistered-window",
+                  "the fixture Foot window is not unverified");
+            warned("a fullscreen plain terminal");
+
+            // Every other unregistered window, and a PID-less one.
+            const windows = @@WINDOWS@@;
+            for (const label of Object.keys(windows)) {
+                focus(windows[label][0], windows[label][1], "0x3" + label.length, true);
+                answer(real.windows[label]);
+                warned("the fullscreen " + label + " window");
+            }
+            focus(null, "foot", "0x1f", true);
+            answer(real.pidless);
+            warned("a fullscreen PID-less window");
+
+            // A forged HOST answer for the fullscreen terminal is refused.
+            focus(910, "foot", "0x10", true);
+            answer(Object.assign({}, real.desktop, { "pid": 910 }));
+            check(sharedState.focusedProvenance.reasonCode === "resolver-invalid",
+                  "a forged HOST answer for a fullscreen window was accepted");
+            warned("a fullscreen window with a forged HOST answer");
+
+            // A -> B -> A: the guest's colour never stays on B, a delayed
+            // answer for A cannot suppress or recolour B's ring, and A
+            // regains its colour only from a fresh answer.
+            focus(901, "looking-glass-client", "0x21", true);
+            const guestRequest = sharedState.provenanceRequest;
+            answer(real.dev);
+            check(Qt.colorEqual(ring.border.color, sharedTheme.provenanceColor("dev")),
+                  "the fullscreen guest lost its colour");
+            focus(910, "foot", "0x10", true);
+            warned("B right after the guest");
+            sharedState.applyProvenancePayload(JSON.stringify({
+                "schema": 1, "status": "ok", "request": guestRequest, "provenance": real.dev }));
+            warned("B after a delayed guest answer");
+            const footRequest = sharedState.provenanceRequest;
+            answer(real.windows.foot);
+            warned("B once resolved");
+            focus(901, "looking-glass-client", "0x21", true);
+            sharedState.applyProvenancePayload(JSON.stringify({
+                "schema": 1, "status": "ok", "request": footRequest,
+                "provenance": real.windows.foot }));
+            warned("A before its fresh answer");
+            answer(real.dev);
+            check(fullscreenFrame.visible
+                  && Qt.colorEqual(ring.border.color, sharedTheme.provenanceColor("dev")),
+                  "the guest did not regain its ring colour from a fresh answer");
+
+            // A resolver restart while B is fullscreen keeps B's ring.
+            focus(910, "foot", "0x10", true);
+            answer(real.windows.foot);
+            sharedState.provenanceStopped();
+            warned("B while the resolver is stopped");
+            focus(910, "foot", "0x10", true);
+            warned("B asked again after the restart");
+            answer(real.windows.foot);
+            warned("B answered after the restart");
+
+            // The desktop itself is never fullscreen; nothing has focus.
+            focus(null, "", "", false);
+            answer(real.desktop);
+            check(sharedState.focusedProvenance.identity === "host" && !fullscreenFrame.visible,
+                  "the empty desktop drew a ring or lost HOST");
 
             // Fail closed: fullscreen and not resolved, or resolving.
             focus(902, "looking-glass-client", "0x22", true);
@@ -3733,7 +4026,7 @@ def main() -> int:
              PROVENANCE.replace(
                  "@@PROVENANCE@@",
                  json.dumps(resolver_answers()),
-             )),
+             ).replace("@@WINDOWS@@", json.dumps(UNREGISTERED_WINDOWS))),
             ("modal", 1920, 1080, populated, MODAL),
             ("long-confirmation-short", 800, 480, populated, LONG_CONFIRM),
             ("long-confirmation-laptop", 1366, 768, populated, LONG_CONFIRM),
@@ -3778,7 +4071,8 @@ def main() -> int:
              PANIC_OPEN.replace("@@PANIC@@", json.dumps(PANIC_ANSWER))),
             ("stream-health", 1920, 1080, populated, STREAM_HEALTH),
             ("fullscreen-frame", 1920, 1080, populated,
-             FULLSCREEN.replace("@@PROVENANCE@@", json.dumps(resolver_answers()))),
+             FULLSCREEN.replace("@@PROVENANCE@@", json.dumps(resolver_answers()))
+             .replace("@@WINDOWS@@", json.dumps(UNREGISTERED_WINDOWS))),
         ]
 
         for name, width, height, inventory, body in cases:
