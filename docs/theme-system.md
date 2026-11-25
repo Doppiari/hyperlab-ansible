@@ -344,9 +344,13 @@ the Control Center):
 RGB is only driven while the trust-model theme is active, is written with
 runtime scope through `hyperlab-nitro-control` (never persistent), keeps the
 operator's current brightness, and respects the broker's rate limit. An
-unresolved surface (an unverified window included), an invalid claim or an
-unavailable broker holds the current colours. In `focus-trust` an unverified
-window also clears the accent the previous window owned and gets none;
+answer still pending, a managed-looking surface that cannot be resolved, an
+invalid claim or an unavailable broker holds the current colours. In
+`focus-trust` an unverified window (`unverified-window`: a window nobody
+registered, a plain terminal included) names no domain: it clears the accent
+the previous window owned, gets none, and the keyboard gets the operator's
+saved zones back through the same restore that `off` uses, which also
+releases RGB ownership; the next resolved surface captures them again.
 `system-trust` keeps following the host claim whatever has focus.
 
 Window cleanup metadata remains in the private runtime HyperLab directory.

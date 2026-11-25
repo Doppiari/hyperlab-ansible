@@ -28,7 +28,8 @@ Keyboard RGB modes, read from ~/.config/hyperlab/rgb-mode:
 
 RGB is only driven while the trust-model theme is active, is written with
 runtime scope only and keeps the operator's brightness. Anything that is not
-a validated identity holds the current colours.
+a validated identity holds the current colours, except an unverified window
+in focus-trust: it names no domain, so the operator's saved colours return.
 """
 
 from __future__ import annotations
@@ -213,6 +214,21 @@ def focus_identity(provenance: Any) -> tuple[str | None, str]:
     return trust, "resolved"
 
 
+def unverified_window(provenance: Any) -> bool:
+    """A resolver answer for an actual window nobody registered.
+
+    The resolver has finished with it: no identity, and none will come.
+    """
+    return (
+        isinstance(provenance, dict)
+        and provenance.get("resolved") is False
+        and provenance.get("trust") is None
+        and provenance.get("surface_class") == "unverified-window"
+        and provenance.get("reason") in ("unregistered-window", "window-without-pid")
+        and provenance.get("guest_metadata_authoritative") is False
+    )
+
+
 # -------------------------------------------------------------------- plan
 
 
@@ -258,7 +274,11 @@ def plan(
             else system_identity(system_trust)
         )
 
-        if identity is None:
+        if identity is None and rgb_mode == "focus-trust" and unverified_window(provenance):
+            # A window the host cannot place names no domain: the keyboard
+            # gets the operator's own colours back, not the last trust colour.
+            rgb.update({"action": "restore", "reason": "focus-unverified-window"})
+        elif identity is None:
             rgb["reason"] = (
                 "focus-provenance-" + focus_state
                 if rgb_mode == "focus-trust"
@@ -912,7 +932,8 @@ class Actuator:
         if self.state.rgb.degraded:
             self.rgb_retry_at = 0.0
             return
-        restoring = rgb["reason"] in ("rgb-mode-off", "theme-not-trust-model")
+        restoring = (rgb["reason"] in ("rgb-mode-off", "theme-not-trust-model")
+                     or rgb["action"] == "restore")
         zones = self.state.baseline if restoring else rgb["zones"]
         if zones is None or (not restoring and
                              (rgb["action"] != "set" or zones == self.rgb_applied)):

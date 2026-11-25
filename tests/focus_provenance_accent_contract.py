@@ -11,7 +11,9 @@ and never originate an identity:
   * keyboard RGB defaults to off, follows the host claim or the focused
     surface only when chosen, only under the trust-model theme, with runtime
     scope and the operator's brightness;
-  * anything that is not a validated identity holds;
+  * anything that is not a validated identity holds, except a real
+    unverified-window answer in focus-trust, which restores the operator's
+    saved zones;
   * a VFIO guest's console is presented as an emulated recovery display.
 """
 
@@ -227,10 +229,11 @@ def check_unverified_windows(accent, colours) -> None:
                         and decided["accent"]["state"] == "unresolved",
                         f"{surface['app_id']} got an accent in {mode}: {decided['accent']}")
                 if mode == "focus-trust":
-                    require(decided["rgb"]["action"] == "hold"
-                            and decided["rgb"]["identity"] is None
-                            and decided["rgb"]["reason"] == "focus-provenance-unresolved",
-                            f"focus-trust coloured {surface['app_id']}: {decided['rgb']}")
+                    require(decided["rgb"] == {"mode": "focus-trust", "action": "restore",
+                                               "identity": None, "zones": None,
+                                               "reason": "focus-unverified-window"},
+                            f"focus-trust did not plan the operator's colours for "
+                            f"{surface['app_id']}: {decided['rgb']}")
                 if mode == "system-trust":
                     require(decided["rgb"]["action"] == "set"
                             and decided["rgb"]["identity"] == "dev",
@@ -242,9 +245,28 @@ def check_unverified_windows(accent, colours) -> None:
                             colours=colours)["rgb"]["identity"] == "host",
                 "focus-trust lost HOST on the empty desktop")
 
+        # A managed-looking answer still being resolved is not an unverified
+        # window: focus-trust holds there, as for any other unresolved answer.
+        managed = accent.resolve_focus(resolver, repo, {"pid": 71010,
+                                                        "app_id": "looking-glass-client",
+                                                        "window_id": "0x9"}, registry)
+        require(isinstance(managed, dict) and managed.get("resolved") is False
+                and managed.get("surface_class") == "managed-unresolved",
+                f"an unregistered Looking Glass window is not managed-unresolved: {managed}")
+        for prov in (managed, {**answers[0][1], "trust": "dev"},
+                     {**answers[0][1], "resolved": None},
+                     {**answers[0][1], "surface_class": "managed-unresolved"},
+                     {**answers[0][1], "reason": "managed-surface-not-registered"},
+                     {**answers[0][1], "guest_metadata_authoritative": True}):
+            held = accent.plan(surface=answers[0][0], provenance=prov,
+                               system_trust=HOST_TRUST_DEV, rgb_mode="focus-trust",
+                               theme="trust-model", colours=colours)["rgb"]
+            require(held["action"] == "hold" and held["identity"] is None,
+                    f"focus-trust did not hold for {prov}: {held}")
+
         # The actuator: a DEV window owns its accent and the keyboard; each
         # unverified window clears that accent, gets none of its own and
-        # leaves the keyboard alone.
+        # gives the keyboard back the operator's saved colours.
         calls: list[list[str]] = []
 
         class Result:
@@ -280,24 +302,30 @@ def check_unverified_windows(accent, colours) -> None:
                                     "window_id": "0x1"}
                 actuator.provenance = provenance("dev")
                 actuator.apply()
-                # The keyboard is written once; an unverified window holds it,
-                # so returning to DEV needs no second write.
+                # Each DEV focus writes DEV over the operator's colours.
+                dev_write = ["nitro", "rgb", "37", *[colours["dev"]] * 4, "--scope", "runtime"]
                 require(actuator.state.window == "0x1"
                         and actuator.rgb_applied == [colours["dev"]] * 4
-                        and [c[:3] for c in calls].count(["nitro", "rgb", "37"]) == 1,
-                        "the DEV window did not own its accent and the keyboard")
+                        and calls[-1] == dev_write
+                        and actuator.state.baseline == ["fff00f", "ff00ff", "fff00f", "ff00ff"],
+                        f"the DEV window did not own its accent and the keyboard: {calls[-3:]}")
                 before = len(calls)
                 actuator.surface = dict(surface)
                 actuator.provenance = answer
                 actuator.apply()
                 made = calls[before:]
-                require([c[:3] for c in made] == [[accent.ADAPTER, "focus-accent-clear", "0x1"]],
+                require([c[:3] for c in made if c[0] != "nitro"]
+                        == [[accent.ADAPTER, "focus-accent-clear", "0x1"]],
                         f"{surface['app_id']}: the consumer did not just clear the previous "
                         f"accent: {made}")
                 require(actuator.state.window is None,
                         f"{surface['app_id']}: an accent is still owned")
-                require(not any(c[0] == "nitro" for c in made),
-                        f"{surface['app_id']}: the keyboard was recoloured")
+                writes = [c for c in made if c[:2] == ["nitro", "rgb"]]
+                require(writes == [["nitro", "rgb", "37", "fff00f", "ff00ff", "fff00f",
+                                    "ff00ff", "--scope", "runtime"]]
+                        and actuator.rgb_applied is None and actuator.state.baseline is None,
+                        f"{surface['app_id']}: the keyboard kept a trust colour instead of "
+                        f"the operator's saved colours: {writes}")
                 require(not any(c[1] == "focus-accent-set" for c in made),
                         f"{surface['app_id']}: an unverified window got an accent")
 

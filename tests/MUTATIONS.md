@@ -6956,7 +6956,17 @@ command and the `stream` command.
 | `accent-for-unverified` | `focus_accent.focus_identity()` answers `host` for an `unverified-window`. | `python tests/focus_provenance_accent_contract.py` | `foot got an accent in off: {... 'identity': 'host', 'state': 'resolved', ...}` |
 | `coordinator-plans-unverified` | `build_plan()` treats an `unverified-window` as resolved HOST with wallpaper and RGB allowed. | `python tests/trust_presentation_coordinator_contract.py` | `the unverified foot window planned presentation: {... 'mode': 'planned', ...}` |
 | `group-12-no-ring` | Group 12 asks "Is there NO ring around the fullscreen host terminal?" again. | `python tests/acceptance_scripts_contract.py` | `12's steps are missing or out of order` |
+| `unverified-holds-keyboard` | `focus_accent.plan()` loses its `unverified_window()` branch, so focus-trust holds the previous trust colour on an unverified window. | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not plan the operator's colours for foot: {... 'action': 'hold', ... 'reason': 'focus-provenance-unresolved'}` |
+| `restore-ignored-by-actuator` | `apply_rgb()` treats only `rgb-mode-off` and `theme-not-trust-model` as restoring, not `action == "restore"`. | `python tests/focus_provenance_accent_contract.py` | `foot: the keyboard kept a trust colour instead of the operator's saved colours: []` |
+| `unverified-guard-<field>` | `unverified_window()` drops one of its checks: `surface_class`, `reason`, `guest_metadata_authoritative`, `trust is None` or `resolved is False` (five breaks). | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not hold for {...}: {... 'action': 'restore', ...}`, naming the inconsistent answer that the dropped check refused |
+| `host-native-pid-guard` | `ShellState.validProvenance()` drops `value.pid !== null` from its host-native refusal. | runtime `provenance` | `a forged answer for an actual window was presented (case " + index + ")` |
 
 Every break exited 1 with the diagnostic listed. Each restored copy was
 byte-identical to the original, and every listed check exited 0 after the
-restoration.
+restoration. Before the PID-only forged case `[910, "", ""]` was added,
+`host-native-pid-guard` stayed green: every forged case with a PID also
+carried an app id, which the next clause refused first. Keeping the
+`host-owned-vm-spec` source test in `ShellState.fullscreenFrame` has no
+mutation: `validProvenance()` lets only a `host-owned-vm-spec` answer
+reach `resolved` with a guest identity, so the clause is defence in depth
+that no answer the shell accepts can reach.

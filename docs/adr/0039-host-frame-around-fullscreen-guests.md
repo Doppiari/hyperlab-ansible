@@ -76,6 +76,9 @@ ring at all.
 The resolver now answers `unverified-window` (reason `unregistered-window`,
 or `window-without-pid` when the compositor gives no PID) for every actual
 window without a verified registration: no identity, no wallpaper or RGB.
+In the `focus-trust` keyboard mode such a window gives the keyboard back
+the operator's saved colours, the restore `off` uses, instead of holding the
+previous window's trust colour.
 Only the empty snapshot, with no PID, app id or window id, is the host
 desktop. `ShellState.fullscreenFrame` draws the ring around every fullscreen
 window: in the guest's colour only for a resolved guest from
@@ -86,7 +89,8 @@ answer for a snapshot that names a process or a window.
 
 Software-verified by the `provenance` and `fullscreen-frame` scenarios of
 `tests/host_quickshell_runtime_contract.py`, fed with real resolver answers,
-and by `tests/surface_provenance_contract.py`. The Nitro observation of a
+by `tests/surface_provenance_contract.py`, and for the keyboard by
+`tests/focus_provenance_accent_contract.py`. The Nitro observation of a
 fullscreen host terminal without a ring accepted the old rule and does not
 accept this one: group 12 now asks for the warning ring around a fullscreen
 plain terminal, and must be run again on Nitro and replayed on Predator.
