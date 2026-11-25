@@ -6908,3 +6908,28 @@ again.
 Each break turned its check red with the diagnostic shown (abridged where it
 prints a whole receipt); restoring the saved file byte-for-byte made the
 whole contract pass again.
+
+## The sender capture harness queues its own initial failure
+
+`tests/looking_glass_sender_capture_contract.py` now queues each failure
+before the initial format from the initializing thread, without waiting,
+instead of from a producer thread that could still be inside
+`pw_loop_invoke` when initialization destroyed the loop. See
+[the problem note](../problems/looking-glass-sender-capture-harness-invoke-after-free.md).
+
+The patch breaks edit
+`roles/guest_looking_glass_linux/files/pipewire-thread-loop-runtime.patch`
+inside one line, so its hunk keeps its length. Replay one at a time from a
+saved copy, run `python tests/looking_glass_sender_capture_contract.py`,
+restore the copy byte-for-byte and run it again.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| pre-change | The harness before this change: a producer thread sleeps 100 ms and makes a blocking `pw_loop_invoke`. | Under 16 parallel runs only: `initial-failure-N: '' (exit -11)` in 9 of 96 contract runs (3 per scenario), and exit 139 in 32 of 1500 runs of the `initial-failure-2` harness. A single run usually passes. | 96 of 96 parallel contract runs OK. |
+| `initial-wait-ignores-failure` | The initial wait loses `!this->streamFailed`. | `initial-failure-0: the harness itself hung` | Exit 0, contract OK. |
+| `initial-failure-accepted` | The check after the initial wait reads `if (this->stop)`. | `initial-failure-0: 'initialization accepted a failure before the first format' (exit 1)` | Exit 0, contract OK. |
+| `core-error-not-failure` | `coreErrorCallback` no longer sets `streamFailed`. | `initial-failure-2: the harness itself hung` | Exit 0, contract OK. |
+
+The pre-change row is timing-dependent: it shows a race and goes red only
+under load; it is not a per-run check. Each patch break turned the contract
+red on the first run; restoring the saved patch made it pass again.
