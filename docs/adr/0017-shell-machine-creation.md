@@ -202,7 +202,11 @@ looked ready: nothing kept the failure once the operation window was gone
   without a reading as unknown.
 - **Resume.** `privatestack-machine-provision NAME --from N`, run by hand
   in the checkout, continues a failed or interrupted receipt of the same
-  steps at or before its first step that did not end with 0. The runner
+  steps at or before its first step that did not end with 0. It reads the
+  receipt again once it holds the lock; a receipt still `running` then is a
+  dead run's, held only by that lock, and is resumed like an interrupted
+  one. A reader tests the lock by taking it shared for an instant, so a run
+  waits up to two seconds for it before calling another run live. The runner
   still accepts only `[provisioner, NAME]`; nothing the shell submits can
   resume or skip a step.
 - **Proof.** A workstation gets a last step, `hyperlabctl machine
@@ -211,6 +215,23 @@ looked ready: nothing kept the failure once the operation window was gone
   Glass `restart-capture` then `health` must show the sender started a
   capture (stream `starting` or `streaming`) within five minutes. A server
   keeps passwordless sudo by design and gets no such step.
+
+Ruled out:
+
+- *The receipt in the runtime directory* beside the hash file and the
+  operation record: it is memory, and a reboot, one of the ways a run is
+  cut off, would erase the evidence that it was.
+- *The receipt in the Machine record*: the record is declarative intent,
+  published and withdrawn by digest; a run's outcome is an observation, and
+  writing it would change the digest that binds the receipt and the
+  withdrawal.
+- *The operation record as the source*: it lives in the runtime directory
+  too, exists only for runs launched from the shell (not for a resume by
+  hand) and records the provisioner's exit status, not which step it
+  reached.
+- *`--from` accepted by the runner*: the shell could then ask to skip
+  steps; the runner keeps accepting exactly `[provisioner, NAME]`, and a
+  resume stays a reviewed command typed in a terminal of the checkout.
 
 Consequences: a Machine provisioned before receipts existed reads
 "Provisioning unknown" until a whole run finishes; commands run by hand

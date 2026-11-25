@@ -171,7 +171,7 @@ read the receipt:
 | `failed` at step N | `Provisioning incomplete: step N of M (label)` |
 | `interrupted` (Ctrl-C, a stopped operation, a closed terminal) | the same, at the step that was cut short |
 | `running`, while its lock is held | the same, `running now`, with no resume command |
-| `running` with no lock held (killed, power lost) | the same as `interrupted` |
+| `running` with no lock held (killed, power lost) | the same as `interrupted`, and resumed like it |
 | missing, unreadable, linked, of another record or other steps | `Provisioning unknown` |
 
 An incomplete Machine shows the command that resumes it, run in the

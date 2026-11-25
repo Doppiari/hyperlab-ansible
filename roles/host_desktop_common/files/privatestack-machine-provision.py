@@ -31,6 +31,7 @@ import json
 import os
 import re
 import select
+import shlex
 import signal
 import stat
 import subprocess
@@ -75,6 +76,11 @@ RECEIPTS = ("hyperlab", "provisioning")
 RECEIPT_SCHEMA = 1
 # The log keeps every byte of the steps' output up to this size.
 LOG_LIMIT = 32 << 20
+# A reader (`machine show`, the inventory the shell polls) tests the run lock
+# by taking it shared for an instant: a run that starts then waits this long
+# for it before it calls another run live.
+LOCK_WAIT = 2.0
+LOCK_POLL = 0.05
 PASSWORD_MIN = 8
 # Seconds a cancelled playbook gets to end before it is killed. The runner
 # waits longer for this program (PROVISION_STOP_GRACE there), so the hash
@@ -295,11 +301,16 @@ def steps_for(repo: Path, machine: str, spec: str, runtime: Path, profile: str |
     return steps
 
 
-def resumable(provisioning: object, steps: list[dict], first: int) -> None:
+def resumable(provisioning: object, steps: list[dict], first: int, *, locked: bool = False) -> None:
     """`--from N` continues a receipt hyperlabctl read as failed or
-    interrupted for these very steps, at or before its first unfinished one."""
+    interrupted for these very steps, at or before its first unfinished one.
+
+    Read while this process holds the run lock, a receipt still "running"
+    is held only by that lock: the run that wrote it is dead (killed, or
+    the host stopped), which hyperlabctl reads as interrupted otherwise."""
+    ended = ("failed", "interrupted", "running") if locked else ("failed", "interrupted")
     require(isinstance(provisioning, dict) and provisioning.get("status") == "incomplete"
-            and provisioning.get("receipt") in ("failed", "interrupted"),
+            and provisioning.get("receipt") in ended,
             "only a failed or interrupted provisioning can be resumed; "
             "run without --from to provision from the first step")
     require(provisioning.get("step_ids") == [step["id"] for step in steps],
@@ -340,10 +351,15 @@ def run_lock(directory: Path, machine: str):
         info = os.fstat(fd)
         require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
                 and stat.S_IMODE(info.st_mode) == 0o600, "unsafe provisioning lock")
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise Refused(f"another provisioning of {machine} is running") from None
+        deadline = time.monotonic() + LOCK_WAIT
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise Refused(f"another provisioning of {machine} is running") from None
+                time.sleep(LOCK_POLL)
         yield
     finally:
         os.close(fd)
@@ -542,7 +558,7 @@ def arguments(args: list[str]) -> tuple[str, int]:
 
 def resume_hint(repo: Path, machine: str, number: int) -> str:
     command = f"privatestack-machine-provision {machine}" + (f" --from {number}" if number > 1 else "")
-    return f"cd {repo} && {command}"
+    return f"cd {shlex.quote(str(repo))} && {command}"
 
 
 def main(args: list[str]) -> int:
@@ -563,7 +579,7 @@ def main(args: list[str]) -> int:
         if first > 1:
             # Read again under the lock: no other run may have moved it since.
             _profile, provisioning = machine_record(repo, machine)
-            resumable(provisioning, steps, first)
+            resumable(provisioning, steps, first, locked=True)
         log = Log(directory, machine)
         try:
             return provision(repo, machine, spec, runtime, steps, first,

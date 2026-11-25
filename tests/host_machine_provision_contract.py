@@ -27,12 +27,14 @@ import json
 import os
 import pty
 import select
+import shlex
 import shutil
 import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -169,7 +171,9 @@ sys.stdout.write(result.stdout)
 sys.exit(result.returncode)
 '''
 
-# `machine show` answers record.json, `machine provision-steps` plan.json;
+# `machine show` answers record.json (record-locked.json from its second
+# call on, when that file exists: what a resumed run reads again under its
+# lock), `machine provision-steps` plan.json;
 # `machine verify-provisioning`, the last workstation step, prints a line
 # and exits with the number in verify_rc (0 when there is none).
 CLI_STUB = r'''
@@ -182,6 +186,9 @@ if "verify-provisioning" in sys.argv[2:]:
     path = os.path.join(base, "verify_rc")
     sys.exit(int(open(path).read()) if os.path.exists(path) else 0)
 answer = os.path.join(base, "record.json" if "show" in sys.argv[2:] else "plan.json")
+shows = sum("show" in json.loads(line) for line in open(os.path.join(base, "cli.jsonl")))
+if "show" in sys.argv[2:] and shows > 1 and os.path.exists(os.path.join(base, "record-locked.json")):
+    answer = os.path.join(base, "record-locked.json")
 if not os.path.exists(answer):
     sys.exit("no such Machine")
 sys.stdout.write(open(answer).read())
@@ -230,7 +237,8 @@ class Fixture:
         (self.base / f"{name}.py").write_text(source)
         path = self.bin / name
         path.write_text("#!/bin/sh\nexec %s -I %s %s %s \"$@\"\n" % (
-            sys.executable, self.base / f"{name}.py", self.base, " ".join(fixed)))
+            shlex.quote(sys.executable), shlex.quote(str(self.base / f"{name}.py")),
+            shlex.quote(str(self.base)), " ".join(shlex.quote(part) for part in fixed)))
         path.chmod(0o755)
         return path
 
@@ -696,6 +704,27 @@ def check_real_cli(module) -> None:
                 and unknown["resume"] == f"cd {repo} && privatestack-machine-provision srv-05",
                 f"machine show reads a Machine without a receipt as {unknown}")
 
+        # A run that died without a word (SIGKILL, power loss) leaves its
+        # receipt "running"; the command the reading offers resumes it.
+        factory("machine", "create", "server-arch", "srv-06", "--resource-profile", "custom",
+                "--memory-mb", "2048", "--vcpus", "2", "--disk-gib", "16", "--project")
+        rc, _, _, _ = run(module, fixture, ["srv-06"], fail_step="vm-guest-inventory")
+        (base / "fail").unlink()
+        (base / "calls.jsonl").unlink()
+        path = fixture.receipts / "srv-06.json"
+        dead = json.loads(path.read_text())
+        dead.update(state="running", ended_at=None, reason="")
+        dead["steps"][1].update(result="running", exit=None)
+        path.write_text(json.dumps(dead))
+        offered = shown("srv-06")
+        require(rc == 3 and offered["receipt"] == "interrupted" and offered["resume"].endswith(" --from 2"),
+                f"a dead run reads {offered}")
+        rc, calls, _, _ = run(module, fixture, shlex.split(offered["resume"].split(" && ", 1)[1])[1:])
+        receipt = fixture.receipt("srv-06")
+        require(rc == 0 and len(calls) == 2 and receipt["state"] == "finished" and receipt["from_step"] == 2
+                and shown("srv-06")["status"] == "finished",
+                f"the offered command did not resume a dead run: {rc} {argvs(calls)} {receipt}")
+
         # The rows the Machines view gets carry the same reading, also when
         # libvirt cannot be read.
         from types import SimpleNamespace
@@ -1121,6 +1150,17 @@ def check_receipts(module) -> None:
         require(reading(fixture, "dev-c")["text"].startswith("Provisioning incomplete: step 3 of 6"),
                 "a refused password does not read incomplete")
 
+    # The terminal prints the very command the card shows, for any checkout path.
+    with tempfile.TemporaryDirectory() as temp:
+        base = Path(temp) / "check out; $(x)"
+        base.mkdir()
+        fixture = Fixture(base, steps("srv-q", False, base / "runtime"))
+        (fixture.base / "fail").write_text("vm-guest-inventory")
+        rc, _, _, output = run(module, fixture, ["srv-q"])
+        resume = reading(fixture, "srv-q", False, repo=fixture.repo.resolve())["resume"]
+        require(rc == 3 and resume.startswith("cd '") and f"  {resume}\n" in output,
+                f"the terminal's resume command differs from the card's: {resume!r} {output[-300:]!r}")
+
 
 def check_resume(module) -> None:
     """`--from N` continues only what hyperlabctl read as failed or
@@ -1152,6 +1192,33 @@ def check_resume(module) -> None:
         require(isinstance(rc, str) and "only a failed or interrupted" in rc and not calls
                 and (fixture.receipts / "dev-r.json").read_bytes() == finished,
                 f"a finished provisioning was resumed: {rc}")
+
+    # What `machine show` says once the lock is held decides: a run that
+    # finished in between is not resumed; a receipt still "running", which
+    # only this run's lock now holds, is a dead run and is.
+    with tempfile.TemporaryDirectory() as temp:
+        fixture = Fixture(Path(temp), steps("dev-o", True, Path(temp) / "runtime"))
+        (fixture.base / "fail").write_text("guest-close-access")
+        rc, _, _, _ = run(module, fixture, ["dev-o"], passwords=[SECRET, SECRET])
+        (fixture.base / "fail").unlink()
+        (fixture.base / "calls.jsonl").unlink()
+        (fixture.base / "cli.jsonl").unlink()
+        failed = reading(fixture, "dev-o")
+        fixture.record(record("dev-o", *WORKSTATION, failed))
+        before = (fixture.receipts / "dev-o.json").read_bytes()
+        finished = {**failed, "status": "finished", "receipt": "finished", "step": None}
+        (fixture.base / "record-locked.json").write_text(json.dumps(record("dev-o", *WORKSTATION, finished)))
+        rc, calls, _, _ = run(module, fixture, ["dev-o", "--from", "5"])
+        require(isinstance(rc, str) and "only a failed or interrupted" in rc and not calls
+                and (fixture.receipts / "dev-o.json").read_bytes() == before
+                and [entry[-2] for entry in fixture.log("cli.jsonl") if "show" in entry] == ["show", "show"],
+                f"a run that finished before the lock was taken was resumed: {rc} {argvs(calls)}")
+        (fixture.base / "cli.jsonl").unlink()
+        live = {**failed, "receipt": "running", "running": True, "resume": None}
+        (fixture.base / "record-locked.json").write_text(json.dumps(record("dev-o", *WORKSTATION, live)))
+        rc, calls, _, _ = run(module, fixture, ["dev-o", "--from", "5"])
+        require(rc == 0 and fixture.receipt("dev-o")["state"] == "finished",
+                f"a dead run, read under this run's own lock, was not resumed: {rc} {argvs(calls)}")
 
     with tempfile.TemporaryDirectory() as temp:
         fixture = Fixture(Path(temp), steps("dev-q", True, Path(temp) / "runtime"))
@@ -1216,6 +1283,17 @@ def check_lock(module) -> None:
         require(shown["status"] == "incomplete" and shown["receipt"] == "interrupted" and not shown["running"]
                 and shown["resume"] == "privatestack-machine-provision dev-l --from 3",
                 f"a run that died without recording its end reads {shown}")
+
+        # A reader's shared probe for an instant does not refuse a run.
+        fd = os.open(fixture.receipts / "dev-l.lock", os.O_RDONLY)
+        fcntl.flock(fd, fcntl.LOCK_SH)
+        release = threading.Timer(0.3, os.close, (fd,))
+        release.start()
+        try:
+            rc, calls, _, _ = run(module, fixture, ["dev-l"], passwords=[SECRET, SECRET])
+        finally:
+            release.join()
+        require(rc == 0 and len(calls) == 5, f"a reader's probe of the lock refused a run: {rc}")
 
 
 def check_reader(module) -> None:
