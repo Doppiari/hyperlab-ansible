@@ -76,9 +76,10 @@ ring at all.
 The resolver now answers `unverified-window` (reason `unregistered-window`,
 or `window-without-pid` when the compositor gives no PID) for every actual
 window without a verified registration: no identity, no wallpaper or RGB.
-In the `focus-trust` keyboard mode such a window gives the keyboard back
-the operator's saved colours, the restore `off` uses, instead of holding the
-previous window's trust colour.
+In the `focus-trust` keyboard mode such a window, and a managed-looking
+window whose PID nobody registered, gives the keyboard back the operator's
+saved colours, the restore `off` uses, instead of holding the previous
+window's trust colour.
 Only the empty snapshot, with no PID, app id or window id, is the host
 desktop. `ShellState.fullscreenFrame` draws the ring around every fullscreen
 window: in the guest's colour only for a resolved guest from

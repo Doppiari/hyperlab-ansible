@@ -200,10 +200,11 @@ checked by `tests/machine_sphere_contract.py`).
 Trust-mode keyboard RGB follows the host-resolved provenance of the currently
 focused surface. Focusing a managed guest surface selects that surface's trust
 identity; the empty host desktop returns the keyboard to the neutral host
-indication. An unverified window names no domain: the keyboard gets the
-operator's own saved colours back, never the previous window's trust colour.
-A surface whose answer is still pending, or a managed-looking surface that
-cannot be resolved, holds the current colours.
+indication. A window nobody registered, an unverified window or a
+managed-looking one, names no domain: the keyboard gets the operator's own
+saved colours back, never the previous window's trust colour. A surface
+whose answer is still pending, or a registered process that fails
+verification, holds the current colours.
 
 The keyboard is an additional physical trust signal, not the source of truth.
 Control Center state, Waybar/domain indicators, window/seamless-app markers and

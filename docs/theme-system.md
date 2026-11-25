@@ -115,8 +115,11 @@ outline.
 The focused host-owned provenance drives Trust-mode keyboard RGB. On the Nitro
 four-zone backend every zone carries the same canonical identity colour. The
 empty desktop (nothing has focus) returns the keyboard to the neutral host
-indication; a window nobody registered, a plain terminal included, holds the
-current colours and never receives a colour of its own.
+indication. A window nobody registered, a plain terminal or a managed-looking
+viewer included, never receives a colour of its own: in `focus-trust` the
+keyboard gets the operator's saved colours back (see the mode table below).
+Of the windows the resolver has answered, only a registered process that
+fails verification holds the current colours.
 
 The keyboard remains an output, never a source of security state.
 
@@ -339,19 +342,22 @@ the Control Center):
 |---|---|
 | `off` (default) | restore saved operator zones, then release RGB ownership |
 | `system-trust` | the host trust claim; an unclaimed GPU is HOST |
-| `focus-trust` | the resolved identity of the focused surface |
+| `focus-trust` | the resolved identity of the focused surface; the saved operator zones for a window nobody registered |
 
 RGB is only driven while the trust-model theme is active, is written with
 runtime scope through `hyperlab-nitro-control` (never persistent), keeps the
 operator's current brightness, and respects the broker's rate limit. An
-answer still pending, a managed-looking surface that cannot be resolved, an
-invalid claim or an unavailable broker holds the current colours. In
-`focus-trust` an unverified window (`unverified-window`: a window nobody
-registered, a plain terminal included) names no domain: it clears the accent
-the previous window owned, gets none, and the keyboard gets the operator's
-saved zones back through the same restore that `off` uses, which also
-releases RGB ownership; the next resolved surface captures them again.
-`system-trust` keeps following the host claim whatever has focus.
+answer still pending, an invalid claim or an unavailable broker holds the
+current colours. In `focus-trust` a window nobody registered names no
+domain: an unverified window (`unregistered-window`, `window-without-pid`, a
+plain terminal included) or a managed-looking one without a registration
+(`managed-surface-not-registered`, `managed-surface-without-pid`). It clears
+the accent the previous window owned, gets none, and the keyboard gets the
+operator's saved zones back through the same restore that `off` uses, which
+also releases RGB ownership; the next resolved surface captures them again.
+A registered process that fails verification (start time, executable or
+spec) holds the current colours. `system-trust` keeps following the host
+claim whatever has focus.
 
 Window cleanup metadata remains in the private runtime HyperLab directory.
 The session manager must already have created the user-owned `XDG_RUNTIME_DIR`;

@@ -1025,7 +1025,8 @@ window title never leaves the adapter.
 - Only the empty snapshot (no PID, app id or window id: nothing has focus)
   is `HOST`. Every actual window without a verified registration is an
   unverified window (`unregistered-window`, or `window-without-pid` when the
-  compositor gives no PID): no identity, no wallpaper or keyboard change,
+  compositor gives no PID): no identity, no wallpaper or trust keyboard
+  colour (`focus-trust` restores the operator's own colours),
   `Unknown` with the word `unresolved` in the bar. A process running on the
   host does not establish what its window shows: a terminal can hold an ssh
   session, a viewer any machine, and no list of app ids can tell. The shell
@@ -1092,7 +1093,8 @@ boundary for this behavior.
 The rule changed after that acceptance. A window nobody registered no
 longer resolves as `HOST`: a plain Foot terminal, virt-manager, spicy or an
 app id nobody anticipated is an unverified window, reads `Unknown` with
-`unresolved` in the bar, assigns no accent, wallpaper or keyboard colour,
+`unresolved` in the bar, assigns no accent, wallpaper or trust keyboard
+colour (`focus-trust` gives the keyboard the operator's own colours back),
 and gets the warning ring when fullscreen. Only the empty desktop keeps
 `HOST`. This is software-verified (`tests/surface_provenance_contract.py`,
 `tests/surface_provenance_live_binding_contract.py`, the `provenance` and

@@ -855,7 +855,7 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
       console
 - [x] a window nobody registered never reads HOST: a plain terminal,
       virt-manager, spicy or an unknown app id is an unverified window with
-      no identity, wallpaper or keyboard colour, `Unknown` in the bar and the
+      no identity, wallpaper or trust keyboard colour, `Unknown` in the bar and the
       warning ring when fullscreen; only the empty desktop is HOST
       (ADR 0039 amendment; `tests/surface_provenance_contract.py`,
       `tests/host_quickshell_runtime_contract.py`, software-verified)

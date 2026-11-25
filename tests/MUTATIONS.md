@@ -6956,14 +6956,22 @@ command and the `stream` command.
 | `accent-for-unverified` | `focus_accent.focus_identity()` answers `host` for an `unverified-window`. | `python tests/focus_provenance_accent_contract.py` | `foot got an accent in off: {... 'identity': 'host', 'state': 'resolved', ...}` |
 | `coordinator-plans-unverified` | `build_plan()` treats an `unverified-window` as resolved HOST with wallpaper and RGB allowed. | `python tests/trust_presentation_coordinator_contract.py` | `the unverified foot window planned presentation: {... 'mode': 'planned', ...}` |
 | `group-12-no-ring` | Group 12 asks "Is there NO ring around the fullscreen host terminal?" again. | `python tests/acceptance_scripts_contract.py` | `12's steps are missing or out of order` |
-| `unverified-holds-keyboard` | `focus_accent.plan()` loses its `unverified_window()` branch, so focus-trust holds the previous trust colour on an unverified window. | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not plan the operator's colours for foot: {... 'action': 'hold', ... 'reason': 'focus-provenance-unresolved'}` |
+| `unverified-holds-keyboard` | `focus_accent.plan()` loses its `unregistered_window()` branch, so focus-trust holds the previous trust colour on a window nobody registered. | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not plan the operator's colours for foot: {... 'action': 'hold', ... 'reason': 'focus-provenance-unresolved'}` |
 | `restore-ignored-by-actuator` | `apply_rgb()` treats only `rgb-mode-off` and `theme-not-trust-model` as restoring, not `action == "restore"`. | `python tests/focus_provenance_accent_contract.py` | `foot: the keyboard kept a trust colour instead of the operator's saved colours: []` |
-| `unverified-guard-<field>` | `unverified_window()` drops one of its checks: `surface_class`, `reason`, `guest_metadata_authoritative`, `trust is None` or `resolved is False` (five breaks). | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not hold for {...}: {... 'action': 'restore', ...}`, naming the inconsistent answer that the dropped check refused |
+| `unverified-class-dropped` | `UNREGISTERED_REASONS` loses its `unverified-window` entry. | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not plan the operator's colours for foot: {... 'action': 'hold', ...}` |
+| `managed-unregistered-holds` | `UNREGISTERED_REASONS` loses its `managed-unresolved` entry. | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not plan the operator's colours for managed-surface-not-registered: {... 'action': 'hold', ...}` |
+| `managed-without-pid-holds` | The `managed-unresolved` entry keeps only `managed-surface-not-registered`. | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not plan the operator's colours for managed-surface-without-pid: {... 'action': 'hold', ...}` |
+| `registered-failure-restores` | The `managed-unresolved` entry gains `registered-pid-start-time-mismatch`. | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not hold for {... 'reason': 'registered-pid-start-time-mismatch' ...}` |
+| `reason-any-class` | `unregistered_window()` accepts a reason of either class for either class. | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not hold for {... 'surface_class': 'managed-unresolved', 'reason': 'unregistered-window' ...}` |
+| `unregistered-guard-<field>` | `unregistered_window()` drops one of `trust is None`, `resolved is False` or `guest_metadata_authoritative is False` (three breaks). | `python tests/focus_provenance_accent_contract.py` | `focus-trust did not hold for {...}: {... 'action': 'restore', ...}`, naming the inconsistent answer the dropped check refused |
 | `host-native-pid-guard` | `ShellState.validProvenance()` drops `value.pid !== null` from its host-native refusal. | runtime `provenance` | `a forged answer for an actual window was presented (case " + index + ")` |
+| `host-native-guard` | `surface_provenance.host_native()` drops its `require(empty_snapshot(surface), ...)` alone; `resolve()` still checks first. | `python tests/surface_provenance_contract.py` | `host_native() named {'pid': 1, 'app_id': '', 'window_id': ''} HOST: {...}` |
 
 Every break exited 1 with the diagnostic listed. Each restored copy was
 byte-identical to the original, and every listed check exited 0 after the
-restoration. Before the PID-only forged case `[910, "", ""]` was added,
+restoration. Before the direct `host_native()` cases were added,
+`host-native-guard` stayed green: its only caller checks the snapshot
+first. Before the PID-only forged case `[910, "", ""]` was added,
 `host-native-pid-guard` stayed green: every forged case with a PID also
 carried an app id, which the next clause refused first. Keeping the
 `host-owned-vm-spec` source test in `ShellState.fullscreenFrame` has no

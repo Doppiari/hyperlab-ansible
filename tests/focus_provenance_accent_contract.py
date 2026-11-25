@@ -11,8 +11,9 @@ and never originate an identity:
   * keyboard RGB defaults to off, follows the host claim or the focused
     surface only when chosen, only under the trust-model theme, with runtime
     scope and the operator's brightness;
-  * anything that is not a validated identity holds, except a real
-    unverified-window answer in focus-trust, which restores the operator's
+  * anything that is not a validated identity holds, except in focus-trust
+    a consistent answer for a window nobody registered (unverified, or
+    managed-looking without a registration), which restores the operator's
     saved zones;
   * a VFIO guest's console is presented as an emulated recovery display.
 """
@@ -185,7 +186,8 @@ def check_unverified_windows(accent, colours) -> None:
     """Real resolver answers for windows nobody registered.
 
     The consumer clears the accent the previous window owned and assigns no
-    focus-trust colour for an unverified window; system-trust keeps its own
+    focus-trust colour for an unverified window, restoring the operator's
+    zones instead; system-trust keeps its own
     meaning (the host claim), and only the empty desktop keeps HOST.
     """
     resolver = accent.load_resolver(ROOT)
@@ -245,15 +247,42 @@ def check_unverified_windows(accent, colours) -> None:
                             colours=colours)["rgb"]["identity"] == "host",
                 "focus-trust lost HOST on the empty desktop")
 
-        # A managed-looking answer still being resolved is not an unverified
-        # window: focus-trust holds there, as for any other unresolved answer.
-        managed = accent.resolve_focus(resolver, repo, {"pid": 71010,
-                                                        "app_id": "looking-glass-client",
-                                                        "window_id": "0x9"}, registry)
-        require(isinstance(managed, dict) and managed.get("resolved") is False
-                and managed.get("surface_class") == "managed-unresolved",
-                f"an unregistered Looking Glass window is not managed-unresolved: {managed}")
-        for prov in (managed, {**answers[0][1], "trust": "dev"},
+        # A managed-looking window nobody registered names no domain either:
+        # with or without a PID, the operator's colours come back.
+        managed_answers = []
+        for surface, reason in (
+            ({"pid": 71010, "app_id": "looking-glass-client", "window_id": "0x9"},
+             "managed-surface-not-registered"),
+            ({"pid": None, "app_id": "remote-viewer", "window_id": "0xa"},
+             "managed-surface-without-pid"),
+        ):
+            answer = accent.resolve_focus(resolver, repo, surface, registry)
+            require(isinstance(answer, dict) and answer.get("resolved") is False
+                    and answer.get("trust") is None
+                    and answer.get("surface_class") == "managed-unresolved"
+                    and answer.get("reason") == reason,
+                    f"the resolver did not call {surface['app_id']} {reason}: {answer}")
+            decided = accent.plan(surface=surface, provenance=answer,
+                                  system_trust=HOST_TRUST_DEV, rgb_mode="focus-trust",
+                                  theme="trust-model", colours=colours)
+            require(decided["accent"]["color"] is None
+                    and decided["rgb"] == {"mode": "focus-trust", "action": "restore",
+                                           "identity": None, "zones": None,
+                                           "reason": "focus-managed-surface-unregistered"},
+                    f"focus-trust did not plan the operator's colours for {reason}: "
+                    f"{decided['rgb']}")
+            managed_answers.append((surface, answer))
+        managed = managed_answers[0][1]
+
+        # A registered process that fails verification, and any answer whose
+        # fields disagree, hold: only a consistent answer for a window nobody
+        # registered restores.
+        for prov in ({**managed, "reason": "registered-pid-start-time-mismatch"},
+                     {**managed, "reason": "registered-domain-spec-drift"},
+                     {**managed, "reason": "unregistered-window"},
+                     {**managed, "trust": "dev"},
+                     {**managed, "guest_metadata_authoritative": True},
+                     {**answers[0][1], "trust": "dev"},
                      {**answers[0][1], "resolved": None},
                      {**answers[0][1], "surface_class": "managed-unresolved"},
                      {**answers[0][1], "reason": "managed-surface-not-registered"},
@@ -265,8 +294,9 @@ def check_unverified_windows(accent, colours) -> None:
                     f"focus-trust did not hold for {prov}: {held}")
 
         # The actuator: a DEV window owns its accent and the keyboard; each
-        # unverified window clears that accent, gets none of its own and
-        # gives the keyboard back the operator's saved colours.
+        # unverified or unregistered managed-looking window clears that
+        # accent, gets none of its own and gives the keyboard back the
+        # operator's saved colours.
         calls: list[list[str]] = []
 
         class Result:
@@ -297,7 +327,7 @@ def check_unverified_windows(accent, colours) -> None:
                 patch.object(accent, "nitro", nitro):
             actuator = accent.Actuator(ROOT, config, registry, root / "state")
             actuator.read_settings()
-            for surface, answer in answers:
+            for surface, answer in answers + managed_answers:
                 actuator.surface = {"pid": 70001, "app_id": "looking-glass-client",
                                     "window_id": "0x1"}
                 actuator.provenance = provenance("dev")
