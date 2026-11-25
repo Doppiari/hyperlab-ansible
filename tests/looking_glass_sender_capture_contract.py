@@ -472,25 +472,20 @@ static int initialFormat(void)
   return 0;
 }
 
-static void * failBeforeFormat(void * opaque)
-{
-  usleep(100 * 1000);
-  pw_loop_invoke(pw_thread_loop_get_loop(this->threadLoop), runFailure, 0,
-      opaque, sizeof(int), true, NULL);
-  return NULL;
-}
-
 static int initialFailure(int kind)
 {
   streaming();
   pw_thread_loop_lock(this->threadLoop);
   this->hasFormat = false;
-  pthread_t producer;
-  pthread_create(&producer, NULL, failBeforeFormat, &kind);
+  // The failure is queued by this thread, without waiting for it: the
+  // PipeWire thread runs it only once initialWait releases the loop lock in
+  // its wait. A failure on initialization stops and destroys the loop, so no
+  // other thread may still be inside pw_loop_invoke on it by then.
+  pw_loop_invoke(pw_thread_loop_get_loop(this->threadLoop), runFailure, 0,
+      &kind, sizeof(kind), false, NULL);
   // Like pipewire_init, initialWait enters with the loop lock held and
   // must release it on both outcomes. A failure must end initialization.
   const bool initialized = initialWait();
-  pthread_join(producer, NULL);
   if (initialized)
   {
     printf("initialization accepted a failure before the first format\n");

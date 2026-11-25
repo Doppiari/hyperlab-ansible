@@ -4,6 +4,10 @@ These notes keep the failures that changed a HyperLab contract. Start from the
 symptom; each page records what was actually wrong, the fix and the regression
 proof.
 
+- [`looking-glass-sender-capture-harness-invoke-after-free.md`](looking-glass-sender-capture-harness-invoke-after-free.md):
+  the capture contract's failure thread could still be inside the PipeWire
+  loop that initialization had just destroyed, and crashed; the failure is
+  now queued by the initializing thread itself.
 - [`bar-focus-words-elided-domain.md`](bar-focus-words-elided-domain.md):
   middle elision hid the domain beside a coloured core; a separate label now
   keeps domain/state words unelided and tests their painted bounds.
