@@ -853,6 +853,16 @@ Decision pending: [ADR 0036](adr/0036-machine-snapshots-and-backups.md) (propose
       (same ADR, software-verified)
 - [ ] the fullscreen ring accepted on Nitro over Looking Glass and the SPICE
       console
+- [x] a window nobody registered never reads HOST: a plain terminal,
+      virt-manager, spicy or an unknown app id is an unverified window with
+      no identity, wallpaper or keyboard colour, `Unknown` in the bar and the
+      warning ring when fullscreen; only the empty desktop is HOST
+      (ADR 0039 amendment; `tests/surface_provenance_contract.py`,
+      `tests/host_quickshell_runtime_contract.py`, software-verified)
+- [ ] the unverified plain terminal beside managed Looking Glass and
+      managed SSH, and group 12's warning ring around it, accepted on Nitro
+      (the earlier HOST-terminal observation does not count) and replayed
+      on Predator
 - [ ] study: Looking Glass as the everyday window for Linux Machines without
       a GPU too (the PipeWire sender captures any guest desktop), one kvmfr
       device per running Machine, SPICE kept as recovery only; Windows needs

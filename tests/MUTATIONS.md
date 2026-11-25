@@ -6836,3 +6836,30 @@ The same showcase contract exercises poll replies and the compact layout.
 | Hide the compact external allocation line. | Explicit or automatic list mode loses visible memory, vCPU or network. |
 | Replace the network observation on identical replies. | The unchanged poll emits a replacement notification. |
 | Clear and repopulate the network delegates on a changed reply. | Dev loses keyboard focus between an arrow and Enter. |
+
+## Unregistered windows stay unverified
+
+A host process does not establish what its window shows, so every actual
+window without a verified registration is an unverified window and only the
+empty focus snapshot is `HOST`
+([ADR 0039](../docs/adr/0039-host-frame-around-fullscreen-guests.md),
+amendment of 2026-11-25). Each break changes one file. Save a copy, apply
+the break, run the listed check, restore the copy byte for byte and run it
+again. The QML breaks were replayed against the `provenance` and
+`fullscreen-frame` scenarios of `tests/host_quickshell_runtime_contract.py`,
+which receive the real resolver's answers from `resolve()`, the `resolve`
+command and the `stream` command.
+
+| Mutation | Break | Check | Observed red diagnostic |
+| --- | --- | --- | --- |
+| `unregistered-is-host` | `resolve()` returns `host_native(reason="unregistered-host-process")` for an unregistered PID without a managed hint again, and `host_native()` drops its empty-snapshot guard. | `python tests/surface_provenance_contract.py`; runtime `provenance` | `an unregistered host application gained a trusted identity or presentation`; `provenance: what + " was not presented as an unverified window"` |
+| `shell-accepts-window-host` | `ShellState.validProvenance()` stops refusing a host-native answer whose PID, app id or window id is set. | runtime `provenance` | `a forged answer for an actual window was presented (case " + index + ")` |
+| `pidless-is-desktop` | `empty_snapshot()` answers true for every PID-less snapshot. | `python tests/surface_provenance_contract.py`; `python tests/surface_provenance_live_binding_contract.py`; `python tests/surface_provenance_runtime_binding_contract.py` | `a PID-less window (app id only) gained a trusted identity or presentation`; `a managed-looking surface without a PID resolved`; `hyprland snapshot {"address":"0x5e","class":"foot","title":"HOST"} resolved as no-focused-client, not window-without-pid` |
+| `no-ring-for-unverified` | `ShellState.fullscreenFrame` hides the ring for `unregistered-window` and `window-without-pid`. | runtime `fullscreen-frame` | `fullscreen-frame: what + " did not get the warning ring"` |
+| `accent-for-unverified` | `focus_accent.focus_identity()` answers `host` for an `unverified-window`. | `python tests/focus_provenance_accent_contract.py` | `foot got an accent in off: {... 'identity': 'host', 'state': 'resolved', ...}` |
+| `coordinator-plans-unverified` | `build_plan()` treats an `unverified-window` as resolved HOST with wallpaper and RGB allowed. | `python tests/trust_presentation_coordinator_contract.py` | `the unverified foot window planned presentation: {... 'mode': 'planned', ...}` |
+| `group-12-no-ring` | Group 12 asks "Is there NO ring around the fullscreen host terminal?" again. | `python tests/acceptance_scripts_contract.py` | `12's steps are missing or out of order` |
+
+Every break exited 1 with the diagnostic listed. Each restored copy was
+byte-identical to the original, and every listed check exited 0 after the
+restoration.

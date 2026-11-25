@@ -205,11 +205,12 @@ exercise five occupied workspaces with long, unconfirmed Machine names.
   typing?" from the focused surface's identity as resolved by the host (see
   [Focused-surface provenance](#focused-surface-provenance) and
   [Bar core](#bar-core)): the grey core and the host sphere with **Host**
-  for a host-native surface, the Machine's domain colour and its sphere with
-  its name and domain (`dev-01 · dev`) for a verified viewer of one managed
-  Machine, and a hollow core with the neutral outline and **Unknown** for
-  anything else, a surface that looks managed but has no valid host
-  registration included. An unresolved answer adds the word `unresolved`;
+  only while nothing has focus (the host's own desktop), the Machine's domain
+  colour and its sphere with its name and domain (`dev-01 · dev`) for a
+  verified viewer of one managed Machine, and a hollow core with the neutral
+  outline and **Unknown** for anything else: every window nobody registered,
+  a plain terminal included, and a surface that looks managed but has no
+  valid host registration. An unresolved answer adds the word `unresolved`;
   pending re-validation and stale-source answers do not. The item is always
   shown; the reason for Unknown is in its accessible name, and the resolver's
   own answer is in
@@ -958,13 +959,15 @@ record created explicitly from the CLI, independently of any shortcut.
 
 A fullscreen window covers the rail and has no border, so the usual frame
 disappears exactly when a guest could imitate the host. While the focused
-window is fullscreen and the host has not resolved it as its own, the shell
-draws a ring around that window's output on the overlay layer, above every
-window ([ADR 0039](adr/0039-host-frame-around-fullscreen-guests.md)): in the
-resolved guest's provenance colour, or in the warning colour while the
-surface is resolving, unresolved or unavailable. A fullscreen host window
-gets no ring. The ring takes no input and reserves no space; a guest cannot
-draw over it or turn it off.
+window is fullscreen, the shell draws a ring around that window's output on
+the overlay layer, above every window
+([ADR 0039](adr/0039-host-frame-around-fullscreen-guests.md)): in the
+provenance colour of a verified guest viewer, or in the warning colour for
+anything else, a surface still resolving, unresolved or unavailable. A
+fullscreen plain terminal, or any other window nobody registered, gets the
+warning ring: a host process does not prove what its window shows. The ring
+takes no input and reserves no space; a guest cannot draw over it or turn it
+off.
 
 ## Durable machine operations
 
@@ -1013,6 +1016,16 @@ window title never leaves the adapter.
   agree with its `network_profile`, come from `host-owned-vm-spec`, name a
   domain and answer for the focused PID; a reason outside the resolver's
   vocabulary invalidates the answer.
+- Only the empty snapshot (no PID, app id or window id: nothing has focus)
+  is `HOST`. Every actual window without a verified registration is an
+  unverified window (`unregistered-window`, or `window-without-pid` when the
+  compositor gives no PID): no identity, no wallpaper or keyboard change,
+  `Unknown` with the word `unresolved` in the bar. A process running on the
+  host does not establish what its window shows: a terminal can hold an ssh
+  session, a viewer any machine, and no list of app ids can tell. The shell
+  refuses a `HOST` answer for a snapshot that names a process or a window,
+  whoever sent it. On Sway a focused empty workspace is reported by its node
+  id, so it reads `Unknown` rather than `Host`.
 - The resolver re-reads the per-user registry for every request. An
   untrusted registry, a resolver error, an unanswered request (3 seconds)
   or a stopped resolver is *unavailable*; none of them becomes HOST. The
@@ -1035,7 +1048,9 @@ than trusting application labels:
 - a reviewed managed Looking Glass surface for `arch-dev-vfio` resolves to
   `DEV` from the host-owned VM specification;
 - the reviewed managed SSH surface resolves to `DEV`;
-- an ordinary unregistered Foot terminal resolves as `HOST`;
+- an ordinary unregistered Foot terminal resolved as `HOST` (the rule at
+  the time; it is now an unverified window, and this observation does not
+  accept the change: see below);
 - a Foot window spoofing the managed SSH application id and title but lacking
   the reviewed registration fails closed as `Unresolved`;
 - rapid switching between host-native and managed guest surfaces does not
@@ -1065,6 +1080,23 @@ The deterministic coverage in
 `tests/surface_provenance_live_binding_contract.py` and
 `tests/managed_ssh_surface_provenance_contract.py` remains the regression
 boundary for this behavior.
+
+### Unregistered windows are unverified — pending reacceptance
+
+The rule changed after that acceptance. A window nobody registered no
+longer resolves as `HOST`: a plain Foot terminal, virt-manager, spicy or an
+app id nobody anticipated is an unverified window, reads `Unknown` with
+`unresolved` in the bar, assigns no accent, wallpaper or keyboard colour,
+and gets the warning ring when fullscreen. Only the empty desktop keeps
+`HOST`. This is software-verified (`tests/surface_provenance_contract.py`,
+`tests/surface_provenance_live_binding_contract.py`, the `provenance` and
+`fullscreen-frame` scenarios of `tests/host_quickshell_runtime_contract.py`,
+`tests/bar_core_focus_contract.py`,
+`tests/trust_presentation_coordinator_contract.py` and
+`tests/focus_provenance_accent_contract.py`). The Nitro observations above,
+including the HOST terminal, do not accept it; the plain terminal beside
+managed Looking Glass and managed SSH, and acceptance group 12, must be
+observed again on Nitro and replayed on Predator.
 
 ## Launcher
 
@@ -1319,9 +1351,9 @@ present one of three answers:
 
 | Answer | When | Core | Focus item |
 | --- | --- | --- | --- |
-| host | the resolver named the surface host-native | filled, HOST grey | host sphere, `Host` |
+| host | nothing has focus: the resolver named the empty desktop host-native | filled, HOST grey | host sphere, `Host` |
 | machine | the resolver named one reviewed guest identity from the host-owned VM spec of a registered viewer | filled, the domain colour | the Machine's sphere, `dev-01 · dev` |
-| unknown | loading, resolving, unresolved, unavailable, a stale focus source, an inventory that names the Machine in another domain, or an incomplete domain palette | hollow outline in the text tone | neutral outline, `Unknown` |
+| unknown | a window nobody registered (a plain terminal included), loading, resolving, unresolved, unavailable, a stale focus source, an inventory that names the Machine in another domain, or an incomplete domain palette | hollow outline in the text tone | neutral outline, `Unknown` |
 
 The mapping is the one the window borders use: the resolver
 (`tools/surface_provenance.py`) answers for the focused PID, app id and

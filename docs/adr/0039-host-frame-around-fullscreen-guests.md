@@ -58,6 +58,35 @@ and `tests/host_hyprland_adapter_contract.py` cover it.
 `tools/acceptance/12-fullscreen-ring.sh` on Nitro, with the shell that
 carries `FullscreenFrame.qml` installed: the ring in dev-01's colour around
 a fullscreen Looking Glass window, clicks at its edges reaching the guest,
-no ring around a fullscreen host terminal, and the ring around dev-01's
-fullscreen SPICE console. `tests/acceptance_scripts_contract.py` holds the
+the warning ring around a fullscreen plain terminal (see the amendment
+below; until 2026-11-25 this step asked for no ring), and the ring around
+dev-01's fullscreen SPICE console. `tests/acceptance_scripts_contract.py` holds the
 script to those steps in that order.
+
+## Amendment: an unregistered window is not the host (2026-11-25)
+
+The implementation above let the resolver name any unregistered process
+`HOST` (`unregistered-host-process`), and the ring skipped every window the
+host had resolved as its own. A host process does not establish what its
+window shows: a plain terminal can hold an ssh session to any Machine, and
+virt-manager, spicy or an application nobody anticipated can show any guest.
+No list of application ids can decide it. Such a window, fullscreen, drew no
+ring at all.
+
+The resolver now answers `unverified-window` (reason `unregistered-window`,
+or `window-without-pid` when the compositor gives no PID) for every actual
+window without a verified registration: no identity, no wallpaper or RGB.
+Only the empty snapshot, with no PID, app id or window id, is the host
+desktop. `ShellState.fullscreenFrame` draws the ring around every fullscreen
+window: in the guest's colour only for a resolved guest from
+`host-owned-vm-spec`, and in the warning colour for anything else, a plain
+terminal included. There is no host exception left, since nothing that
+can be fullscreen is the empty desktop. The shell also refuses a `HOST`
+answer for a snapshot that names a process or a window.
+
+Software-verified by the `provenance` and `fullscreen-frame` scenarios of
+`tests/host_quickshell_runtime_contract.py`, fed with real resolver answers,
+and by `tests/surface_provenance_contract.py`. The Nitro observation of a
+fullscreen host terminal without a ring accepted the old rule and does not
+accept this one: group 12 now asks for the warning ring around a fullscreen
+plain terminal, and must be run again on Nitro and replayed on Predator.

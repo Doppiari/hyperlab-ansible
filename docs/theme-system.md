@@ -113,9 +113,10 @@ ring there means disposable; the 8-pixel provenance marker keeps its dashed
 outline.
 
 The focused host-owned provenance drives Trust-mode keyboard RGB. On the Nitro
-four-zone backend every zone carries the same canonical identity colour. A
-host-native or unclassified surface returns the keyboard to the neutral host
-indication.
+four-zone backend every zone carries the same canonical identity colour. The
+empty desktop (nothing has focus) returns the keyboard to the neutral host
+indication; a window nobody registered, a plain terminal included, holds the
+current colours and never receives a colour of its own.
 
 The keyboard remains an output, never a source of security state.
 
@@ -193,16 +194,23 @@ invalidates that presentation provenance rather than silently changing trust.
 Guest-controlled title text, application names and other presentation metadata
 never assign trust.
 
-Host-native surfaces resolve to neutral `HOST`. A surface that looks like a
-managed transport but lacks valid host registration is `unresolved`; it may not
-drive wallpaper or keyboard RGB until host provenance is recovered.
+Only the empty desktop (a focus snapshot with no PID, app id or window id)
+resolves to neutral `HOST`. A process running on the host does not establish
+the provenance of what its window shows, so every actual window without a
+verified registration is an unverified window (`unregistered-window`): no
+trust identity, no wallpaper or keyboard RGB, whatever its app id or title.
+No list of app ids could decide otherwise. A surface that looks like a managed
+transport but lacks valid host registration is `unresolved` as well; neither
+may drive wallpaper or keyboard RGB until host provenance is recovered.
 
 The resolver remains read-only. Its `stream` mode answers one correlated
 request per line for the shell; see the live chain in
 [`hyperlab-shell.md`](hyperlab-shell.md#focused-surface-provenance).
 
 A surface that looks like a managed transport but reports no PID is also
-`unresolved`: without a process identity no registration can be verified.
+`unresolved`: without a process identity no registration can be verified. Any
+other PID-less snapshot that still names an app id or a window is an
+unverified window (`window-without-pid`); it is not the empty desktop.
 
 ## Managed surface runtime binding
 
@@ -237,12 +245,13 @@ resolves the host-owned trust identity, and emits a presentation plan containing
 the wallpaper that would be selected and the four RGB values that would be
 requested.
 
-Resolved host-native surfaces map to neutral `HOST`. Resolved managed guest
-surfaces map through their reviewed VM specification and `network_profile`.
+The empty desktop maps to neutral `HOST`. Resolved managed guest surfaces map
+through their reviewed VM specification and `network_profile`.
 
-A managed-looking surface whose provenance cannot be verified enters `hold`:
-neither wallpaper nor RGB receives a requested value. This is intentionally
-different from silently treating an unresolved guest as HOST.
+An unverified window, or a managed-looking surface whose provenance cannot be
+verified, enters `hold`: neither wallpaper nor RGB receives a requested value.
+This is intentionally different from silently treating an unregistered window
+or an unresolved guest as HOST.
 
 Guest-controlled title and application metadata remain non-authoritative.
 
@@ -335,8 +344,10 @@ the Control Center):
 RGB is only driven while the trust-model theme is active, is written with
 runtime scope through `hyperlab-nitro-control` (never persistent), keeps the
 operator's current brightness, and respects the broker's rate limit. An
-unresolved surface, an invalid claim or an unavailable broker holds the
-current colours.
+unresolved surface (an unverified window included), an invalid claim or an
+unavailable broker holds the current colours. In `focus-trust` an unverified
+window also clears the accent the previous window owned and gets none;
+`system-trust` keeps following the host claim whatever has focus.
 
 Window cleanup metadata remains in the private runtime HyperLab directory.
 The session manager must already have created the user-owned `XDG_RUNTIME_DIR`;
