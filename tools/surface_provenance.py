@@ -10,6 +10,13 @@ Security boundary:
 
 Window title, guest application name, guest-supplied app metadata and wallpaper
 content are never trust authority.
+
+A process running on the host does not establish the provenance of the
+content in its window either: a terminal may hold an SSH session, a viewer
+may show any machine. Every actual window without a verified registration is
+therefore an unverified window, with no identity and no permission to drive
+trust presentation. Only the genuinely empty snapshot (no PID, app id or
+window id: nothing has focus) is the host desktop.
 """
 
 from __future__ import annotations
@@ -495,11 +502,42 @@ def unresolved(
     }
 
 
+def unverified(
+    *,
+    surface: dict[str, Any],
+    reason: str,
+) -> dict[str, Any]:
+    # The same neutral, fail-closed shape as an unresolved managed surface;
+    # its class says that nothing claimed it, rather than that a claim failed.
+    return {
+        **unresolved(
+            surface=surface,
+            reason=reason,
+        ),
+        "surface_class": "unverified-window",
+    }
+
+
+def empty_snapshot(
+    surface: dict[str, Any],
+) -> bool:
+    return (
+        surface["pid"] is None
+        and surface["app_id"] == ""
+        and surface["window_id"] == ""
+    )
+
+
 def host_native(
     *,
     surface: dict[str, Any],
     reason: str,
 ) -> dict[str, Any]:
+    require(
+        empty_snapshot(surface),
+        "host-native provenance is only for the empty desktop",
+    )
+
     return {
         "schema": SCHEMA_VERSION,
         "resolved": True,
@@ -529,17 +567,25 @@ def resolve(
     pid = surface["pid"]
 
     if pid is None:
+        # Nothing has focus: the desktop the host draws itself.
+        if empty_snapshot(surface):
+            return host_native(
+                surface=surface,
+                reason="no-focused-client",
+            )
+
         # Without a PID no registration can be verified, so a surface that
-        # looks like a managed transport stays unresolved rather than HOST.
+        # looks like a managed transport stays unresolved, and any other
+        # window stays unverified; neither is HOST.
         if managed_hint(surface["app_id"]):
             return unresolved(
                 surface=surface,
                 reason="managed-surface-without-pid",
             )
 
-        return host_native(
+        return unverified(
             surface=surface,
-            reason="no-focused-client",
+            reason="window-without-pid",
         )
 
     entry = registry_entry_for_pid(
@@ -554,9 +600,11 @@ def resolve(
                 reason="managed-surface-not-registered",
             )
 
-        return host_native(
+        # The hints only sharpen the reason. An app id no list anticipates
+        # is unverified exactly the same way.
+        return unverified(
             surface=surface,
-            reason="unregistered-host-process",
+            reason="unregistered-window",
         )
 
     try:
@@ -829,6 +877,10 @@ def main() -> int:
             print(
                 "UNREGISTERED_MANAGED_SURFACE="
                 "UNRESOLVED"
+            )
+            print(
+                "UNREGISTERED_WINDOW="
+                "UNVERIFIED"
             )
             print(
                 "SURFACE_PROVENANCE_RESOLVER=PASS"

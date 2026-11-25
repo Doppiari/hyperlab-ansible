@@ -656,7 +656,8 @@ Scope {
     // the whole answer invalid rather than being shown as-is.
     readonly property var provenanceReasons: ({
         "no-focused-client": "No focused window",
-        "unregistered-host-process": "Host process",
+        "unregistered-window": "Window without a host registration",
+        "window-without-pid": "Window without a process identity",
         "managed-surface-resolved": "Registered managed surface",
         "managed-surface-not-registered":
             "Managed transport without a host registration",
@@ -722,18 +723,22 @@ Scope {
 
     // ADR 0039: while the focused window is fullscreen it covers the rail and
     // has no border, so the host draws a ring on the overlay layer instead.
-    // Fail closed: every fullscreen window gets the ring unless the host
-    // resolved it as its own; an unresolved one gets the warning colour.
+    // Fail closed: every fullscreen window gets the ring. Only a verified
+    // guest viewer gives it its domain colour; any other window, a host
+    // terminal included, gets the warning colour, because nothing proves
+    // what it shows.
     readonly property var fullscreenFrame: {
         const provenance = state.focusedProvenance;
         const fullscreen = state.focusSourceState === "ok"
             && state.focusPayload.fullscreen === true;
-        const host = provenance.state === "resolved" && provenance.identity === "host";
+        const guest = provenance.state === "resolved"
+            && provenance.source === "host-owned-vm-spec"
+            && state.guestProvenanceIdentities.indexOf(provenance.identity) >= 0;
 
         return {
-            "visible": fullscreen && !host,
-            "identity": provenance.state === "resolved" ? provenance.identity : "",
-            "resolved": provenance.state === "resolved"
+            "visible": fullscreen,
+            "identity": guest ? provenance.identity : "",
+            "resolved": guest
         };
     }
 
@@ -747,7 +752,7 @@ Scope {
     // Machine is unknown, a surface still being resolved included, so the
     // answer for a previous window never stays on the one that replaced it.
     //
-    // host     a host-native surface has focus
+    // host     nothing has focus: the host's own desktop
     // machine  a verified viewer of one managed Machine has focus
     // unknown  focus cannot be placed: pending, unresolved, unavailable or
     //          stale, or the inventory names that Machine in another domain
@@ -923,15 +928,21 @@ Scope {
 
         const reason = state.provenanceReasons[code];
 
+        // A window nobody registered and a managed claim that failed are both
+        // unresolved; each class carries only its own reasons.
+        const unverifiedCodes = ["unregistered-window", "window-without-pid"];
+
         if (!value.resolved) {
-            if (value.surface_class !== "managed-unresolved"
+            const unverified = unverifiedCodes.indexOf(code) >= 0;
+
+            if (value.surface_class !== (unverified ? "unverified-window" : "managed-unresolved")
                 || value.trust !== null
                 || value.presentation_identity !== "host"
                 || value.trust_source !== null || value.domain !== null
                 || value.network_profile !== null
                 || value.wallpaper_allowed !== false || value.rgb_allowed !== false
-                || code === "managed-surface-resolved"
-                || code === "no-focused-client" || code === "unregistered-host-process")
+                || code === "managed-surface-resolved" || code === "no-focused-client"
+                || (unverified && (code === "window-without-pid") !== (value.pid === null)))
                 return invalid;
 
             return state.provenanceResult(
@@ -939,13 +950,18 @@ Scope {
             );
         }
 
+        // HOST is the empty desktop only. A host-native answer for a snapshot
+        // that names a process or a window is refused, whoever sent it.
         if (value.surface_class === "host-native") {
             if (value.trust !== "host"
                 || value.presentation_identity !== "host"
                 || value.trust_source !== "host-native"
                 || value.domain !== null || value.network_profile !== null
                 || value.wallpaper_allowed !== true || value.rgb_allowed !== true
-                || (code !== "no-focused-client" && code !== "unregistered-host-process"))
+                || code !== "no-focused-client"
+                || value.pid !== null
+                || state.focusPayload.app_id !== ""
+                || state.focusPayload.window_id !== "")
                 return invalid;
 
             return state.provenanceResult(

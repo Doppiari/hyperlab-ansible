@@ -234,6 +234,42 @@ def check_resolver() -> None:
             "managed SSH without PID did not fail closed",
         )
 
+        # A plain Foot window runs the same /usr/bin/foot and may hold an
+        # ssh session to the same Machine. Beside a registered managed SSH
+        # window, it is neither DEV nor HOST: nothing registered it.
+        resolver.proc_executable = (
+            lambda proc_root, observed_pid: "/usr/bin/foot"
+        )
+
+        for app_id, title in (
+            ("foot", "ssh arch-dev-vfio"),
+            ("foot", "HOST"),
+            ("footclient", "dev · arch-dev-vfio"),
+        ):
+            plain = resolver.resolve(
+                repo=ROOT,
+                surface={
+                    "pid": pid + 1,
+                    "app_id": app_id,
+                    "window_id": "0x5551",
+                    "title": title,
+                },
+                registry=registry,
+                proc_root=Path("/proc-fixture"),
+            )
+
+            require(
+                plain.get("resolved") is False
+                and plain.get("trust") is None
+                and plain.get("domain") is None
+                and plain.get("surface_class") == "unverified-window"
+                and plain.get("reason") == "unregistered-window"
+                and plain.get("wallpaper_allowed") is False
+                and plain.get("rgb_allowed") is False,
+                f"a plain Foot window ({app_id}, {title!r}) gained "
+                f"trust next to managed SSH: {plain}",
+            )
+
     finally:
         for name, value in originals.items():
             setattr(resolver, name, value)

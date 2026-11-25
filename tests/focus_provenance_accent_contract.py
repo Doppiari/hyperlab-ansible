@@ -179,6 +179,129 @@ def check_plan(accent, colours) -> None:
                 f"system-trust accepted an invalid claim: {trust}")
 
 
+def check_unverified_windows(accent, colours) -> None:
+    """Real resolver answers for windows nobody registered.
+
+    The consumer clears the accent the previous window owned and assigns no
+    focus-trust colour for an unverified window; system-trust keeps its own
+    meaning (the host claim), and only the empty desktop keeps HOST.
+    """
+    resolver = accent.load_resolver(ROOT)
+    windows = (
+        {"pid": 71001, "app_id": "foot", "window_id": "0x2"},
+        {"pid": 71002, "app_id": "virt-manager", "window_id": "0x3"},
+        {"pid": 71003, "app_id": "spicy", "window_id": "0x4"},
+        {"pid": 71004, "app_id": "org.example.unfamiliar-viewer", "window_id": "0x5"},
+        {"pid": 71005, "app_id": "hyperlab-managed-ssh-dev", "window_id": "0x6"},
+        {"pid": None, "app_id": "foot", "window_id": "0x7"},
+    )
+
+    with tempfile.TemporaryDirectory() as name:
+        root = Path(name)
+        repo = root / "repo"
+        (repo / "vm-specs").mkdir(parents=True)
+        # The registry's directory is the private runtime directory; the
+        # registry file itself stays absent: nothing is registered.
+        registry = root / "runtime" / "absent-registry.json"
+
+        answers = []
+        for surface in windows:
+            answer = accent.resolve_focus(resolver, repo, surface, registry)
+            require(isinstance(answer, dict)
+                    and answer.get("resolved") is False and answer.get("trust") is None
+                    and answer.get("surface_class") == "unverified-window",
+                    f"the resolver did not call {surface['app_id']} unverified: {answer}")
+            answers.append((surface, answer))
+        desktop = accent.resolve_focus(resolver, repo, {"pid": None, "app_id": "",
+                                                        "window_id": ""}, registry)
+        require(isinstance(desktop, dict) and desktop.get("trust") == "host",
+                f"the empty desktop is not HOST: {desktop}")
+
+        for surface, answer in answers:
+            for mode in accent.RGB_MODES:
+                decided = accent.plan(surface=surface, provenance=answer,
+                                      system_trust=HOST_TRUST_DEV, rgb_mode=mode,
+                                      theme="trust-model", colours=colours)
+                require(decided["accent"]["identity"] is None
+                        and decided["accent"]["color"] is None
+                        and decided["accent"]["state"] == "unresolved",
+                        f"{surface['app_id']} got an accent in {mode}: {decided['accent']}")
+                if mode == "focus-trust":
+                    require(decided["rgb"]["action"] == "hold"
+                            and decided["rgb"]["identity"] is None
+                            and decided["rgb"]["reason"] == "focus-provenance-unresolved",
+                            f"focus-trust coloured {surface['app_id']}: {decided['rgb']}")
+                if mode == "system-trust":
+                    require(decided["rgb"]["action"] == "set"
+                            and decided["rgb"]["identity"] == "dev",
+                            "system-trust stopped following the host claim")
+
+        require(accent.plan(surface={"pid": None, "app_id": "", "window_id": ""},
+                            provenance=desktop, system_trust=HOST_TRUST_UNCLAIMED,
+                            rgb_mode="focus-trust", theme="trust-model",
+                            colours=colours)["rgb"]["identity"] == "host",
+                "focus-trust lost HOST on the empty desktop")
+
+        # The actuator: a DEV window owns its accent and the keyboard; each
+        # unverified window clears that accent, gets none of its own and
+        # leaves the keyboard alone.
+        calls: list[list[str]] = []
+
+        class Result:
+            def __init__(self, code):
+                self.returncode = code
+                self.stdout = ""
+
+        def run_command(argv):
+            snapshot = live_fixture(argv)
+            if snapshot is not None:
+                return snapshot
+            calls.append(argv)
+            return Result(0)
+
+        def nitro(argv):
+            calls.append(["nitro", *argv])
+            if argv[0] == "status":
+                return {"ok": True, "status": {
+                    "capabilities": {"per_zone": True},
+                    "runtime": {"per_zone": "fff00f,ff00ff,fff00f,ff00ff,37"}}}
+            return {"ok": True}
+
+        config = root / "config"
+        config.mkdir()
+        (config / "theme").write_text("trust-model\n", encoding="utf-8")
+        (config / "rgb-mode").write_text("focus-trust\n", encoding="utf-8")
+        with patch.object(accent, "run_command", run_command), \
+                patch.object(accent, "nitro", nitro):
+            actuator = accent.Actuator(ROOT, config, registry, root / "state")
+            actuator.read_settings()
+            for surface, answer in answers:
+                actuator.surface = {"pid": 70001, "app_id": "looking-glass-client",
+                                    "window_id": "0x1"}
+                actuator.provenance = provenance("dev")
+                actuator.apply()
+                # The keyboard is written once; an unverified window holds it,
+                # so returning to DEV needs no second write.
+                require(actuator.state.window == "0x1"
+                        and actuator.rgb_applied == [colours["dev"]] * 4
+                        and [c[:3] for c in calls].count(["nitro", "rgb", "37"]) == 1,
+                        "the DEV window did not own its accent and the keyboard")
+                before = len(calls)
+                actuator.surface = dict(surface)
+                actuator.provenance = answer
+                actuator.apply()
+                made = calls[before:]
+                require([c[:3] for c in made] == [[accent.ADAPTER, "focus-accent-clear", "0x1"]],
+                        f"{surface['app_id']}: the consumer did not just clear the previous "
+                        f"accent: {made}")
+                require(actuator.state.window is None,
+                        f"{surface['app_id']}: an accent is still owned")
+                require(not any(c[0] == "nitro" for c in made),
+                        f"{surface['app_id']}: the keyboard was recoloured")
+                require(not any(c[1] == "focus-accent-set" for c in made),
+                        f"{surface['app_id']}: an unverified window got an accent")
+
+
 def live_fixture(argv):
     if argv[1] == "window-identities-json":
         return subprocess.CompletedProcess(argv, 0, json.dumps({"windows": [
@@ -1187,6 +1310,7 @@ def run_checks() -> int:
     accent = load(TOOL, "focus_accent_contract")
     colours = check_mapping(accent)
     check_plan(accent, colours)
+    check_unverified_windows(accent, colours)
     check_actuator(accent)
     check_sessions(accent)
     check_generations(accent)
