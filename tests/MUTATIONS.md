@@ -6837,6 +6837,103 @@ The same showcase contract exercises poll replies and the compact layout.
 | Replace the network observation on identical replies. | The unchanged poll emits a replacement notification. |
 | Clear and repopulate the network delegates on a changed reply. | Dev loses keyboard focus between an arrow and Enter. |
 
+## The Hyprland watch heartbeat counts from the last snapshot
+
+`tests/host_compositor_adapter_behaviour_contract.py` drives the real
+`workspace-watch` and `focused-window-watch` through a fake Hyprland event
+socket and a fake `hyprctl`: one ignored `windowtitle` event per second for
+11 seconds with a 3-second heartbeat, a quiet stream, a listed event between
+two ignored ones, the end of the stream, a missing socket, and a staged copy
+whose clock the contract moves back an hour. See
+[the problem note](../problems/hyprland-watch-heartbeat-postponed-by-ignored-events.md).
+
+Every break edits
+`roles/host_desktop_common/files/privatestack-compositor-adapter.sh`. Replay
+one at a time from a saved copy, run
+`python tests/host_compositor_adapter_behaviour_contract.py`, restore the copy
+byte-for-byte and run it again.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| pre-change | The adapter before this change: both loops read with a fresh heartbeat timeout after every event. | `workspace-watch: a busy stream of unrelated events postponed the heartbeat (1 snapshots in 11s, expected at least 4)`, and the same for `focused-window-watch` | Exit 0, contract OK. |
+| `ws-heartbeat-rearmed-by-ignored-event` | The workspace loop's `case` gains `*) heartbeat_arm ;;`. | `workspace-watch: a busy stream of unrelated events postponed the heartbeat (1 snapshots in 11s, expected at least 4)` | Exit 0, contract OK. |
+| `focus-heartbeat-rearmed-by-ignored-event` | The focus loop's `case` gains `*) heartbeat_arm ;;`. | `focused-window-watch: a busy stream of unrelated events postponed the heartbeat (1 snapshots in 11s, expected at least 4)` | Exit 0, contract OK. |
+| `ws-snapshot-on-ignored-event` | The workspace loop's `case` gains `*) workspace_publish_hyprland ;;`. | `workspace-watch: unrelated events published snapshots of their own (12 snapshots in 11s)` | Exit 0, contract OK. |
+| `focus-snapshot-on-ignored-event` | The focus loop's `case` gains `*) focused_publish_hyprland ;;`. | `focused-window-watch: unrelated events published snapshots of their own (12 snapshots in 11s)` | Exit 0, contract OK. |
+| `ws-heartbeat-not-rearmed` | `workspace_publish_hyprland` no longer calls `heartbeat_arm`, so the heartbeat is always due. | `workspace-watch: unrelated events published snapshots of their own (304 snapshots in 11s)` | Exit 0, contract OK. |
+| `clock-back-unbounded` | Delete the branch of `heartbeat_wait` that pulls a deadline more than one heartbeat away back to one heartbeat. | `a wall clock moved back stretched the heartbeat: snapshots at ['0.0']` | Exit 0, contract OK. |
+| `ws-listed-event-ignored` | Drop `workspace>>` from the workspace loop's listed events. | `workspace-watch: a listed event did not publish at once, or an unrelated one did: snapshots at ['0.1']` | Exit 0, contract OK. |
+
+The pre-change row was observed on the tree before the change with the
+busy-stream cases of the contract, before the clock case was added. Each break turned the contract red; restoring the saved adapter
+byte-for-byte made the same command pass. The Sway loops are not touched by
+any break and their quiet-stream heartbeat case stayed green throughout.
+
+## A provisioning reads finished only when every step ended with 0
+
+`tests/host_machine_provision_contract.py` runs the real provisioner over
+inert playbooks and a recording `hyperlabctl`, in-process and on a real PTY,
+and reads its receipts with hyperlabctl's own `provisioning_status`. It
+fails a step at each place a run can fail, the last one included, sends
+SIGINT, SIGTERM, SIGHUP and SIGKILL in the middle of a step, resumes with
+`--from`, holds the run lock from outside, damages the receipt, runs the
+final verification against a Looking Glass sender stopped at source
+selection and one that logged `Capture Start`, and renders the Machines
+card offscreen. See
+[the problem note](../problems/wizard-provisioning-interrupted.md).
+
+Replay one at a time from a saved copy of the named file, run the named
+check (or the whole contract), restore the copy byte-for-byte and run it
+again.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| pre-change | The provisioner before this change, under `check_receipts`. | `a server run that ended with 0 everywhere is not finished: 0 None` | Exit 0, contract OK. |
+| `finished-before-last-step` | In `privatestack-machine-provision.py`, write `receipt.end("finished")` when step M-1 ends, before the last step runs. | `SIGTERM in the last step left {... 'state': 'finished' ... 'close-access' ... 'result': 'running' ...}` | Exit 0, contract OK. |
+| `missing-receipt-ready` | In `machine_provision.py`, a missing receipt reads `finished` / `Provisioned`. | `a Machine without a receipt reads {'status': 'finished', 'receipt': 'missing', ... 'text': 'Provisioned' ...}` | Exit 0, contract OK. |
+| `no-interrupted-write` | The provisioner's signal path no longer calls `receipt.stop(...)`. | `SIGINT was not recorded as an interrupted step 3: {... 'state': 'running' ...}` | Exit 0, contract OK. |
+| `running-without-lock` | `provisioning_running` treats every lock file as held. | `a run that died without recording its end reads {... 'receipt': 'running', 'running': True ...}` | Exit 0, contract OK. |
+| `digest-ignored` | `provisioning_status` skips the record digest comparison. | `a receipt with another record's digest reads {'status': 'finished' ...}` | Exit 0, contract OK. |
+| `stuck-sender-accepted` | `CAPTURED_STREAMS` gains `"unknown"`. | `a sender stopped at source selection passed: {... 'looking_glass': 'captured', 'stream': 'unknown', 'ok': True ...}` | Exit 0, contract OK. |
+| `passwordless-sudo-accepted` | `sudo_verdict` reads exit 0 as `refused`. | `sudo answering (0, '') passed the step or went on to Looking Glass: {... 'ok': True ...}` | Exit 0, contract OK. |
+| `card-missing-reading-hidden` | In `MachineTile.qml`, a product row without `provisioning` shows nothing. | `provisioning card: "a product Machine without a reading is not unknown"` | Exit 0, contract OK. |
+| `resume-past-failed-step` | `resumable` drops `first <= unfinished`. | `['dev-r', '--from', '6'] skipped the failed step: 0 []` | Exit 0, contract OK. |
+| `verify-step-dropped` | `provision_steps` no longer appends the `verify` step (`tests/c10_machine_creation_plan_contract.py`). | `steps: ['create-domain', 'inventory', 'profile-first', 'profile-second', 'close-access']` | Exit 0, contract OK. |
+| pre-review | The provisioner of the first round, under the dead-run resume case of `check_real_cli`. | `the offered command did not resume a dead run: refused: only a failed or interrupted provisioning can be resumed ...` | Exit 0, contract OK. |
+| `dead-run-resume-refused` | The read under the lock calls `resumable(provisioning, steps, first)` without `locked=True`. | `the offered command did not resume a dead run: refused: only a failed or interrupted provisioning can be resumed ...` | Exit 0, contract OK. |
+| `lock-reread-removed` | Delete the second `machine_record` and `resumable` under the lock. | `a run that finished before the lock was taken was resumed: 0 [['-i', 'inventory.ini', ..., 'playbooks/guest-close-access.yml']]` | Exit 0, contract OK. |
+| `lock-no-retry` | `LOCK_WAIT = 0.0`: the first contention refuses. | `a reader's probe of the lock refused a run: refused: another provisioning of dev-l is running` | Exit 0, contract OK. |
+| `resume-hint-unquoted` | `resume_hint` prints `cd {repo}` without `shlex.quote`. | `the terminal's resume command differs from the card's: "cd '/tmp/.../check out; $(x)/repo' && ..."` | Exit 0, contract OK. |
+
+Each break turned its check red with the diagnostic shown (abridged where it
+prints a whole receipt); restoring the saved file byte-for-byte made the
+whole contract pass again.
+
+## The sender capture harness queues its own initial failure
+
+`tests/looking_glass_sender_capture_contract.py` now queues each failure
+before the initial format from the initializing thread, without waiting,
+instead of from a producer thread that could still be inside
+`pw_loop_invoke` when initialization destroyed the loop. See
+[the problem note](../problems/looking-glass-sender-capture-harness-invoke-after-free.md).
+
+The patch breaks edit
+`roles/guest_looking_glass_linux/files/pipewire-thread-loop-runtime.patch`
+inside one line, so its hunk keeps its length. Replay one at a time from a
+saved copy, run `python tests/looking_glass_sender_capture_contract.py`,
+restore the copy byte-for-byte and run it again.
+
+| Mutation | Break | Observed red diagnostic | After restoration |
+| --- | --- | --- | --- |
+| pre-change | The harness before this change: a producer thread sleeps 100 ms and makes a blocking `pw_loop_invoke`. | Under 16 parallel runs only: `initial-failure-N: '' (exit -11)` in 9 of 96 contract runs (3 per scenario), and exit 139 in 32 of 1500 runs of the `initial-failure-2` harness. A single run usually passes. | 96 of 96 parallel contract runs OK. |
+| `initial-wait-ignores-failure` | The initial wait loses `!this->streamFailed`. | `initial-failure-0: the harness itself hung` | Exit 0, contract OK. |
+| `initial-failure-accepted` | The check after the initial wait reads `if (this->stop)`. | `initial-failure-0: 'initialization accepted a failure before the first format' (exit 1)` | Exit 0, contract OK. |
+| `core-error-not-failure` | `coreErrorCallback` no longer sets `streamFailed`. | `initial-failure-2: the harness itself hung` | Exit 0, contract OK. |
+
+The pre-change row is timing-dependent: it shows a race and goes red only
+under load; it is not a per-run check. Each patch break turned the contract
+red on the first run; restoring the saved patch made it pass again.
+
 ## Unregistered windows stay unverified
 
 A host process does not establish what its window shows, so every actual

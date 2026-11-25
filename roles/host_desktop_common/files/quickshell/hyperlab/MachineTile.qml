@@ -1,5 +1,7 @@
 // One inventory Machine, with its host-confirmed identity, attachments and allocation.
 // Selection opens its existing pane; this tile performs no Machine action.
+// A product Machine whose provisioning receipt does not say "finished" says
+// so, with the command that resumes it; it never reads as ready.
 import QtQuick
 
 ShellCard {
@@ -34,6 +36,22 @@ ShellCard {
             ? "Disposable · discarded at shutdown" : "Disposable configured · discard unknown")
             + (tile.relation === "held" || tile.relation === "configured" ? " · " + tile.hardwareText : "")
         : tile.hardwareText
+    // Only a product Machine has a provisioning; without a reading, or with
+    // one that is not hyperlabctl's, it is unknown, never provisioned.
+    readonly property var provisioning: tile.machine.provisioning
+    readonly property bool provisioningShown:
+        tile.machine.product_managed === true
+        && !(tile.provisioning && tile.provisioning.status === "finished")
+    readonly property bool provisioningRead:
+        !!tile.provisioning
+        && ["incomplete", "unknown"].indexOf(tile.provisioning.status) >= 0
+        && typeof tile.provisioning.text === "string"
+        && tile.provisioning.text.indexOf("Provisioning ") === 0
+    readonly property string provisioningText: !tile.provisioningShown ? ""
+        : tile.provisioningRead ? tile.provisioning.text : "Provisioning unknown"
+    readonly property string resumeText:
+        tile.provisioningShown && tile.provisioningRead && typeof tile.provisioning.resume === "string"
+        ? tile.provisioning.resume : ""
     readonly property color wash: tile.theme.knownProvenance(tile.machine.provenance)
         ? tile.theme.mix(tile.theme.provenanceColor(tile.machine.provenance), tile.theme.raised, 0.07)
         : tile.theme.raised
@@ -51,6 +69,8 @@ ShellCard {
         + tile.theme.provenanceLabel(tile.machine.provenance) + ", " + tile.icons.machineStateWord(tile.machine.state)
         + ", " + tile.facts.map(fact => fact.join(" ")).join(", ") + ", " + tile.footer
         + (tile.footer.includes(tile.hardwareText) ? "" : ", " + tile.hardwareText)
+        + (tile.provisioningText ? ", " + tile.provisioningText : "")
+        + (tile.resumeText ? ", resume with " + tile.resumeText : "")
 
     Column {
         id: content
@@ -140,6 +160,25 @@ ShellCard {
             role: "meta"
             wrapMode: Text.WordWrap
             text: tile.footer
+            color: tile.theme.textSecondary
+        }
+        ShellLabel {
+            objectName: "machine-provisioning-" + tile.machine.name
+            width: parent.width
+            visible: tile.provisioningText.length > 0
+            tokens: tile.tokens
+            role: "meta"
+            wrapMode: Text.WordWrap
+            text: tile.provisioningText
+            color: tile.theme.semanticStatusColor("warn")
+        }
+        ShellLabel {
+            width: parent.width
+            visible: tile.resumeText.length > 0
+            tokens: tile.tokens
+            role: "mono"
+            wrapMode: Text.WrapAnywhere
+            text: tile.resumeText
             color: tile.theme.textSecondary
         }
     }

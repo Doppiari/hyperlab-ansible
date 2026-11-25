@@ -9,6 +9,8 @@ import json
 import os
 import re
 import stat
+import subprocess
+import sys
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
@@ -29,6 +31,8 @@ from ..machine_factory import (
 from ..machine_provision import (
     creation_plan,
     provision_steps,
+    provisioning_status,
+    verify_provisioning,
 )
 from ..machine_registry import (
     PublishedRecord,
@@ -188,6 +192,39 @@ def _created_at() -> str:
             "+00:00",
             "Z",
         )
+    )
+
+
+def machine_provisioning(
+    record: dict[str, Any],
+    *,
+    state_home: Path | None = None,
+    repo_root: Path | str | None = None,
+) -> dict[str, Any]:
+    """The provisioning receipt's verdict on one record; never "finished"
+    when the record's own digest cannot be read."""
+    try:
+        digest = record_sha256(
+            record["id"],
+            state_home=state_home,
+        )
+    except HyperlabError as exc:
+        return {
+            "status": "unknown", "receipt": "unreadable", "record_sha256": None,
+            "step": None, "steps": None, "label": None, "step_ids": None,
+            "running": False, "text": "Provisioning unknown", "resume": None,
+            "log": None, "reason": f"the Machine record cannot be read again: {exc}",
+        }
+
+    return provisioning_status(
+        record,
+        record_sha256=digest,
+        state_home=state_home,
+        repo_root=(
+            Path(repo_root).resolve()
+            if repo_root is not None
+            else None
+        ),
     )
 
 
@@ -410,6 +447,14 @@ def build_product_inventory(
                         "runtime_drift": False,
                     }
                 )
+
+        # Whether the provisioner finished this record's steps: a Machine
+        # cut off half way is never presented as ready.
+        row["provisioning"] = machine_provisioning(
+            record,
+            state_home=state_home,
+            repo_root=repo_root,
+        )
 
         # The operating system comes from the Machine's checked-in image,
         # not from anything the guest reports.
@@ -823,6 +868,17 @@ class MachineCommand(Command):
             "machine_id",
         )
 
+        verify = sub.add_parser(
+            "verify-provisioning",
+            help=(
+                "the last provisioning step: prove sudo asks for the password "
+                "and, for VFIO Linux Looking Glass, that the sender reaches capture"
+            ),
+        )
+        verify.add_argument(
+            "machine_id",
+        )
+
     def run(self, args, ctx):
         action = args.machine_action
 
@@ -841,6 +897,7 @@ class MachineCommand(Command):
         if action == "show":
             return self._show(
                 args,
+                ctx,
             )
 
         if action == "inventory":
@@ -874,6 +931,12 @@ class MachineCommand(Command):
 
         if action == "provision-steps":
             return self._provision_steps(
+                args,
+                ctx,
+            )
+
+        if action == "verify-provisioning":
+            return self._verify_provisioning(
                 args,
                 ctx,
             )
@@ -954,14 +1017,20 @@ class MachineCommand(Command):
 
         return 0
 
-    def _show(self, args):
+    def _show(self, args, ctx):
         record = read_machine(
             args.machine_id
         )
 
         print(
             json.dumps(
-                record,
+                {
+                    **record,
+                    "provisioning": machine_provisioning(
+                        record,
+                        repo_root=getattr(ctx.config, "repo_root", None),
+                    ),
+                },
                 indent=2,
             )
         )
@@ -991,12 +1060,13 @@ class MachineCommand(Command):
 
         for row in payload["machines"]:
             print(
-                "%-28s %-22s %-12s %s"
+                "%-28s %-22s %-12s %-10s %s"
                 % (
                     row["name"],
                     row["state"],
                     row["device_capability"],
                     row["network_profile"],
+                    row["provisioning"]["text"],
                 )
             )
 
@@ -1264,3 +1334,53 @@ class MachineCommand(Command):
             )
         )
         return 0
+
+    def _verify_provisioning(self, args, ctx):
+        # Imported here: the guest channels live with the commands that
+        # open them, and only this action needs them.
+        from . import looking_glass
+        from .open import _ssh_argv, _wait_for_ssh_ready
+
+        machine_id = args.machine_id
+        record = read_machine(
+            machine_id
+        )
+
+        def sudo_probe() -> tuple[int, str]:
+            ssh = _ssh_argv(ctx, machine_id)
+            _wait_for_ssh_ready(ssh, machine_id)
+            result = subprocess.run(
+                [*ssh[:-1], "-T", ssh[-1], "env", "LC_ALL=C", "sudo", "-n", "true"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            return result.returncode, result.stderr
+
+        def say(text: str) -> None:
+            print(text, file=sys.stderr if args.json else sys.stdout, flush=True)
+
+        report = verify_provisioning(
+            record,
+            sudo_probe=sudo_probe,
+            restart_capture=lambda: looking_glass.restart_capture(ctx, machine_id),
+            health=lambda: looking_glass.health(ctx, machine_id),
+            say=say,
+            sleep=time.sleep,
+            clock=time.monotonic,
+        )
+
+        if args.json:
+            print(
+                json.dumps(
+                    report,
+                    indent=2,
+                )
+            )
+        elif report["ok"]:
+            print(f"{machine_id}: provisioning verified")
+        else:
+            print(f"{machine_id}: provisioning not verified: {report['reason']}")
+
+        return 0 if report["ok"] else 1

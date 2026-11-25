@@ -108,7 +108,11 @@ root = pathlib.Path(os.environ["HL_FULLSCREEN_ROOT"])
 def read(name):
     return (root / name).read_text().strip()
 def write(name, value):
-    (root / name).write_text(str(value))
+    # The test reads these files while this process runs: replace, never
+    # rewrite in place, so no reader sees a truncated value.
+    staged = root / (".%s.%d.tmp" % (name, os.getpid()))
+    staged.write_text(str(value))
+    os.replace(staged, root / name)
 def append(name, value):
     with (root / name).open("a") as handle:
         handle.write(value + "\n")
@@ -202,14 +206,15 @@ print("ok")
 '''
 
 
-DELAYED_APPLY = '''import pathlib, sys, time
+DELAYED_APPLY = '''import os, pathlib, sys, time
 root = pathlib.Path(sys.argv[1])
 deadline = time.monotonic() + 20
 while not (root / "late-release").exists():
     if time.monotonic() >= deadline:
         raise SystemExit(90)
     time.sleep(0.01)
-(root / "state").write_text("2")
+(root / ".state.tmp").write_text("2")
+os.replace(root / ".state.tmp", root / "state")
 (root / "late-applied").write_text("done")
 '''
 
@@ -266,7 +271,12 @@ class Guest:
         path.chmod(0o700)
 
     def write(self, name: str, value: object) -> None:
-        (self.root / name).write_text(str(value), encoding="utf-8")
+        # The fake compositor may be reading this file right now (it reads
+        # `state` after `dispatch-ready`). An in-place rewrite lets it read an
+        # empty file, crash, and turn a dispatch into an UNKNOWN outcome.
+        staged = self.root / (".%s.%d.tmp" % (name, os.getpid()))
+        staged.write_text(str(value), encoding="utf-8")
+        os.replace(staged, self.root / name)
 
     def read(self, name: str) -> str:
         return (self.root / name).read_text(encoding="utf-8").strip()
@@ -346,7 +356,8 @@ def _receipt(**fields: object) -> str:
 
 def _terminal(result: subprocess.CompletedProcess, operation_id: str, requested: str,
               *, rc: int = 0) -> dict:
-    equals("terminal_rc", result.returncode, rc)
+    check("terminal_rc", result.returncode == rc,
+          "expected %r, got %r: %s" % (rc, result.returncode, result.stdout.strip()))
     payload = vm._parse_fullscreen_receipt(result.stdout, operation_id, requested)
     equals("terminal_status", payload["status"], "success" if rc == 0 else "failure")
     return payload
@@ -1136,3 +1147,40 @@ def test_dispatch_counter_counts_independent_calls() -> None:
     with Guest() as guest:
         guest.write("dispatches", "1\n1\n")
         equals("dispatch_counter_two_calls", len(guest.dispatches), 2)
+
+
+def _held_value_after(guest: Guest, name: str, write: Callable[[], None]) -> str:
+    # A descriptor opened before the write keeps the inode it opened. Only an
+    # in-place rewrite (truncate, then write) changes what it reads; an atomic
+    # replacement leaves it the complete previous value.
+    fd = os.open(guest.root / name, os.O_RDONLY)
+    try:
+        write()
+        return os.pread(fd, 4096, 0).decode("utf-8").strip()
+    finally:
+        os.close(fd)
+
+
+def test_fixture_state_writes_replace_whole_files() -> None:
+    # Fixture files are read by concurrent processes: the fake compositor reads
+    # `state` while the test sets it. A reader must see the old or the new
+    # whole value, never the empty file an in-place rewrite leaves for a moment.
+    with Guest() as guest:
+        held = _held_value_after(guest, "state", lambda: guest.write("state", 3))
+        equals("fixture_write_test_side", (held, guest.read("state")), ("0", "3"))
+
+    with Guest() as guest:
+        expression = ('hl.dsp.window.fullscreen({ mode = "fullscreen", action = "set", '
+                      'window = "stableid:18000001" })')
+        results: list[subprocess.CompletedProcess] = []
+        held = _held_value_after(guest, "state", lambda: results.append(subprocess.run(
+            [str(guest.bin / "hyprctl"), "dispatch", expression], env=guest.env, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=10.0,
+        )))
+        equals("fixture_write_compositor_rc", (results[0].returncode, results[0].stdout.strip()),
+               (0, "ok"))
+        equals("fixture_write_compositor", (held, guest.read("state")), ("0", "2"))
+
+    with Guest(behavior="timeout_delayed") as guest:
+        held = _held_value_after(guest, "state", guest.late_apply)
+        equals("fixture_write_delayed_apply", (held, guest.read("state")), ("0", "2"))

@@ -150,6 +150,20 @@ no reviewed profile playbook. The record holds no projection digest; the
 projection is recomputed for each comparison
 ([ADR 0017](adr/0017-shell-machine-creation.md)).
 
+A workstation's steps end with `hyperlabctl machine verify-provisioning ID`,
+which fails while `sudo -n true` still runs in the guest and, for a VFIO
+Machine with Linux Looking Glass, until the restarted sender has started a
+capture. Every provisioning run keeps a receipt below
+`$XDG_STATE_HOME/hyperlab/provisioning/`, bound to the record's SHA-256.
+`machine show` and `machine inventory` report it as the Machine's
+`provisioning`: `finished` only when every step of this record's plan ended
+with 0, otherwise "Provisioning incomplete: step N of M" with the resume
+command, or "Provisioning unknown" for a Machine without a readable receipt
+of its own. A receipt is an observation of a run, not Machine intent: it
+never changes the record and the record never carries it
+([ADR 0017, amendment](adr/0017-shell-machine-creation.md), and
+[`first-machine.md`](first-machine.md#when-provisioning-stops)).
+
 ### Managed, fixture and external domains are different populations
 
 Machines presents product-managed user-created Machines and every other

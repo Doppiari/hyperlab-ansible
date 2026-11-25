@@ -9,10 +9,11 @@ set -euo pipefail
 
 readonly backend_timeout=${HYPERLAB_COMPOSITOR_TIMEOUT_SECONDS:-5}
 
-# Event watchers re-publish their snapshot after this many quiet seconds, so
-# a healthy stream with no events is still observably alive. The shell treats
-# about three missed heartbeats as stale; inactivity is not failure. Tests may
-# shorten it; anything outside 1-60 falls back to the reviewed 30.
+# Event watchers re-publish their snapshot when this many seconds have passed
+# since the last one they published, so a healthy stream with no events, or
+# with only events a watcher ignores, is still observably alive. The shell
+# treats about three missed heartbeats as stale; inactivity is not failure.
+# Tests may shorten it; anything outside 1-60 falls back to the reviewed 30.
 watch_heartbeat_seconds=${HYPERLAB_WATCH_HEARTBEAT_SECONDS:-30}
 if ! [[ ${watch_heartbeat_seconds} =~ ^[1-9][0-9]?$ ]] ||
    (( watch_heartbeat_seconds > 60 ))
@@ -21,14 +22,16 @@ then
 fi
 readonly watch_heartbeat_seconds
 
-# Reads one event line into event_line. Returns 0 for an event, 1 for a
-# quiet heartbeat interval, and 2 when the stream has ended.
+# Reads one event line into event_line, waiting at most TIMEOUT seconds
+# (default: one heartbeat). Returns 0 for an event, 1 for a quiet heartbeat
+# interval, and 2 when the stream has ended.
 event_line=""
 
 read_event() {
+    local timeout=${1:-${watch_heartbeat_seconds}}
     local status
 
-    if IFS= read -r -t "${watch_heartbeat_seconds}" event_line; then
+    if IFS= read -r -t "${timeout}" event_line; then
         return 0
     else
         status=$?
@@ -39,6 +42,65 @@ read_event() {
     fi
 
     return 2
+}
+
+# A watcher that ignores some of the events it reads measures its heartbeat
+# from the last published snapshot, not from the last event: an ignored
+# event must neither publish nor postpone the next heartbeat.
+heartbeat_due_us=0
+heartbeat_left=""
+clock_now=0
+
+# Puts the current time in microseconds into clock_now.
+clock_us() {
+    local now
+
+    # EPOCHREALTIME carries the locale's decimal point and six fractional
+    # digits; the digits alone are microseconds.
+    now=${EPOCHREALTIME:-}
+    now=${now//[!0-9]/}
+
+    [[ ${now} =~ ^[0-9]{7,}$ ]] || {
+        printf 'the shell clock is unavailable\n' >&2
+        return 1
+    }
+
+    clock_now=${now}
+}
+
+# Called right before a snapshot is published.
+heartbeat_arm() {
+    clock_us || return 1
+    heartbeat_due_us=$(( clock_now + watch_heartbeat_seconds * 1000000 ))
+}
+
+# Puts the time left until the heartbeat into heartbeat_left as S.UUUUUU.
+# Returns 1 when the heartbeat is due. A deadline more than one heartbeat
+# away means the wall clock moved back; it is pulled in to one heartbeat so
+# the bound never grows.
+heartbeat_wait() {
+    local left
+
+    clock_us || return 1
+    left=$(( heartbeat_due_us - clock_now ))
+
+    if (( left > watch_heartbeat_seconds * 1000000 )); then
+        heartbeat_due_us=$(( clock_now + watch_heartbeat_seconds * 1000000 ))
+        left=$(( watch_heartbeat_seconds * 1000000 ))
+    fi
+
+    (( left > 0 )) || return 1
+
+    printf -v heartbeat_left '%d.%06d' \
+        $(( left / 1000000 )) \
+        $(( left % 1000000 ))
+}
+
+# Reads the next event of a Hyprland stream, or reports the heartbeat when it
+# is due. Same statuses as read_event.
+read_event_until_heartbeat() {
+    heartbeat_wait || return 1
+    read_event "${heartbeat_left}"
 }
 
 usage() {
@@ -320,10 +382,15 @@ focused_watch_sway() {
     )
 }
 
+focused_publish_hyprland() {
+    heartbeat_arm || return 1
+    focused_hyprland_json
+}
+
 focused_watch_hyprland() {
     local runtime_dir socket_path status
 
-    focused_hyprland_json
+    focused_publish_hyprland
 
     runtime_dir=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
     socket_path="${runtime_dir}/hypr/${HYPRLAND_INSTANCE_SIGNATURE}/.socket2.sock"
@@ -338,11 +405,11 @@ focused_watch_hyprland() {
 
     while true; do
         status=0
-        read_event || status=$?
+        read_event_until_heartbeat || status=$?
         (( status == 2 )) && break
 
         if (( status == 1 )); then
-            focused_hyprland_json
+            focused_publish_hyprland
             continue
         fi
 
@@ -354,7 +421,7 @@ focused_watch_hyprland() {
             openwindow\>\>*|\
             workspace\>\>*|\
             workspacev2\>\>*)
-                focused_hyprland_json
+                focused_publish_hyprland
                 ;;
         esac
     done < <(
@@ -566,10 +633,15 @@ workspace_watch_sway() {
     )
 }
 
+workspace_publish_hyprland() {
+    heartbeat_arm || return 1
+    workspace_snapshot_hyprland
+}
+
 workspace_watch_hyprland() {
     local runtime_dir socket_path status
 
-    workspace_snapshot_hyprland
+    workspace_publish_hyprland
 
     runtime_dir=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
     socket_path="${runtime_dir}/hypr/${HYPRLAND_INSTANCE_SIGNATURE}/.socket2.sock"
@@ -584,11 +656,11 @@ workspace_watch_hyprland() {
 
     while true; do
         status=0
-        read_event || status=$?
+        read_event_until_heartbeat || status=$?
         (( status == 2 )) && break
 
         if (( status == 1 )); then
-            workspace_snapshot_hyprland
+            workspace_publish_hyprland
             continue
         fi
 
@@ -607,7 +679,7 @@ workspace_watch_hyprland() {
             openwindow\>\>*|\
             closewindow\>\>*|\
             urgent\>\>*)
-                workspace_snapshot_hyprland
+                workspace_publish_hyprland
                 ;;
         esac
     done < <(
